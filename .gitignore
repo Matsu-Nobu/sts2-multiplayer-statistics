@@ -1,0 +1,24 @@
+# 環境変数（パス設定）
+.env
+
+# ビルド成果物
+mod/bin/
+mod/obj/
+mod/.godot/
+mod/dist/
+mod.tests/bin/
+mod.tests/obj/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# NuGet
+*.nupkg
