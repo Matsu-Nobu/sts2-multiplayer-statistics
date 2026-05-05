@@ -66,8 +66,9 @@ sts2-multiplayer-statistics/
 API仕様は **[`API.md`](./API.md)** に分離している。実装変更時はそちらを先に更新すること。
 
 サマリ:
-- `POST /sessions` — セッション作成、`session_id` と `write_token` を返す
+- `POST /sessions` — セッション作成、run メタ（character/ascension/seed）も同梱可能
 - `POST /sessions/{id}/turns` `[Auth]` — ターン終了/戦闘終了時に delta + ターン内カード別 + 戦闘累計 を一括投稿
+- `POST /sessions/{id}/events` `[Auth]` — 戦闘外 discrete イベント（run_start, run_end 等）の bulk 投稿
 - `GET /api/sessions/{id}` — WebUI 用の全データ取得
 - `GET /s/{id}` / `GET /assets/*` / `GET /healthz`
 
@@ -77,10 +78,24 @@ API仕様は **[`API.md`](./API.md)** に分離している。実装変更時は
 
 ```sql
 CREATE TABLE sessions (
-  id           TEXT PRIMARY KEY,        -- UUID v4
-  created_at   TEXT NOT NULL,
-  host_name    TEXT,
-  write_token  TEXT NOT NULL
+  id              TEXT PRIMARY KEY,        -- UUID v4
+  created_at      TEXT NOT NULL,
+  host_name       TEXT,
+  host_steam_id   TEXT,                    -- run のホストプレイヤー
+  character_id    TEXT,                    -- "IRONCLAD" 等
+  ascension       INTEGER,
+  seed            TEXT,
+  outcome         TEXT,                    -- 'victory' / 'death' / 'abandoned' / NULL
+  final_floor     INTEGER,
+  finished_at     TEXT,
+  write_token     TEXT NOT NULL
+);
+
+CREATE TABLE players (
+  steam_id      TEXT PRIMARY KEY,
+  display_name  TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at  TEXT NOT NULL
 );
 
 CREATE TABLE turns (
@@ -93,11 +108,33 @@ CREATE TABLE turns (
   PRIMARY KEY (session_id, combat_index, turn_number),
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
-
 CREATE INDEX idx_turns_session ON turns(session_id, combat_index, turn_number);
+
+CREATE TABLE events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_uuid   TEXT NOT NULL UNIQUE,       -- mod 生成、冪等性キー
+  session_id   TEXT NOT NULL,
+  player_id    TEXT,
+  event_type   TEXT NOT NULL,
+  occurred_at  TEXT NOT NULL,
+  received_at  TEXT NOT NULL,
+  floor        INTEGER,
+  payload_json TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_events_session ON events(session_id, id);
+CREATE INDEX idx_events_player  ON events(player_id, event_type);
+CREATE INDEX idx_events_type    ON events(event_type);
 ```
 
-集計はクライアント側（WebUI）で行う方針。サーバは生 payload を保存・配信するだけ。
+### 設計方針
+
+- **`turns`**: 戦闘中の高頻度・高密度な集計データ。per-turn snapshot（delta + ターン内カード別 + 戦闘累計）として保存。
+- **`events`**: 戦闘外で発生する discrete event。`event_type` + `payload_json` の柔軟な形式で、新統計を追加する際もスキーマ変更不要。
+- **`players`**: turns/events 投稿時に upsert。「last_seen を最新に・display_name を最新に」のシンプルなロジック。
+- **`sessions`**: run 開始時にメタデータを記録、終了時に `outcome`/`final_floor`/`finished_at` を更新。
+
+サーバは生 payload を保存・配信が基本。集計はクライアント or 集計用エンドポイント（Phase 4 以降）で行う。
 
 ---
 
@@ -106,15 +143,21 @@ CREATE INDEX idx_turns_session ON turns(session_id, combat_index, turn_number);
 ### 5-1. 新規ファイル
 
 - **`SessionManager.cs`**
-  - mod 起動時に `POST /sessions` でセッション作成
+  - mod 起動時に `POST /sessions` でセッション作成（character/ascension/seed が取れていれば同梱）
   - `session_id` / `write_token` / `share_url` を保持
   - 起動時に `OS.Clipboard` へ URL コピー、`GD.Print` でログ出力
   - 失敗してもゲームは止めない（`StatsLogger` のみで継続）
 
 - **`HttpSender.cs`**
-  - `HttpClient` 保持、`SendTurn(payload, isFinal)` を非同期実行
+  - `HttpClient` 保持、`SendTurn(payload, isFinal)` / `SendEvents(events[])` を非同期実行
   - 失敗時はインメモリキュー（最大100件）に積み、次回送信前に flush
   - `Authorization: Bearer <write_token>` ヘッダ付与
+
+- **`EventEmitter.cs`**
+  - 戦闘外イベントの生成・バッファリング
+  - Phase 2 で送るのは `run_start` / `run_end` のみ。それ以外の event_type は Phase 4 以降に hook を追加して順次対応
+  - `Guid.NewGuid()` で `event_uuid` を生成して冪等性確保
+  - 一定間隔 or `run_end` 到達時に `HttpSender.SendEvents` で flush
 
 ### 5-2. StatsCollector の変更
 
@@ -260,7 +303,8 @@ cd backend && go build -o server ./cmd/server
 - `MutableTurnData` にカード別集計を追加し、各 Record メソッドを turn 側にも反映
 - `StatsCollector` の `TurnPayload` 型導入と `FinalizeCurrentTurn` 改造
 - `HookPatches` を `TurnPayload` ベースに変更（`AfterCombatEnd` も同エンドポイント）
-- `SessionManager` / `HttpSender` 実装
+- `SessionManager` / `HttpSender` / `EventEmitter` 実装
+- run start / run end の hook 調査と `events` 投稿（Phase 2 ではこの2種のみ）
 - env 経由で `STS_STATS_BACKEND_URL` 切替
 - mod テスト更新（ターン内カード集計のテスト追加）
 - **完了条件**: ローカル backend に turns が届く。クリップボードに URL がコピーされる。失敗時にゲームが止まらない
