@@ -26,8 +26,10 @@ DOCKER_DATA_DIR := $(PWD)/.docker-data
         backend-dev backend-test \
         web-dev \
         app-build app-run \
-        docker-build docker-run \
-        fly-deploy fly-logs
+        docker-build docker-run
+
+# メンテナ専用ターゲット（fly-deploy 等）は Makefile.local に置いて gitignore する。
+-include Makefile.local
 
 help:
 	@echo "make all              mod テスト → ビルド → インストール"
@@ -110,10 +112,3 @@ docker-run: docker-build
 		-v $(DOCKER_DATA_DIR):/data \
 		$(DOCKER_IMAGE):dev
 
-# --- Fly.io（メンテナ専用、help からは隠す） ------------------------------
-
-fly-deploy:
-	fly deploy
-
-fly-logs:
-	fly logs

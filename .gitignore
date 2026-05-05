@@ -23,3 +23,7 @@ Thumbs.db
 # NuGet
 *.nupkg
 .docker-data/
+
+# メンテナ専用（git 管理しない）
+fly.toml
+Makefile.local
