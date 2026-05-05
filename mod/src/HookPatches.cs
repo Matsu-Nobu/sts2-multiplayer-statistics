@@ -144,9 +144,17 @@ internal static class HookPatches
         {
             if (runState == null || creature == null) return;
 
-            // 死亡したのがプレイヤー創物なら run_end(death) を発行
+            // 死亡したのがプレイヤー創物なら、死亡ターンのデータを送ってから run_end を emit
             var playerInfo = TryFindPlayerForCreature(combatState, creature);
             if (playerInfo == null) return;
+
+            // 死亡ターン（被ダメや使ったエナジー等）を送る。STS2 は player death では
+            // AfterCombatEnd を発火しないようなので、ここで明示的に flush する必要がある。
+            var payload = StatsCollector.FinalizeTurn(isFinal: true);
+            if (payload != null) DispatchTurn(payload);
+
+            // 死亡 = 戦闘の負け。combat_end イベントも明示送信（victory=false）。
+            EmitCombatEnd(runState, combatState, room: null);
 
             EmitRunEnd(runState, playerId: playerInfo.Value.id, outcome: "death");
         }
