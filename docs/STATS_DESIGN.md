@@ -43,22 +43,14 @@
 
 「ダメージを出さないサポート役」もフェアに評価するための合算指標。
 
-```
-貢献スコア = 与ダメージ
-           + 味方へのシールド付与量
-           + 状態異常付与の推定ダメージ換算値
-```
+**現状（Phase 2）**: 実装しない。集計値ベースでは正確な算定ができないため、固定係数の概算値を出してもユーザーに誤解を与えるだけと判断。
 
-### 状態異常の換算係数（暫定・調整可能）
+**将来（Phase 3.5 以降）**: ターン送信 API を「ターン中に発生したイベント列」を送る形に変更したあと、`damage_dealt` イベントごとに発火時の active power と applier を埋め込んで、Skada 系 mod や FFXIV FFLogs と同様の二段階（additive + multiplicative）で算出する rDPS 相当を実装する。詳細は `ROADMAP.md` の Phase 3.5 を参照。
 
-| 状態異常 | 換算方法 |
-|---------|---------|
-| Poison | 付与スタック × 3（期待残ターン数の近似） |
-| Vulnerable | 付与スタック × 10（1ターン50%増ダメの近似） |
-| Weak | 付与スタック × 5（1ターン25%ブロック減の近似） |
-| その他Debuff | 付与スタック × 1（汎用デフォルト） |
-
-> 換算係数はWebUI側でユーザーが変更できるようにする（バックエンドは生スタック数を保持し、UIで掛け算する）。
+参考調査:
+- [Skada Damage Meter (STS2 Nexus)](https://www.nexusmods.com/slaythespire2/mods/33) — rDPS 二段階アルゴリズムを採用（closed-source）
+- [STS2-DamageTracker (GitHub)](https://github.com/BAIGUANGMEI/STS2-DamageTracker) — 貢献度なし、生ダメージのみ
+- [FFLogs rDPS Guide](https://www.fflogs.com/help/rdps) — 元ネタの定式化
 
 ### 味方エナジー付与について
 STS2に専用hookが確認できなかったため、今フェーズでは追跡しない。  

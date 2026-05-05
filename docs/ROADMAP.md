@@ -40,8 +40,29 @@
 - 戦闘単位棒グラフ（与ダメ・被ダメ・シールド）
 - カード別ダメージテーブル
 - デバフ付与テーブル
-- 貢献スコアグラフ（換算係数 UI 調整）
 - ランキング（最大単発・カード別累計等）
+
+> 貢献スコア（rDPS 相当）は集計値ベースでは正確な算定ができないため、Phase 3.5 の API 改修後に追加する。
+
+### Phase 3.5 — ターン送信のイベント列化（rDPS 対応への布石）
+
+**動機**: 「貢献度スコア（rDPS 相当）」を正確に算出するには、各ダメージイベントの発生時に「適用されていたバフ・デバフと、それぞれを誰が付与したか」のコンテキストが必要。現在の `POST /sessions/{id}/turns` は **ターン単位の集計値** しか送っておらず、ダメージ単位の attribution は不可能。
+
+**方針**: 既存の events テーブルに新 event_type（`damage_dealt` 等）を追加するのではなく、**ターン投稿の API 設計自体を「ターン中に発生したイベント列を送る」形に変える**。Phase 2 で確立する集計済み `turn` payload は廃止または併存させ、生イベント列（`card_played`, `damage_dealt`, `block_gained`, `power_changed`, `energy_spent`, `card_drawn`, `potion_used` 等）を1ターンぶん bulk で送る。
+
+集計はサーバ側 SQL（or 受信時計算）で導出する形に切り替え、WebUI は集計済みデータと raw event の両方にアクセス可能になる。
+
+**対応する作業**:
+- mod 側: `StatsCollector` をイベントバッファに置き換え、ターン終了時に `POST /sessions/{id}/turns/{n}/events` 等で bulk 送信
+- backend: events テーブルを拡張、または turn-events 用のテーブルを別途作る
+- WebUI: 戦闘単位サマリは集計クエリ経由で取得、貢献度（rDPS）が初めて正確に算出可能になる
+- API.md / PHASE2_PLAN.md / ROADMAP の整合更新
+
+**rDPS の算定**: 各 `damage_dealt` イベントに発火時の active power と applier を埋め込めば、Skada 系 mod や FFXIV FFLogs と同じ二段階（additive + multiplicative）の貢献度計算ができる。Phase 2 段階で諸々妥協していた「貢献度スコア」はここで初めて実装する。
+
+参考:
+- [Skada Damage Meter for STS2](https://www.nexusmods.com/slaythespire2/mods/33) — closed-source だが rDPS 二段階アルゴリズム
+- [FFLogs rDPS Guide](https://www.fflogs.com/help/rdps) — 元ネタの定式化
 
 ### Phase 4 — クロスセッション統計（プレイヤー単位）
 
