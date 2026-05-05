@@ -12,6 +12,9 @@ internal static class StatsCollector
     private static readonly Dictionary<string, MutableTurnData>   _currentTurn   = new();
     private static readonly Dictionary<string, MutableCombatData> _currentCombat = new();
 
+    /// <summary>現在の combat_index（HookPatches から discrete event 発行時に参照）。</summary>
+    public static int CurrentCombatIndex => _combatIndex;
+
     public static void BeginCombat()
     {
         _combatIndex++;

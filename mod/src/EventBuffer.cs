@@ -3,8 +3,9 @@ using System.Collections.Generic;
 namespace StsStats;
 
 /// <summary>
-/// 戦闘外で発生する discrete event のバッファ。Phase 2 ではローカル JSONL に出力するだけ、
-/// Phase 2 後半で HttpSender を経由して /sessions/{id}/events に bulk POST する想定。
+/// 戦闘外で発生する discrete event のバッファ。
+/// JSONL ログ出力（StatsLogger）と HTTP 送信（HttpSender）の両方を行う。
+/// HTTP 側はセッション未作成時には呼ばれず、JSONL のみ動作する。
 /// </summary>
 internal static class EventBuffer
 {
@@ -15,6 +16,13 @@ internal static class EventBuffer
     {
         lock (_lock) _events.Add(ev);
         StatsLogger.LogEvent(ev);
+
+        // HTTP 送信（セッション準備済みの場合のみ）
+        var sender = ModEntry.HttpSender;
+        if (sender != null && SessionManager.IsReady)
+        {
+            sender.EnqueueEvents(SessionManager.SessionId!, SessionManager.WriteToken!, new[] { ev });
+        }
     }
 
     public static IReadOnlyList<EventRecord> DrainAll()
@@ -33,11 +41,4 @@ internal static class EventBuffer
     }
 }
 
-internal record EventRecord(
-    Guid     EventUuid,
-    string   EventType,
-    DateTime OccurredAt,
-    string?  PlayerId,
-    int?     Floor,
-    object   Payload
-);
+// EventRecord 型は EventTypes.cs に分離（テスト時に EventBuffer を含めずに参照できるよう）

@@ -30,6 +30,7 @@ internal static class HookPatches
             // run_start: 初回戦闘の前に各プレイヤーぶんイベントを発行
             if (!_runStartEmitted && runState != null)
             {
+                EnsureSessionForRun(runState);
                 EmitRunStartForAllPlayers(runState);
                 _runStartEmitted = true;
             }
@@ -37,6 +38,10 @@ internal static class HookPatches
             StatsCollector.BeginCombat();
             _currentTurnPlayer = null;
             _lastFinalizedRound = 0;
+
+            // combat_start イベント発行（タブラベル等で使用）
+            EmitCombatStart(runState, combatState);
+
             Log.Info("[StsStats] Combat started");
         }
         catch (Exception ex)
@@ -55,7 +60,7 @@ internal static class HookPatches
             if (round > _lastFinalizedRound)
             {
                 var payload = StatsCollector.FinalizeTurn(isFinal: false);
-                if (payload != null) StatsLogger.LogTurn(payload);
+                if (payload != null) DispatchTurn(payload);
                 _lastFinalizedRound = round;
             }
 
@@ -68,12 +73,15 @@ internal static class HookPatches
     }
 
     // AfterCombatEnd(IRunState runState, CombatState? combatState, CombatRoom room)
-    public static void AfterCombatEndPostfix(IRunState? runState, CombatState? combatState)
+    public static void AfterCombatEndPostfix(IRunState? runState, CombatState? combatState, object? room)
     {
         try
         {
             var payload = StatsCollector.FinalizeTurn(isFinal: true);
-            if (payload != null) StatsLogger.LogTurn(payload);
+            if (payload != null) DispatchTurn(payload);
+
+            // combat_end イベント発行（勝敗を含む）
+            EmitCombatEnd(runState, combatState, room);
         }
         catch (Exception ex)
         {
@@ -552,5 +560,152 @@ internal static class HookPatches
             return rng?.GetType().GetProperty("StringSeed")?.GetValue(rng)?.ToString() ?? "";
         }
         catch { return ""; }
+    }
+
+    // --- HTTP dispatch helpers ---
+
+    /// <summary>turn ペイロードを JSONL と HTTP の両方へ送る。</summary>
+    private static void DispatchTurn(TurnPayload payload)
+    {
+        StatsLogger.LogTurn(payload);
+        var sender = ModEntry.HttpSender;
+        if (sender != null && SessionManager.IsReady)
+            sender.EnqueueTurn(SessionManager.SessionId!, SessionManager.WriteToken!, payload);
+    }
+
+    /// <summary>初回戦闘開始時にセッションを確保する（run メタ込みで POST）。</summary>
+    private static void EnsureSessionForRun(IRunState runState)
+    {
+        var api = ModEntry.ApiClient;
+        if (api == null) return;
+
+        // ホストは「ローカルのプレイヤー」とみなす（mod を入れているクライアント = 自分）
+        ulong localId = TryGetLocalPlayerId();
+        string? hostSteamId = localId != 0UL ? localId.ToString() : null;
+        string? hostName    = localId != 0UL ? TryGetSteamName(localId) : null;
+
+        // 自分のキャラクター ID（複数プレイヤーが居る場合は最初の自分の Player を探す）
+        string? characterId = null;
+        try
+        {
+            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
+            if (players != null)
+            {
+                foreach (var p in players)
+                {
+                    ulong netId = (p.GetType().GetProperty("NetId")?.GetValue(p) as ulong?) ?? 0UL;
+                    if (netId == localId || (localId == 0UL && characterId == null))
+                    {
+                        characterId = TryGetCharacterId(p);
+                        if (netId == localId) break;
+                    }
+                }
+            }
+        }
+        catch { /* best-effort */ }
+
+        int? ascension = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState);
+        string seed = TryGetSeed(runState);
+
+        SessionManager.EnsureSession(api, new CreateSessionRequest(
+            HostName:    hostName,
+            HostSteamId: hostSteamId,
+            CharacterId: characterId,
+            Ascension:   ascension,
+            Seed:        string.IsNullOrEmpty(seed) ? null : seed
+        ));
+    }
+
+    /// <summary>combat_start イベントを emit。encounter 情報があれば付ける。</summary>
+    private static void EmitCombatStart(IRunState? runState, CombatState? combatState)
+    {
+        try
+        {
+            int combatIndex = StatsCollector.CurrentCombatIndex;
+            int floor = (int?)runState?.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+
+            string? encounterId   = null;
+            string? encounterName = null;
+            try
+            {
+                var enc = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
+                var encId = enc?.GetType().GetProperty("Id")?.GetValue(enc);
+                encounterId = encId?.GetType().GetProperty("Entry")?.GetValue(encId)?.ToString();
+                encounterName = enc?.GetType().GetProperty("Title")?.GetValue(enc)?.ToString() ?? encounterId;
+            }
+            catch { /* encounter 取得失敗時は ID/Name なしでイベント発行 */ }
+
+            string? roomType = TryGetRoomType(runState);
+
+            EventBuffer.Emit(new EventRecord(
+                EventUuid:  Guid.NewGuid(),
+                EventType:  "combat_start",
+                OccurredAt: DateTime.UtcNow,
+                PlayerId:   null,
+                Floor:      floor,
+                Payload:    new
+                {
+                    combat_index   = combatIndex,
+                    encounter_id   = encounterId,
+                    encounter_name = encounterName,
+                    room_type      = roomType,
+                }
+            ));
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitCombatStart error: {ex.Message}");
+        }
+    }
+
+    /// <summary>combat_end イベントを emit。room.IsVictoryRoom で勝敗判定。</summary>
+    private static void EmitCombatEnd(IRunState? runState, CombatState? combatState, object? room)
+    {
+        try
+        {
+            int combatIndex = StatsCollector.CurrentCombatIndex;
+            int floor = (int?)runState?.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+
+            // combat の勝敗: room.IsVictoryRoom or 敵全滅で判定。room が無い場合は無し。
+            bool victory = false;
+            try
+            {
+                if (room != null)
+                    victory = (bool?)room.GetType().GetProperty("IsVictoryRoom")?.GetValue(room) ?? false;
+            }
+            catch { }
+
+            EventBuffer.Emit(new EventRecord(
+                EventUuid:  Guid.NewGuid(),
+                EventType:  "combat_end",
+                OccurredAt: DateTime.UtcNow,
+                PlayerId:   null,
+                Floor:      floor,
+                Payload:    new
+                {
+                    combat_index = combatIndex,
+                    victory      = victory,
+                }
+            ));
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitCombatEnd error: {ex.Message}");
+        }
+    }
+
+    private static string? TryGetRoomType(IRunState? runState)
+    {
+        try
+        {
+            var room = runState?.GetType().GetProperty("CurrentRoom")?.GetValue(runState);
+            // 型名から判別（"NormalCombatRoom" / "EliteCombatRoom" / "BossCombatRoom" 等を想定）
+            string typeName = room?.GetType().Name ?? "";
+            if (typeName.Contains("Boss"))    return "Boss";
+            if (typeName.Contains("Elite"))   return "Elite";
+            if (typeName.Contains("Combat"))  return "Monster";
+            return typeName;
+        }
+        catch { return null; }
     }
 }

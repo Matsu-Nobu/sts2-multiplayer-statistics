@@ -15,8 +15,17 @@
     </PackageReference>
   </ItemGroup>
 
-  <!-- StatsCollector.cs をゲーム依存なしでそのままコンパイル -->
+  <!-- ゲーム DLL に依存しないファイルをそのままコンパイル（テスト対象） -->
   <ItemGroup>
     <Compile Include="../mod/src/StatsCollector.cs" />
+    <Compile Include="../mod/src/SessionConfig.cs" />
+    <Compile Include="../mod/src/EventTypes.cs" />
+    <Compile Include="../mod/src/PayloadJson.cs" />
+    <Compile Include="../mod/src/ApiClient.cs" />
+    <Compile Include="../mod/src/HttpSender.cs" />
   </ItemGroup>
+
+  <!-- GameStubs.cs はプロジェクト直下にあり、デフォルト Compile に含まれる。 -->
+  <!-- MegaCrit.Sts2.Core.Logging.Log のテスト用スタブを提供する。 -->
+
 </Project>

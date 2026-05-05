@@ -12,6 +12,12 @@ public static class ModEntry
     private static Harmony? _harmony;
     private const string HarmonyId = "com.nobu.sts2.stats";
 
+    /// <summary>HTTP クライアント。SessionConfig.HttpEnabled が false の場合 null。</summary>
+    internal static IApiClient? ApiClient { get; private set; }
+
+    /// <summary>HTTP送信キュー。SessionConfig.HttpEnabled が false の場合 null。</summary>
+    internal static HttpSender? HttpSender { get; private set; }
+
     public static void Initialize()
     {
         if (_harmony != null) return;
@@ -35,9 +41,23 @@ public static class ModEntry
             PatchHook(nameof(Hook.AfterDeath),               nameof(HookPatches.AfterDeathPostfix));
 
             StatsLogger.Initialize();
+
+            // Backend URL を解決し、有効なら HTTP クライアントとキューを起動
+            SessionConfig.Load();
+            if (SessionConfig.HttpEnabled)
+            {
+                ApiClient  = new ApiClient(SessionConfig.BackendUrl);
+                HttpSender = new HttpSender(ApiClient);
+                Log.Info($"[StsStats] HTTP enabled, backend: {SessionConfig.BackendUrl}");
+            }
+            else
+            {
+                Log.Info("[StsStats] HTTP disabled (backend URL is empty), JSONL only");
+            }
+
             Log.Info("[StsStats] Initialized successfully");
         }
-        catch (Exception ex)
+        catch (System.Exception ex)
         {
             Log.Error($"[StsStats] Initialization failed: {ex}");
         }
