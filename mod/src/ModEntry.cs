@@ -1,8 +1,10 @@
+using System.IO;
+using System.Reflection;
+using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
-using System.Reflection;
 
 namespace StsStats;
 
@@ -17,6 +19,9 @@ public static class ModEntry
 
     /// <summary>HTTP送信キュー。SessionConfig.HttpEnabled が false の場合 null。</summary>
     internal static HttpSender? HttpSender { get; private set; }
+
+    /// <summary>run_key → session 永続化ストア。常に有効（HTTP無効時は使わないだけ）。</summary>
+    internal static RunSessionStore? SessionStore { get; private set; }
 
     public static void Initialize()
     {
@@ -42,6 +47,11 @@ public static class ModEntry
 
             StatsLogger.Initialize();
 
+            // run_key → session 永続化ストア
+            string sessionDir = Path.Combine(SafeUserDataDir(), "sts_stats_sessions");
+            SessionStore = new RunSessionStore(sessionDir);
+            Log.Info($"[StsStats] Session store: {sessionDir}");
+
             // Backend URL を解決し、有効なら HTTP クライアントとキューを起動
             SessionConfig.Load();
             if (SessionConfig.HttpEnabled)
@@ -61,6 +71,12 @@ public static class ModEntry
         {
             Log.Error($"[StsStats] Initialization failed: {ex}");
         }
+    }
+
+    private static string SafeUserDataDir()
+    {
+        try { return OS.GetUserDataDir(); }
+        catch { return "/tmp"; }
     }
 
     private static void PatchHook(string hookName, string postfixName)

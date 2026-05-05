@@ -18,21 +18,25 @@ internal static class HookPatches
     // 直近で finalize したラウンド番号。CombatState.RoundNumber が増えたときだけターン確定する。
     // マルチプレイで AfterPlayerTurnStart がプレイヤー数ぶん発火する問題への対策。
     private static int _lastFinalizedRound = 0;
-
-    // run_start を1度だけ emit するためのフラグ。BeforeCombatStart の最初の呼び出しで送る。
-    private static bool _runStartEmitted = false;
+    // run_start emit 状態は SessionManager.RunStartAlreadyEmitted（永続化される）で管理する。
 
     // BeforeCombatStart(IRunState runState, CombatState? combatState)
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
     {
         try
         {
-            // run_start: 初回戦闘の前に各プレイヤーぶんイベントを発行
-            if (!_runStartEmitted && runState != null)
+            if (runState != null)
             {
+                // セッションを確保（同 run なら復元、新 run なら作成）
                 EnsureSessionForRun(runState);
-                EmitRunStartForAllPlayers(runState);
-                _runStartEmitted = true;
+
+                // run_start: 過去にこの run で emit していなければ発行
+                if (!SessionManager.RunStartAlreadyEmitted)
+                {
+                    EmitRunStartForAllPlayers(runState);
+                    if (ModEntry.SessionStore != null)
+                        SessionManager.MarkRunStartEmitted(ModEntry.SessionStore);
+                }
             }
 
             StatsCollector.BeginCombat();
@@ -573,47 +577,70 @@ internal static class HookPatches
             sender.EnqueueTurn(SessionManager.SessionId!, SessionManager.WriteToken!, payload);
     }
 
-    /// <summary>初回戦闘開始時にセッションを確保する（run メタ込みで POST）。</summary>
+    /// <summary>初回戦闘開始時にセッションを確保する（run メタ込みで POST または store から復元）。</summary>
     private static void EnsureSessionForRun(IRunState runState)
     {
-        var api = ModEntry.ApiClient;
-        if (api == null) return;
+        var api   = ModEntry.ApiClient;
+        var store = ModEntry.SessionStore;
+        if (api == null || store == null) return;
 
         // ホストは「ローカルのプレイヤー」とみなす（mod を入れているクライアント = 自分）
         ulong localId = TryGetLocalPlayerId();
-        string? hostSteamId = localId != 0UL ? localId.ToString() : null;
-        string? hostName    = localId != 0UL ? TryGetSteamName(localId) : null;
+        string? hostName = localId != 0UL ? TryGetSteamName(localId) : null;
 
-        // 自分のキャラクター ID（複数プレイヤーが居る場合は最初の自分の Player を探す）
-        string? characterId = null;
+        // 自分のキャラクター ID
+        string? characterId = TryGetHostCharacterId(runState, localId);
+        int    ascension    = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState) ?? 0;
+        string seed         = TryGetSeed(runState);
+        string seedForKey   = string.IsNullOrEmpty(seed) ? "no-seed" : seed;
+        string gameMode     = runState.GetType().GetProperty("GameMode")?.GetValue(runState)?.ToString() ?? "";
+        int    totalFloor   = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+
+        // 「同じ run か」は (host, seed) ペアで lookup し、TotalFloor の monotonicity で判断する
+        string lookupKey = RunKey.Lookup(localId, seedForKey);
+
+        var meta = new RunMetaForKey(
+            HostSteamId: localId,
+            Seed:        seedForKey,
+            CharacterId: characterId,
+            Ascension:   ascension,
+            GameMode:    gameMode
+        );
+
+        SessionManager.EnsureSession(
+            lookupKey:        lookupKey,
+            currentTotalFloor: totalFloor,
+            api:              api,
+            requestBuilder:   (startedAt, runKey) => new CreateSessionRequest(
+                HostName:    hostName,
+                HostSteamId: localId != 0UL ? localId.ToString() : null,
+                CharacterId: characterId,
+                Ascension:   ascension,
+                Seed:        string.IsNullOrEmpty(seed) ? null : seed
+            ),
+            runMeta:          meta,
+            store:            store
+        );
+    }
+
+    private static string? TryGetHostCharacterId(IRunState runState, ulong localId)
+    {
         try
         {
             var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
-            if (players != null)
+            if (players == null) return null;
+
+            string? fallback = null;
+            foreach (var p in players)
             {
-                foreach (var p in players)
-                {
-                    ulong netId = (p.GetType().GetProperty("NetId")?.GetValue(p) as ulong?) ?? 0UL;
-                    if (netId == localId || (localId == 0UL && characterId == null))
-                    {
-                        characterId = TryGetCharacterId(p);
-                        if (netId == localId) break;
-                    }
-                }
+                ulong netId = (p.GetType().GetProperty("NetId")?.GetValue(p) as ulong?) ?? 0UL;
+                string? cid = TryGetCharacterId(p);
+                if (netId == localId) return cid;       // ローカルプレイヤー一致
+                fallback ??= cid;                       // 最初に見つかった character を保険として保持
             }
+            return fallback;
         }
-        catch { /* best-effort */ }
-
-        int? ascension = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState);
-        string seed = TryGetSeed(runState);
-
-        SessionManager.EnsureSession(api, new CreateSessionRequest(
-            HostName:    hostName,
-            HostSteamId: hostSteamId,
-            CharacterId: characterId,
-            Ascension:   ascension,
-            Seed:        string.IsNullOrEmpty(seed) ? null : seed
-        ));
+        catch { return null; }
     }
 
     /// <summary>combat_start イベントを emit。encounter 情報があれば付ける。</summary>

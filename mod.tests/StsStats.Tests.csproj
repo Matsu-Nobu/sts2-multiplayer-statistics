@@ -23,6 +23,7 @@
     <Compile Include="../mod/src/PayloadJson.cs" />
     <Compile Include="../mod/src/ApiClient.cs" />
     <Compile Include="../mod/src/HttpSender.cs" />
+    <Compile Include="../mod/src/RunSessionStore.cs" />
   </ItemGroup>
 
   <!-- GameStubs.cs はプロジェクト直下にあり、デフォルト Compile に含まれる。 -->
