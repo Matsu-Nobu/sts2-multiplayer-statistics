@@ -36,13 +36,23 @@ internal static class StatsLogger
     {
         var payload = new
         {
-            @event   = "turn_end",
-            combat   = snapshot.CombatIndex,
-            turn     = snapshot.TurnNumber,
+            @event    = "turn_end",
+            combat    = snapshot.CombatIndex,
+            turn      = snapshot.TurnNumber,
             timestamp = snapshot.Timestamp.ToString("O"),
-            damage   = snapshot.StatsByPlayer.ToDictionary(
-                kv => kv.Value.PlayerName,
-                kv => kv.Value.DamageDealt)
+            players   = snapshot.StatsByPlayer.ToDictionary(
+                kv => kv.Key,
+                kv => new
+                {
+                    player_name        = kv.Value.PlayerName,
+                    damage_dealt       = kv.Value.DamageDealt,
+                    damage_received    = kv.Value.DamageReceived,
+                    block_gained_self  = kv.Value.BlockGainedSelf,
+                    block_given_allies = kv.Value.BlockGivenToAllies,
+                    energy_used        = kv.Value.EnergyUsed,
+                    cards_played       = kv.Value.CardsPlayed,
+                    cards_drawn        = kv.Value.CardsDrawn,
+                })
         };
         Log("turn_end", payload);
     }
@@ -51,13 +61,37 @@ internal static class StatsLogger
     {
         var payload = new
         {
-            @event   = "combat_end",
-            combat   = summary.CombatIndex,
-            turns    = summary.TotalTurns,
+            @event    = "combat_end",
+            combat    = summary.CombatIndex,
+            turns     = summary.TotalTurns,
             timestamp = summary.Timestamp.ToString("O"),
-            totals   = summary.TotalsByPlayer.ToDictionary(
-                kv => kv.Value.PlayerName,
-                kv => kv.Value.DamageDealt)
+            players   = summary.TotalsByPlayer.ToDictionary(
+                kv => kv.Key,
+                kv => (object)new
+                {
+                    player_name        = kv.Value.PlayerName,
+                    damage_dealt       = kv.Value.DamageDealt,
+                    damage_received    = kv.Value.DamageReceived,
+                    block_gained_self  = kv.Value.BlockGainedSelf,
+                    block_given_allies = kv.Value.BlockGivenToAllies,
+                    energy_used        = kv.Value.EnergyUsed,
+                    cards_played       = kv.Value.CardsPlayed,
+                    cards_drawn        = kv.Value.CardsDrawn,
+                    potions_used       = kv.Value.PotionsUsed,
+                    max_single_hit     = kv.Value.MaxSingleHit,
+                    debuffs_applied    = kv.Value.DebuffsApplied,
+                    card_stats         = kv.Value.CardStats.Select(cs => new
+                    {
+                        card_id         = cs.CardId,
+                        card_name       = cs.CardName,
+                        card_type       = cs.CardType,
+                        play_count      = cs.PlayCount,
+                        damage_dealt    = cs.DamageDealt,
+                        block_provided  = cs.BlockProvided,
+                        debuffs_applied = cs.DebuffsApplied,
+                        max_single_hit  = cs.MaxSingleHit,
+                    }).ToArray(),
+                })
         };
         Log("combat_end", payload);
     }

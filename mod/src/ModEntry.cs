@@ -20,10 +20,17 @@ public static class ModEntry
         {
             _harmony = new Harmony(HarmonyId);
 
-            PatchHook(nameof(Hook.BeforeCombatStart),   nameof(HookPatches.BeforeCombatStartPostfix));
-            PatchHook(nameof(Hook.AfterDamageGiven),     nameof(HookPatches.AfterDamageGivenPostfix));
-            PatchHook(nameof(Hook.AfterPlayerTurnStart), nameof(HookPatches.AfterPlayerTurnStartPostfix));
-            PatchHook(nameof(Hook.AfterCombatEnd),       nameof(HookPatches.AfterCombatEndPostfix));
+            PatchHook(nameof(Hook.BeforeCombatStart),        nameof(HookPatches.BeforeCombatStartPostfix));
+            PatchHook(nameof(Hook.AfterPlayerTurnStart),     nameof(HookPatches.AfterPlayerTurnStartPostfix));
+            PatchHook(nameof(Hook.AfterCombatEnd),           nameof(HookPatches.AfterCombatEndPostfix));
+            PatchHook(nameof(Hook.AfterDamageGiven),         nameof(HookPatches.AfterDamageGivenPostfix));
+            PatchHook(nameof(Hook.AfterDamageReceived),      nameof(HookPatches.AfterDamageReceivedPostfix));
+            PatchHook(nameof(Hook.AfterBlockGained),         nameof(HookPatches.AfterBlockGainedPostfix));
+            PatchHook(nameof(Hook.AfterEnergySpent),         nameof(HookPatches.AfterEnergySpentPostfix));
+            PatchHook(nameof(Hook.AfterCardPlayed),          nameof(HookPatches.AfterCardPlayedPostfix));
+            PatchHook(nameof(Hook.AfterCardDrawn),           nameof(HookPatches.AfterCardDrawnPostfix));
+            PatchHook(nameof(Hook.AfterPowerAmountChanged),  nameof(HookPatches.AfterPowerAmountChangedPostfix));
+            PatchHook(nameof(Hook.AfterPotionUsed),          nameof(HookPatches.AfterPotionUsedPostfix));
 
             StatsLogger.Initialize();
             Log.Info("[StsStats] Initialized successfully");

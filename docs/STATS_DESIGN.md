@@ -1,324 +1,248 @@
 # 統計情報設計ドキュメント
 
 ゲームDLL（`sts2.dll`）のリフレクションによる実調査に基づく。
-**表示設計を先に決め、そこから必要なデータを逆算する。**
+設計は **「何を表示するか」→「何を収集するか」** の順で行う。
 
 ---
 
-## 1. Webダッシュボードの表示設計
+## 1. 統計項目 × 時間軸マトリクス
 
-### ページ構成
+### 凡例
+- ◎ … 主要表示（グラフ化）
+- ○ … 補助表示（数値）
+- △ … 導出値（他の値から計算）
+- — … 表示しない（粒度が合わない）
 
-```
-/s/{sessionId}
-├── ヘッダー: プレイヤー名一覧・現在の階層
-├── 戦闘セレクタ: [戦闘1] [戦闘2] [戦闘3] ...
-└── 選択した戦闘の詳細
-    ├── A. ダメージ貢献（誰がどれだけ与えたか）
-    ├── B. ターン推移グラフ
-    ├── C. カード別ダメージ内訳（プレイヤーごと）
-    ├── D. 効率指標
-    └── E. その他統計サマリー
-```
+| 統計項目 | ターン毎 | 戦闘毎 | 累計 |
+|---------|---------|--------|------|
+| **与ダメージ** | ◎ 折れ線 | ◎ 棒グラフ | ◎ 棒グラフ |
+| **カードあたり与ダメージ** | △ | ◎ 数値カード | ◎ 数値カード |
+| **エナジーあたり与ダメージ** | △ | ◎ 数値カード | ◎ 数値カード |
+| **シールド獲得量（自分）** | ○ | ◎ 棒グラフ | ◎ 棒グラフ |
+| **被ダメージ** | ○ | ◎ 棒グラフ | ◎ 棒グラフ |
+| **エナジー使用量** | ○ | ○ | ○ |
+| **カード使用枚数** | ○ | ○ | ○ |
+| **カードドロー枚数** | ○ | ○ | ○ |
+| **状態異常付与（種別ごと）** | — | ◎ テーブル | ◎ テーブル |
+| **味方へのシールド付与** | — | ○ | ○ |
+| **貢献スコア** | — | ◎ 棒グラフ | ◎ 棒グラフ |
 
----
+### ランキング（累計のみ）
 
-### A. ダメージ貢献（棒グラフ）
-
-```
-戦闘2 - ダメージ貢献
-┌──────────────────────────────────────────┐
-│ PlayerA ████████████████████  320 (64%)  │
-│ PlayerB ██████████           180 (36%)   │
-└──────────────────────────────────────────┘
-```
-
-必要なデータ: プレイヤーごとの `damage_dealt` 合計（戦闘単位）
-
----
-
-### B. ターン推移グラフ（折れ線グラフ）
-
-```
-ターンごとのダメージ推移
-100 │     A
- 80 │   A   A
- 60 │ A       A    B
- 40 │   B       B
- 20 │
-  0 └─────────────────
-    T1  T2  T3  T4  T5
-```
-
-必要なデータ: プレイヤーごとの `damage_dealt`（ターン単位）
+| ランキング項目 | 内容 |
+|--------------|------|
+| 最大単発ダメージ | その1ヒットで出した最大ダメージと使用カード名 |
+| カード別総ダメージ | 戦闘全体を通じて最もダメージを稼いだカード上位N枚 |
+| カード別平均ダメージ | 1プレイあたり平均ダメージが高いカード上位N枚 |
+| 最多使用カード | プレイ回数が多いカード上位N枚 |
+| 最多ポイズン付与カード | 付与スタック数が多いカード上位N枚（毒キャラ限定） |
 
 ---
 
-### C. カード別ダメージ内訳（テーブル）
+## 2. 貢献スコアの定義
+
+「ダメージを出さないサポート役」もフェアに評価するための合算指標。
 
 ```
-PlayerA のカード使用状況
-┌────────────────┬──────┬────────┬──────────────┐
-│ カード名       │ 使用 │ 総ダメ │ 1回あたり    │
-├────────────────┼──────┼────────┼──────────────┤
-│ Strike+        │  4回 │    80  │   20.0       │
-│ Bash           │  2回 │    36  │   18.0       │
-│ Sword Boomerang│  3回 │    45  │   15.0       │
-│ Defend         │  3回 │     0  │    —         │
-└────────────────┴──────┴────────┴──────────────┘
+貢献スコア = 与ダメージ
+           + 味方へのシールド付与量
+           + 状態異常付与の推定ダメージ換算値
 ```
 
-必要なデータ: カードごとに `play_count` + `damage_dealt`（プレイヤー・戦闘単位）
+### 状態異常の換算係数（暫定・調整可能）
 
-> ダメージ0のカード（スキル・パワー）も表示する（プレイ頻度の把握のため）
+| 状態異常 | 換算方法 |
+|---------|---------|
+| Poison | 付与スタック × 3（期待残ターン数の近似） |
+| Vulnerable | 付与スタック × 10（1ターン50%増ダメの近似） |
+| Weak | 付与スタック × 5（1ターン25%ブロック減の近似） |
+| その他Debuff | 付与スタック × 1（汎用デフォルト） |
+
+> 換算係数はWebUI側でユーザーが変更できるようにする（バックエンドは生スタック数を保持し、UIで掛け算する）。
+
+### 味方エナジー付与について
+STS2に専用hookが確認できなかったため、今フェーズでは追跡しない。  
+`EnergyNextTurnPower` 等の特定Powerを通じて間接的に追跡できる可能性あり（Phase 4候補）。
 
 ---
 
-### D. 効率指標（数値カード）
+## 3. 収集するraw data
+
+### 3-1. ターン単位で収集するデータ
 
 ```
-┌─────────────┐ ┌─��───────────┐ ┌─────────────┐
-│  エナジー効率 │ │ カード効率  │ │  被ダメ     │
-│  80 dmg/E   │ │  32 dmg/枚  │ │   45 受     │
-└─────────────┘ └─────────────┘ └─────────────┘
+TurnData {
+    player_id:              string
+    player_name:            string
+    combat_index:           int
+    turn_number:            int
+    timestamp:              ISO8601
+
+    // 直接計測
+    damage_dealt:           int     // 敵への与ダメージ合計
+    damage_received:        int     // 受けたダメージ（ブロック貫通分）
+    block_gained_self:      int     // 自分が獲得したブロック
+    block_given_to_allies:  int     // 他プレイヤーに付与したブロック
+    energy_used:            int     // 消費エナジー
+    cards_played:           int     // プレイしたカード枚数
+    cards_drawn:            int     // ドローした枚数
+}
 ```
 
-必要なデータ: `damage_dealt` ÷ `energy_used`、`damage_dealt` ÷ `cards_played`、`damage_received`（戦闘単位）
-
----
-
-### E. その他統計サマリー（テーブル）
-
-```
-┌────────────────┬──────────┬──────────┐
-│                │ PlayerA  │ PlayerB  │
-├─���──────────────┼──────────┼──────────┤
-│ 与ダメージ     │   320    │   180    │
-│ 被ダメージ     │    45    │    72    │
-│ 獲得ブロック   │   210    │   150    │
-│ カード使用枚数 │    28    │    22    │
-│ ドロー枚数     │    40    │    35    │
-│ エナジー消費   │    18    │    15    │
-│ ポーション使用 │     1    │     0    │
-└────────────────┴──────────┴──────────┘
-```
-
----
-
-## 2. 必要なデータ（表示設計からの逆算）
-
-### ターンレベルのデータ（B に使用）
-
-| フィールド | 型 | 用途 |
-|-----------|-----|------|
-| `damage_dealt` | int | ターン推移グラフ |
-| `damage_received` | int | 参考表示 |
-| `block_gained` | int | 参考表示 |
-| `cards_played` | int | 効率計算の分母 |
-| `energy_used` | int | 効率計算の分母 |
-| `cards_drawn` | int | サマリー |
-
-### 戦闘レベルのデータ（A・D・E に使用）
+### 3-2. 戦闘単位で収集するデータ
 
 ターンデータの累計に加えて:
 
-| フィールド | 型 | 用途 |
-|-----------|-----|------|
-| `potions_used` | int | サマリー |
+```
+CombatSummaryData {
+    ...（TurnDataの全フィールドの累計）
 
-### カードレベルのデータ（C に使用）
+    potions_used:           int
 
-カードは**戦闘単位で集計**する（ターン単位は不要）。
+    // 状態異常付与（種別ごと）
+    debuffs_applied:        { power_id: stacks_total }
+    // 例: { "Poison": 18, "Vulnerable": 4, "Weak": 6 }
 
-| フィールド | 型 | 用途 |
-|-----------|-----|------|
-| `card_id` | string | カード識別（`ModelId.Entry`） |
-| `card_name` | string | 表示用 |
-| `card_type` | string | "Attack" / "Skill" / "Power" |
-| `play_count` | int | 使用回数 |
-| `damage_dealt` | int | そのカードが与えた総ダメージ |
-
----
-
-## 3. 収集するイベントとHook
-
-### イベント①: カードプレイ（プレイ記録）
-
-**Hook**: `AfterCardPlayed(ICombatState, PlayerChoiceContext, CardPlay cardPlay)`
-
-```csharp
-cardPlay.Card.Owner     // Player（直接取得可能）
-cardPlay.Card.Id.Entry  // カードID（string）
-cardPlay.Card.Title     // カード名
-cardPlay.Card.Type      // CardType: Attack / Skill / Power
+    // カード別集計
+    card_stats: [
+        {
+            card_id:        string   // ModelId.Entry
+            card_name:      string
+            card_type:      string   // "Attack" / "Skill" / "Power" / "Status" / "Curse"
+            play_count:     int
+            damage_dealt:   int      // このカードが起因の総ダメージ
+            block_provided: int      // このカードが生成したブロック（自分+味方）
+            debuffs_applied: { power_id: stacks }
+            max_single_hit: int      // このカードの1回あたり最大ダメージ
+        }
+    ]
+}
 ```
 
-記録内容:
-- プレイヤーの `cards_played++`
-- カード別の `play_count++`（damage_dealtは0で初期化）
+### 3-3. ランキング用データ（累計・run全体）
 
-### イベント②: ダメージ発生（カードへのダメージ帰属）
-
-**Hook**: `AfterDamageGiven(... Creature dealer, DamageResult results, ..., CardModel cardSource)`
-
-`cardSource` が非nullのとき → そのカードの `damage_dealt` に加算。
-`cardSource` がnullのとき（毒・Doom等）→ `"(indirect)"` キーに集計。
-
-```csharp
-string cardKey = cardSource?.Id.Entry ?? "(indirect)";
 ```
+RunRankings {
+    player_id:      string
+    player_name:    string
 
-### イベント③: 被ダメージ
+    max_single_hit: {
+        amount:       int
+        card_id:      string
+        card_name:    string
+        combat_index: int
+        turn_number:  int
+    }
 
-**Hook**: `AfterDamageReceived(... Creature target, DamageResult result, ..., Creature dealer, ...)`
-
-`target` がプレイヤーのCreatureと一致する場合のみ記録。
-
-### イベント④: ブロック獲得
-
-**Hook**: `AfterBlockGained(ICombatState, Creature creature, Decimal amount, ValueProp props, CardModel cardSource)`
-
-`creature` がプレイヤーのCreatureと一致する場合のみ記録。
-
-### イベント⑤: エナジー消費
-
-**Hook**: `AfterEnergySpent(ICombatState, CardModel card, Int32 amount)`
-
-`card.Owner` でプレイヤーを直接取得。
-
-### イベント⑥: カードドロー
-
-**Hook**: `AfterCardDrawn(ICombatState, PlayerChoiceContext, CardModel card, Boolean fromHandDraw)`
-
-`card.Owner` でプレイヤーを取得し `cards_drawn++`。
-
-### イベント⑦: ポーション使用
-
-**Hook**: `AfterPotionUsed(IRunState, ICombatState, PotionModel potion, Creature target)`
-
-`PlayerChoiceContext` が使えないため、`target` がプレイヤーのCreatureと一致するプレイヤーを特定。
-
----
-
-## 4. データ構造（実装向け）
-
-```csharp
-// ターンスナップショット（折れ線グラフ用）
-record TurnSnapshot(
-    int CombatIndex,
-    int TurnNumber,
-    DateTime Timestamp,
-    Dictionary<string, PlayerTurnStats> StatsByPlayer  // key: playerId
-);
-
-record PlayerTurnStats(
-    string PlayerId,
-    string PlayerName,
-    int DamageDealt,
-    int DamageReceived,
-    int BlockGained,
-    int CardsPlayed,
-    int CardsDrawn,
-    int EnergyUsed
-);
-
-// 戦闘サマリー（棒グラフ・テーブル・カード内訳用）
-record CombatSummary(
-    int CombatIndex,
-    int TotalTurns,
-    DateTime Timestamp,
-    Dictionary<string, PlayerCombatStats> StatsByPlayer,
-    List<CardCombatStats> CardStats
-);
-
-record PlayerCombatStats(
-    string PlayerId,
-    string PlayerName,
-    int DamageDealt,
-    int DamageReceived,
-    int BlockGained,
-    int CardsPlayed,
-    int CardsDrawn,
-    int EnergyUsed,
-    int PotionsUsed
-);
-
-// カード別集計（戦闘単位）
-record CardCombatStats(
-    string PlayerId,
-    string PlayerName,
-    string CardId,
-    string CardName,
-    string CardType,   // "Attack" / "Skill" / "Power" / "(indirect)"
-    int PlayCount,
-    int DamageDealt
-);
+    top_cards_by_total_damage:   CardStat[]  // damage_dealt降順
+    top_cards_by_avg_damage:     CardStat[]  // damage_dealt/play_count降順
+    top_cards_by_play_count:     CardStat[]  // play_count降順
+    top_cards_by_debuff_stacks:  CardStat[]  // 特定power_idのstacks降順
+}
 ```
 
 ---
 
-## 5. 送信するJSON（バックエンドAPI向け）
+## 4. 使用するHook一覧
 
-### `POST /sessions/{id}/turns`（ターン終了時）
+### 新規追加
+
+| Hook | 用途 |
+|------|------|
+| `AfterCardPlayed(combatState, choiceContext, CardPlay)` | cards_played++、カード別play_count++、カード別block/debuff初期化 |
+| `AfterCardDrawn(combatState, choiceContext, CardModel, fromHandDraw)` | cards_drawn++ |
+| `AfterBlockGained(combatState, Creature, amount, props, CardModel)` | creature が自分 → block_gained_self / 他プレイヤー → block_given_to_allies |
+| `AfterEnergySpent(combatState, CardModel, Int32 amount)` | energy_used += amount |
+| `AfterDamageReceived(choiceContext, runState, combatState, Creature target, DamageResult, props, Creature dealer, CardModel)` | target がプレイヤーのみ damage_received += amount |
+| `AfterPowerAmountChanged(combatState, choiceContext, PowerModel, Decimal amount, Creature applier, CardModel)` | applier がプレイヤー かつ power.Owner が敵 かつ amount > 0 → debuffs_applied[power.Id.Entry] += amount |
+| `AfterPotionUsed(runState, combatState, PotionModel, Creature target)` | potions_used++ |
+
+### 既存（変更あり）
+
+| Hook | 変更内容 |
+|------|---------|
+| `AfterDamageGiven` | カードソース帰属ロジック追加（card_stats.damage_dealt更新）、max_single_hit更新 |
+
+### 既存（変更なし）
+
+| Hook | 用途 |
+|------|------|
+| `BeforeCombatStart` | 状態リセット |
+| `AfterPlayerTurnStart` | ターン確定・送信 |
+| `AfterCombatEnd` | 戦闘サマリー確定・送信 |
+
+---
+
+## 5. APIのJSONスキーマ（バックエンド向け）
+
+### `POST /sessions/{id}/turns`（ターン終了ごと）
 
 ```json
 {
   "combat_index": 2,
   "turn_number": 3,
   "timestamp": "2026-05-05T00:00:00Z",
-  "stats": {
+  "players": {
     "76561199204788207": {
       "player_name": "Ironclad",
       "damage_dealt": 45,
       "damage_received": 12,
-      "block_gained": 20,
+      "block_gained_self": 20,
+      "block_given_to_allies": 5,
+      "energy_used": 3,
       "cards_played": 5,
-      "cards_drawn": 5,
-      "energy_used": 3
+      "cards_drawn": 5
     }
   }
 }
 ```
 
-### `POST /sessions/{id}/combat_end`（戦闘終了時）
+### `POST /sessions/{id}/combat_end`（戦闘終了ごと）
 
 ```json
 {
   "combat_index": 2,
   "total_turns": 5,
   "timestamp": "2026-05-05T00:00:00Z",
-  "stats": {
+  "players": {
     "76561199204788207": {
       "player_name": "Ironclad",
       "damage_dealt": 180,
       "damage_received": 45,
-      "block_gained": 110,
+      "block_gained_self": 110,
+      "block_given_to_allies": 15,
+      "energy_used": 15,
       "cards_played": 24,
       "cards_drawn": 38,
-      "energy_used": 15,
-      "potions_used": 1
+      "potions_used": 1,
+      "debuffs_applied": {
+        "Poison": 18,
+        "Vulnerable": 4
+      },
+      "card_stats": [
+        {
+          "card_id": "Strike_R+1",
+          "card_name": "Strike+",
+          "card_type": "Attack",
+          "play_count": 4,
+          "damage_dealt": 80,
+          "block_provided": 0,
+          "debuffs_applied": {},
+          "max_single_hit": 24
+        },
+        {
+          "card_id": "(indirect)",
+          "card_name": "(間接ダメージ: Poison等)",
+          "card_type": "(indirect)",
+          "play_count": 0,
+          "damage_dealt": 18,
+          "block_provided": 0,
+          "debuffs_applied": {},
+          "max_single_hit": 3
+        }
+      ]
     }
-  },
-  "card_stats": [
-    {
-      "player_id": "76561199204788207",
-      "player_name": "Ironclad",
-      "card_id": "Strike_R+1",
-      "card_name": "Strike+",
-      "card_type": "Attack",
-      "play_count": 4,
-      "damage_dealt": 80
-    },
-    {
-      "player_id": "76561199204788207",
-      "player_name": "Ironclad",
-      "card_id": "(indirect)",
-      "card_name": "(間接ダメージ)",
-      "card_type": "(indirect)",
-      "play_count": 0,
-      "damage_dealt": 12
-    }
-  ]
+  }
 }
 ```
 
@@ -326,31 +250,37 @@ record CardCombatStats(
 
 ## 6. 実装スコープ
 
-### Phase 1.5（mod拡充・今回実装）
+### Phase 1.5（mod拡充・次フェーズ）
 
-- [x] `damage_dealt`（実装済み）
-- [ ] `damage_received` — `AfterDamageReceived`
-- [ ] `block_gained` — `AfterBlockGained`
-- [ ] `cards_played` — `AfterCardPlayed`
-- [ ] `cards_drawn` — `AfterCardDrawn`
-- [ ] `energy_used` — `AfterEnergySpent`
-- [ ] カード別 `play_count` + `damage_dealt`
+- [x] damage_dealt（実装済み）
+- [ ] damage_received — `AfterDamageReceived`
+- [ ] block_gained_self / block_given_to_allies — `AfterBlockGained`
+- [ ] energy_used — `AfterEnergySpent`
+- [ ] cards_played — `AfterCardPlayed`
+- [ ] cards_drawn — `AfterCardDrawn`
+- [ ] card_stats（play_count・damage_dealt・max_single_hit）
+- [ ] debuffs_applied — `AfterPowerAmountChanged`
 
-### Phase 2（バックエンド実装時）
+### Phase 2（バックエンド + HTTP送信）
 
-- [ ] HTTP送信（`StatsLogger` → `HttpSender`）
-- [ ] `potions_used` — `AfterPotionUsed`
-- [ ] `POST /sessions/{id}/turns` エンドポイント
-- [ ] `POST /sessions/{id}/combat_end` エンドポイント
+- [ ] potions_used — `AfterPotionUsed`
+- [ ] HTTP送信実装
+- [ ] APIエンドポイント実装（turns / combat_end）
+- [ ] ランキング集計（サーバー側）
 
 ### Phase 3（WebUI）
 
-- [ ] A〜E の各表示コンポーネント
-- [ ] 10秒ポーリング
+- [ ] ターン毎折れ線グラフ（与ダメ）
+- [ ] 戦闘毎棒グラフ（与ダメ・被ダメ・シールド）
+- [ ] カード別ダメージテーブル
+- [ ] 状態異常付与テーブル
+- [ ] 貢献スコア棒グラフ（換算係数はUI側で設定可）
+- [ ] ランキングセクション
 
 ### Phase 4（後回し）
 
-- ターン別カード使用内訳
-- スター消費（`AfterStarsSpent`）
+- 味方エナジー付与量
 - オーバーキルダメージ
-- カード別ダメージの履歴（どのターンに多く使ったか）
+- スター消費（`AfterStarsSpent`）
+- シャッフル回数
+- 換算係数のUI調整機能
