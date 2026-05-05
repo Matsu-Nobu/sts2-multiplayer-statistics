@@ -1,0 +1,56 @@
+# Fly.io アプリケーション設定
+# 公式ドキュメント: https://fly.io/docs/reference/configuration/
+#
+# 初回:
+#   fly auth login
+#   fly apps create sts2stats           # アプリ名を確定（必要なら変更）
+#   fly volume create sts2stats_data --region nrt --size 1
+#   fly deploy
+#
+# spending limit:
+#   ダッシュボード https://fly.io/dashboard で月額上限を必ず設定すること。
+
+app = "sts2stats"
+primary_region = "nrt"   # 東京リージョン
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT          = "8080"
+  DATABASE_PATH = "/data/data.db"
+  BASE_URL      = "https://sts2stats.fly.dev"   # 実 URL に合わせて要更新（独自ドメイン使うなら fly certs add の後に書き換え）
+  LOG_LEVEL     = "info"
+
+# SQLite ファイルを保存するボリュームを /data にマウント
+[[mounts]]
+  source      = "sts2stats_data"
+  destination = "/data"
+
+[http_service]
+  internal_port       = 8080
+  force_https         = true
+  # アクセスが無いとき自動停止（課金ゼロ）、リクエストで自動起動
+  auto_stop_machines  = "stop"
+  auto_start_machines = true
+  min_machines_running = 0    # 0 にすると本当に止まる（コールドスタート数秒）
+  processes           = ["app"]
+
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  cpu_kind  = "shared"
+  cpus      = 1
+  memory_mb = 256
+
+# /healthz でヘルスチェック
+[[http_service.checks]]
+  interval     = "30s"
+  timeout      = "5s"
+  grace_period = "10s"
+  method       = "get"
+  path         = "/healthz"
+  protocol     = "http"

@@ -100,3 +100,17 @@ docker-run: docker-build
 
 docker-stop:
 	-docker stop $(DOCKER_IMAGE)
+
+# --- Fly.io ---
+
+fly-deploy:
+	fly deploy
+
+fly-logs:
+	fly logs
+
+fly-status:
+	fly status
+
+fly-ssh:
+	fly ssh console
