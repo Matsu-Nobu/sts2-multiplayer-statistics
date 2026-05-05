@@ -15,10 +15,12 @@ internal static class HookPatches
     // Tracks the player whose turn is currently active (set in AfterPlayerTurnStart)
     private static (string id, string name)? _currentTurnPlayer = null;
 
-    // 直近で finalize したラウンド番号。CombatState.RoundNumber が増えたときだけターン確定する。
-    // マルチプレイで AfterPlayerTurnStart がプレイヤー数ぶん発火する問題への対策。
-    private static int _lastFinalizedRound = 0;
     // run_start emit 状態は SessionManager.RunStartAlreadyEmitted（永続化される）で管理する。
+
+    // 現在の戦闘で AfterCombatVictory が発火したか。BeforeCombatStart でリセット、
+    // AfterCombatVictory で true、AfterCombatEnd で combat_end イベントの victory として送る。
+    // room.IsVictoryRoom は「ラン全体の最終勝利部屋」フラグなので使えない。
+    private static bool _currentCombatWasVictory = false;
 
     // BeforeCombatStart(IRunState runState, CombatState? combatState)
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
@@ -41,7 +43,7 @@ internal static class HookPatches
 
             StatsCollector.BeginCombat();
             _currentTurnPlayer = null;
-            _lastFinalizedRound = 0;
+            _currentCombatWasVictory = false;
 
             // combat_start イベント発行（タブラベル等で使用）
             EmitCombatStart(runState, combatState);
@@ -55,24 +57,37 @@ internal static class HookPatches
     }
 
     // AfterPlayerTurnStart(ICombatState combatState, PlayerChoiceContext choiceContext, Player player)
-    // 「次のターン開始」＝「前ターン終了」として前ターンデータを確定する
+    // 現在のターンプレイヤーを記憶するだけ。ターン確定は AfterTurnEnd で行う。
     public static void AfterPlayerTurnStartPostfix(CombatState? combatState, object? player)
     {
         try
         {
-            int round = combatState?.RoundNumber ?? 0;
-            if (round > _lastFinalizedRound)
-            {
-                var payload = StatsCollector.FinalizeTurn(isFinal: false);
-                if (payload != null) DispatchTurn(payload);
-                _lastFinalizedRound = round;
-            }
-
             _currentTurnPlayer = TryGetPlayerInfo(player);
         }
         catch (Exception ex)
         {
             Log.Error($"[StsStats] AfterPlayerTurnStart error: {ex.Message}");
+        }
+    }
+
+    // AfterTurnEnd(ICombatState combatState, CombatSide side)
+    // プレイヤー側ターン終了時に finalize。AfterPlayerTurnStart 起点だと
+    // 「ターン開始ドローだけの空ターン」が先頭に挟まる off-by-one のため、こちらに切替。
+    public static void AfterTurnEndPostfix(CombatState? combatState, object? side)
+    {
+        try
+        {
+            // CombatSide enum: None=0, Player=1, Enemy=2 ; Player のみで finalize
+            if (side == null) return;
+            int sideValue = Convert.ToInt32(side);
+            if (sideValue != 1) return;
+
+            var payload = StatsCollector.FinalizeTurn(isFinal: false);
+            if (payload != null) DispatchTurn(payload);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] AfterTurnEnd error: {ex.Message}");
         }
     }
 
@@ -100,6 +115,9 @@ internal static class HookPatches
     {
         try
         {
+            // この戦闘は勝利した（後段の AfterCombatEnd で combat_end イベントの victory に使う）
+            _currentCombatWasVictory = true;
+
             if (runState == null || room == null) return;
 
             bool isVictoryRoom = (bool?)(room.GetType().GetProperty("IsVictoryRoom")?.GetValue(room)) ?? false;
@@ -157,7 +175,8 @@ internal static class HookPatches
             var playerInfo = TryFindPlayerForCreature(combatState, dealer);
             if (playerInfo == null) return;
 
-            var card = TryGetCardInfo(cardSource);
+            // cardSource が無い間接ダメージは DamageSourceContext（毒・オーブ等）から拾う
+            var card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
             StatsCollector.RecordDamageDealt(playerInfo.Value.id, playerInfo.Value.name, amount, card);
         }
         catch (Exception ex)
@@ -453,6 +472,22 @@ internal static class HookPatches
         }
     }
 
+    /// <summary>LocString からローカライズ済み実テキストを取得。失敗 / 空 → null。</summary>
+    private static string? TryGetLocStringText(object? locString)
+    {
+        if (locString == null) return null;
+        try
+        {
+            var formatted = locString.GetType()
+                .GetMethod("GetFormattedText", Type.EmptyTypes)?.Invoke(locString, null) as string;
+            if (!string.IsNullOrEmpty(formatted)) return formatted;
+            var raw = locString.GetType()
+                .GetMethod("GetRawText", Type.EmptyTypes)?.Invoke(locString, null) as string;
+            return string.IsNullOrEmpty(raw) ? null : raw;
+        }
+        catch { return null; }
+    }
+
     private static CardInfo? TryGetCardInfo(CardModel? cardModel)
     {
         if (cardModel == null) return null;
@@ -658,7 +693,9 @@ internal static class HookPatches
                 var enc = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
                 var encId = enc?.GetType().GetProperty("Id")?.GetValue(enc);
                 encounterId = encId?.GetType().GetProperty("Entry")?.GetValue(encId)?.ToString();
-                encounterName = enc?.GetType().GetProperty("Title")?.GetValue(enc)?.ToString() ?? encounterId;
+                // EncounterModel.Title は LocString。GetFormattedText() で実テキストを取る
+                var title = enc?.GetType().GetProperty("Title")?.GetValue(enc);
+                encounterName = TryGetLocStringText(title) ?? encounterId;
             }
             catch { /* encounter 取得失敗時は ID/Name なしでイベント発行 */ }
 
@@ -685,7 +722,7 @@ internal static class HookPatches
         }
     }
 
-    /// <summary>combat_end イベントを emit。room.IsVictoryRoom で勝敗判定。</summary>
+    /// <summary>combat_end イベントを emit。AfterCombatVictory が事前に発火していれば victory=true。</summary>
     private static void EmitCombatEnd(IRunState? runState, CombatState? combatState, object? room)
     {
         try
@@ -693,14 +730,9 @@ internal static class HookPatches
             int combatIndex = StatsCollector.CurrentCombatIndex;
             int floor = (int?)runState?.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
 
-            // combat の勝敗: room.IsVictoryRoom or 敵全滅で判定。room が無い場合は無し。
-            bool victory = false;
-            try
-            {
-                if (room != null)
-                    victory = (bool?)room.GetType().GetProperty("IsVictoryRoom")?.GetValue(room) ?? false;
-            }
-            catch { }
+            // combat の勝敗: AfterCombatVictory hook の発火有無で判定する。
+            // room.IsVictoryRoom はラン全体の最終勝利部屋専用なので使えない。
+            bool victory = _currentCombatWasVictory;
 
             EventBuffer.Emit(new EventRecord(
                 EventUuid:  Guid.NewGuid(),
