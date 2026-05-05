@@ -14,7 +14,9 @@ namespace StsStats;
 /// </summary>
 internal static class SessionConfig
 {
-    public const string DefaultBackendUrl = "http://localhost:8080";
+    // 公開バックエンド。エンドユーザは何も設定しなくてもこれに接続される。
+    // セルフホストする場合は config.json または STS_STATS_BACKEND_URL で上書き可能。
+    public const string DefaultBackendUrl = "https://sts2stats.fly.dev";
 
     /// <summary>バックエンドURL。空ならHTTP送信無効。</summary>
     public static string BackendUrl { get; private set; } = DefaultBackendUrl;
