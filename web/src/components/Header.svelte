@@ -41,7 +41,7 @@
 <header class="border-b border-bg-3 bg-bg-1">
   <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
     <div>
-      <div class="text-xs uppercase tracking-widest text-slate-500">STS2 統計</div>
+      <div class="text-xs uppercase tracking-widest text-slate-500">StS2 Multiplayer Statistics</div>
       <h1 class="text-2xl font-semibold mt-1">{session.host_name ?? '不明なプレイヤー'}</h1>
       <div class="text-sm text-slate-400 mt-1 flex flex-wrap items-center gap-2">
         {#if session.character_id}<span>⚔ {session.character_id}</span><span>·</span>{/if}

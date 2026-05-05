@@ -78,7 +78,7 @@ sts2-multiplayer-statistics/
 ```json
 {
   "id": "StsStats",
-  "name": "STS Multiplayer Statistics",
+  "name": "StS2 Multiplayer Statistics",
   "author": "nobu",
   "description": "Tracks per-player combat statistics and exports them for sharing.",
   "version": "0.1.0",
