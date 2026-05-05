@@ -450,13 +450,46 @@ self_contribution = amount - sum(contributors.contribution)
 
 ---
 
-## 12. 確認したい論点
+## 12. 確定した方針
 
-- ✓ 旧形式との互換は持たない（確定）
-- ✓ rDPS は Skada 風 v1 から（確定）
-- 上記 5 の **applier 不明時の扱い**: "system" 扱いに統一する？ NULL のまま rDPS 計算から除外する？
-- 上記 8 の **whitelist**: VULNERABLE と POISON の 2 種で開始でいいか？
-- ETag 生成式: 新 turn_events の最新 received_at を組み込めば OK か？
-- WebUI 「旧形式セッション」の見せ方: エラーページ？ 何も表示しない？
+- 旧形式との互換は持たない、完全切替
+- rDPS は Skada 風 v1 から
+- **applier 不明時**: `applier_player_id = NULL` で記録、rDPS 計算からは除外
+- **whitelist v1**: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER`
+  - VULNERABLE: 1.5 倍効果なので damage の 1/3 を applier に credit
+  - POISON: tick damage 100% を applier に
+  - DOOM: 即死系の damage 100% を applier に
+  - これらは `IndirectDamagePatches.cs` で既に Harmony patch によりマーキング機構が用意されている（card_id 予約値: `(poison)` `(doom)` 等）。同じ仕組みで active_on_target に乗せる
+- **旧形式セッション**: 404 を返す（旧 `turns` 行は無視）。実装完了 + 動作確認後に旧データ全削除（`DROP TABLE turns`）
+- **タイムラインビュー**: WebUI に追加（後述）
 
-これらが固まれば実装着手できます。
+---
+
+## 13. タイムラインビュー（追加機能）
+
+イベント列形式に切り替わったことで、追加実装ほぼ無しで「ターンごとの詳細経過」を表示できる。
+
+### 表示イメージ
+
+```
+=== Combat 3 / Turn 5 ===
+1. [00:32] PlayerA  card_played    Bash                cost: 2
+2. [00:32] PlayerA  power_changed  → enemy: Vulnerable +2
+3. [00:32] PlayerA  damage_dealt   → enemy: 18         [Vuln x2 by A]
+4. [00:34] PlayerA  card_played    Strike+             cost: 1
+5. [00:34] PlayerA  damage_dealt   → enemy: 9          [Vuln x2 by A]
+6. [00:36] PlayerB  card_played    Defend
+7. [00:36] PlayerB  block_gained   8
+8. [00:38] PlayerB  card_played    Inflame
+9. [00:38] PlayerB  power_changed  → self: Strength +2
+```
+
+### 実装範囲
+
+- 新コンポーネント `TimelineView.svelte`
+- 戦闘タブの「Timeline」サブタブとして配置（既存 Summary と並列）
+- turn_events を `(combat_index, turn_number, sequence)` 順に並べてフォーマットするだけ
+- イベント種別ごとにアイコン・色分け、active power はバッジで添付表示
+- 折りたたみ可能（ターン単位、または戦闘単位）
+
+新設データやサーバ変更は不要、純フロントエンド実装。
