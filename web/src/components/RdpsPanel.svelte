@@ -15,7 +15,23 @@
   );
   let max = $derived(rows.reduce((m, r) => Math.max(m, r.total), 0) || 1);
 
-  // バフ/デバフ別の小計を作る
+  // 「他人に貢献した分」の小計: バフ/デバフ source ごとに集計し、誰に貢献したかをまとめる
+  function toBreakdown(rec: typeof rows[number]): { source: string; amount: number; recipients: string[] }[] {
+    const m = new Map<string, { amount: number; recipients: Set<string> }>();
+    for (const t of rec.to) {
+      if (!m.has(t.source)) m.set(t.source, { amount: 0, recipients: new Set() });
+      const e = m.get(t.source)!;
+      e.amount += t.amount;
+      e.recipients.add(t.recipient);
+    }
+    return [...m.entries()].map(([source, v]) => ({
+      source,
+      amount: v.amount,
+      recipients: [...v.recipients].map(r => playerNames[r] ?? r),
+    }));
+  }
+
+  // 「他人から受けた分」の小計（表示参考用、rDPS には含まれない）
   function fromBreakdown(rec: typeof rows[number]): { source: string; amount: number; appliers: string[] }[] {
     const m = new Map<string, { amount: number; appliers: Set<string> }>();
     for (const f of rec.from) {
@@ -53,41 +69,47 @@
         <thead class="bg-bg-2 text-slate-400 text-xs uppercase">
           <tr>
             <th class="text-left  py-2 px-3">プレイヤー</th>
-            <th class="text-right py-2 px-3">合計</th>
+            <th class="text-right py-2 px-3">rDPS 合計</th>
             <th class="text-right py-2 px-3">自力</th>
-            <th class="text-left  py-2 px-3">他人から（バフ・デバフ）</th>
-            <th class="text-left  py-2 px-3">他人へ貢献</th>
+            <th class="text-left  py-2 px-3">他人へ貢献（rDPS加算）</th>
+            <th class="text-left  py-2 px-3">他人から（参考）</th>
             <th class="text-left  py-2 px-3 w-1/4">バー</th>
           </tr>
         </thead>
         <tbody>
           {#each rows as r (r.pid)}
+            {@const toList = toBreakdown(r)}
             {@const fromList = fromBreakdown(r)}
             <tr class="border-t border-bg-3 hover:bg-bg-2 align-top">
               <td class="py-2 px-3 font-medium">{playerNames[r.pid] ?? r.pid}</td>
               <td class="py-2 px-3 text-right tabular text-ok">{r.total}</td>
               <td class="py-2 px-3 text-right tabular text-slate-300">{r.self}</td>
               <td class="py-2 px-3">
-                {#if fromList.length === 0}
+                {#if toList.length === 0}
                   <span class="text-slate-500">—</span>
                 {:else}
                   <ul class="space-y-0.5">
-                    {#each fromList as f}
+                    {#each toList as t}
                       <li class="text-xs">
-                        <span class="text-accent">+{f.amount}</span>
-                        <span class="text-slate-400">{sourceLabel(f.source)}</span>
-                        <span class="text-slate-500">({f.appliers.join(', ')})</span>
+                        <span class="text-ok">+{t.amount}</span>
+                        <span class="text-slate-400">{sourceLabel(t.source)}</span>
+                        <span class="text-slate-500">→ {t.recipients.join(', ')}</span>
                       </li>
                     {/each}
                   </ul>
                 {/if}
               </td>
               <td class="py-2 px-3">
-                {#if r.to.length === 0}
+                {#if fromList.length === 0}
                   <span class="text-slate-500">—</span>
                 {:else}
-                  {@const total = r.to.reduce((s, x) => s + x.amount, 0)}
-                  <span class="text-xs text-slate-300">{total}</span>
+                  <ul class="space-y-0.5">
+                    {#each fromList as f}
+                      <li class="text-xs text-slate-500">
+                        +{f.amount} {sourceLabel(f.source)} ← {f.appliers.join(', ')}
+                      </li>
+                    {/each}
+                  </ul>
                 {/if}
               </td>
               <td class="py-2 px-3">

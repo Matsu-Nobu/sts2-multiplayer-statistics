@@ -76,10 +76,12 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
     credit(dealer, dealer, 'self', dealerShare);
   }
 
-  // total を埋める
+  // total = 自分の素ダメ (self) + 他人にバフ・デバフで貢献した分 (to)
+  // (b.from は「他人のバフから受け取った分」で、これは別の dealer の self に
+  //  含まれているのでここでは加算しない。表示用の情報として残す)
   for (const pid of Object.keys(byPlayer)) {
     const b = byPlayer[pid];
-    b.total = b.self + b.from.reduce((s, x) => s + x.amount, 0);
+    b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
   }
   return { byPlayer };
 }
