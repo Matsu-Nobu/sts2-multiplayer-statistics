@@ -329,12 +329,37 @@ internal static class HookPatches
     {
         ulong netId = (player.GetType().GetProperty("NetId")?.GetValue(player) as ulong?) ?? 0UL;
 
-        // シングルプレイ等で NetId=0 のときはローカルプレイヤーIDで補う
-        ulong steamId = netId != 0UL ? netId : TryGetLocalPlayerId();
+        // 1. NetId が Steam ID ならそれで名前解決（マルチプレイ）
+        string? name = TryGetSteamName(netId);
 
-        string id = steamId != 0UL ? steamId.ToString() : "unknown";
-        string? name = TryGetSteamName(steamId) ?? TryGetCharacterTitle(player);
+        // 2. シングルプレイでは NetId が合成ID（1等）になる。ローカルSteam IDで再試行
+        ulong resolvedId = netId;
+        if (string.IsNullOrEmpty(name))
+        {
+            ulong localId = TryGetLocalPlayerId();
+            if (localId != 0UL)
+            {
+                name = TryGetSteamName(localId);
+                if (!string.IsNullOrEmpty(name)) resolvedId = localId;
+            }
+        }
+
+        // 3. それでも取れなければキャラクターIDをフォールバック名に使う
+        name ??= TryGetCharacterId(player);
+
+        string id = resolvedId != 0UL ? resolvedId.ToString() : (name ?? "unknown");
         return (id, name ?? id);
+    }
+
+    private static string? TryGetCharacterId(object player)
+    {
+        try
+        {
+            var character = player.GetType().GetProperty("Character")?.GetValue(player);
+            var modelId   = character?.GetType().GetProperty("Id")?.GetValue(character);
+            return modelId?.GetType().GetProperty("Entry")?.GetValue(modelId)?.ToString();
+        }
+        catch { return null; }
     }
 
     private static ulong TryGetLocalPlayerId()
@@ -356,26 +381,6 @@ internal static class HookPatches
             Log.Error($"[StsStats] TryGetSteamName error: {ex.Message}");
             return null;
         }
-    }
-
-    private static string? TryGetCharacterTitle(object player)
-    {
-        try
-        {
-            var character = player.GetType().GetProperty("Character")?.GetValue(player);
-            if (character == null) return null;
-
-            var title = character.GetType().GetProperty("Title")?.GetValue(character);
-            if (title == null) return null;
-
-            // LocString.GetFormattedText() で実テキストを取得
-            var formatted = title.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)?.Invoke(title, null) as string;
-            if (!string.IsNullOrEmpty(formatted)) return formatted;
-
-            var raw = title.GetType().GetMethod("GetRawText", Type.EmptyTypes)?.Invoke(title, null) as string;
-            return string.IsNullOrEmpty(raw) ? null : raw;
-        }
-        catch { return null; }
     }
 
     private static CardInfo? TryGetCardInfo(CardModel? cardModel)
