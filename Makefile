@@ -6,10 +6,15 @@ EMBED_DIR   := $(BACKEND_DIR)/internal/static/dist
 LOG_PATH    := $(HOME)/Library/Application Support/SlayTheSpire2/sts_stats.jsonl
 LOG_FALLBACK := /tmp/sts_stats.jsonl
 
+DOCKER_IMAGE := sts2stats
+DOCKER_TAG   := dev
+DOCKER_DATA_DIR := $(PWD)/.docker-data
+
 .PHONY: all test build install clean log \
         backend-dev backend-test backend-build backend-clean \
         web-dev web-install web-build \
-        app-build app-run
+        app-build app-run \
+        docker-build docker-run docker-stop
 
 # デフォルト: mod テスト → ビルド → インストール
 all: test build install
@@ -79,3 +84,19 @@ app-build: web-build
 # 統合バイナリで起動
 app-run: app-build
 	$(BACKEND_DIR)/bin/server
+
+# --- Docker ---
+
+docker-build:
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+# /data をホストの ./.docker-data にマウントして永続化、:8080 で公開
+docker-run: docker-build
+	mkdir -p $(DOCKER_DATA_DIR)
+	docker run --rm --name $(DOCKER_IMAGE) \
+		-p 8080:8080 \
+		-v $(DOCKER_DATA_DIR):/data \
+		$(DOCKER_IMAGE):$(DOCKER_TAG)
+
+docker-stop:
+	-docker stop $(DOCKER_IMAGE)

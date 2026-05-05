@@ -1,0 +1,35 @@
+# --- 一般 ---
+.git
+.gitignore
+.gitattributes
+README.md
+*.md
+LICENSE
+.env
+.env.example
+.claude/
+.vscode/
+.idea/
+
+# --- mod 関係（Docker 像に含めない）---
+mod/
+mod.tests/
+docs/
+
+# --- web のビルド成果物・依存（Docker 内で再ビルド）---
+web/node_modules/
+web/dist/
+web/.svelte-kit/
+
+# --- backend ローカル成果物 ---
+backend/bin/
+backend/data.db
+backend/data.db-shm
+backend/data.db-wal
+backend/internal/static/dist/*
+!backend/internal/static/dist/.gitignore
+!backend/internal/static/dist/index.html
+
+# --- macOS / Editor ---
+.DS_Store
+*.swp
