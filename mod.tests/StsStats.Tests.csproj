@@ -17,7 +17,6 @@
 
   <!-- ゲーム DLL に依存しないファイルをそのままコンパイル（テスト対象） -->
   <ItemGroup>
-    <Compile Include="../mod/src/StatsCollector.cs" />
     <Compile Include="../mod/src/SessionConfig.cs" />
     <Compile Include="../mod/src/EventTypes.cs" />
     <Compile Include="../mod/src/PayloadJson.cs" />

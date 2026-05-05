@@ -34,15 +34,10 @@ internal sealed class HttpSender : IDisposable
         _worker       = Task.Run(WorkerLoop);
     }
 
-    public void EnqueueTurn(string sessionId, string writeToken, TurnPayload payload)
-    {
-        Enqueue(new WorkItem(WorkType.Turn, sessionId, writeToken, payload, null, 0), isRetry: false);
-    }
-
     public void EnqueueEvents(string sessionId, string writeToken, IReadOnlyList<EventRecord> events)
     {
         if (events.Count == 0) return;
-        Enqueue(new WorkItem(WorkType.Events, sessionId, writeToken, null, events, 0), isRetry: false);
+        Enqueue(new WorkItem(sessionId, writeToken, events, 0), isRetry: false);
     }
 
     /// <summary>
@@ -125,12 +120,7 @@ internal sealed class HttpSender : IDisposable
     {
         try
         {
-            return item.Type switch
-            {
-                WorkType.Turn   => await _api.PostTurnAsync(item.SessionId, item.WriteToken, item.Turn!),
-                WorkType.Events => await _api.PostEventsAsync(item.SessionId, item.WriteToken, item.Events!),
-                _               => false,
-            };
+            return await _api.PostEventsAsync(item.SessionId, item.WriteToken, item.Events);
         }
         catch (Exception ex)
         {
@@ -139,14 +129,10 @@ internal sealed class HttpSender : IDisposable
         }
     }
 
-    private enum WorkType { Turn, Events }
-
     private record WorkItem(
-        WorkType Type,
         string   SessionId,
         string   WriteToken,
-        TurnPayload? Turn,
-        IReadOnlyList<EventRecord>? Events,
+        IReadOnlyList<EventRecord> Events,
         int      Attempt
     );
 }

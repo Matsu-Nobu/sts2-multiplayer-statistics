@@ -9,30 +9,12 @@ namespace StsStats.Tests;
 public class HttpSenderTests
 {
     [Fact]
-    public async Task EnqueueTurn_DeliversToApiClient()
-    {
-        var api = new RecordingApi();
-        using var sender = new HttpSender(api);
-
-        StatsCollector.Reset();
-        StatsCollector.BeginCombat();
-        StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        var payload = StatsCollector.FinalizeTurn()!;
-
-        sender.EnqueueTurn("sess-1", "tok", payload);
-        await sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
-
-        Assert.Equal(1, api.TurnsDelivered);
-    }
-
-    [Fact]
     public async Task EnqueueEvents_DeliversToApiClient()
     {
         var api = new RecordingApi();
         using var sender = new HttpSender(api);
 
-        var ev = new EventRecord(Guid.NewGuid(), "run_start", DateTime.UtcNow,
-            "p1", 0, new { character_id = "IRONCLAD" });
+        var ev = NewEvent("run_start");
         sender.EnqueueEvents("sess-1", "tok", new[] { ev });
         await sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
 
@@ -41,17 +23,26 @@ public class HttpSenderTests
     }
 
     [Fact]
+    public async Task EnqueueEvents_BulkBatch_DeliveredAtomically()
+    {
+        var api = new RecordingApi();
+        using var sender = new HttpSender(api);
+
+        var batch = new[] { NewEvent("a"), NewEvent("b"), NewEvent("c") };
+        sender.EnqueueEvents("sess-1", "tok", batch);
+        await sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(1, api.EventBatchesDelivered);
+        Assert.Equal(3, api.EventsDelivered);
+    }
+
+    [Fact]
     public async Task FailingApi_RetriesUpToMax()
     {
         var api = new FlakeyApi(failTimes: 2);  // fail twice, succeed on 3rd
         using var sender = new HttpSender(api, backoff: _ => TimeSpan.FromMilliseconds(20));
 
-        StatsCollector.Reset();
-        StatsCollector.BeginCombat();
-        StatsCollector.RecordDamageDealt("p1", "P", 5);
-        var payload = StatsCollector.FinalizeTurn()!;
-
-        sender.EnqueueTurn("s", "t", payload);
+        sender.EnqueueEvents("s", "t", new[] { NewEvent("x") });
         await sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
 
         Assert.Equal(3, api.Attempts);   // 初回 + リトライ 2回
@@ -63,31 +54,25 @@ public class HttpSenderTests
         var api = new FlakeyApi(failTimes: 100);  // 常に失敗
         using var sender = new HttpSender(api, backoff: _ => TimeSpan.FromMilliseconds(20));
 
-        var ev = new EventRecord(Guid.NewGuid(), "run_end", DateTime.UtcNow, "p", 0, new { });
-        sender.EnqueueEvents("s", "t", new[] { ev });
-
+        sender.EnqueueEvents("s", "t", new[] { NewEvent("y") });
         await sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
 
         // 初回 + 3 リトライ = 4 試行で諦め
         Assert.Equal(4, api.Attempts);
     }
 
+    private static EventRecord NewEvent(string type) =>
+        new(Guid.NewGuid(), type, DateTime.UtcNow, "p1", 0, null, null, null, new { });
+
     // --- mocks ---
 
     private sealed class RecordingApi : IApiClient
     {
-        public int TurnsDelivered;
         public int EventBatchesDelivered;
         public int EventsDelivered;
 
         public Task<CreateSessionResult?> CreateSessionAsync(CreateSessionRequest req)
             => Task.FromResult<CreateSessionResult?>(new CreateSessionResult("s", "t", "u"));
-
-        public Task<bool> PostTurnAsync(string sessionId, string writeToken, TurnPayload payload)
-        {
-            Interlocked.Increment(ref TurnsDelivered);
-            return Task.FromResult(true);
-        }
 
         public Task<bool> PostEventsAsync(string sessionId, string writeToken, IReadOnlyList<EventRecord> events)
         {
@@ -107,13 +92,7 @@ public class HttpSenderTests
         public Task<CreateSessionResult?> CreateSessionAsync(CreateSessionRequest req)
             => Task.FromResult<CreateSessionResult?>(null);
 
-        public Task<bool> PostTurnAsync(string sessionId, string writeToken, TurnPayload payload)
-            => Common();
-
         public Task<bool> PostEventsAsync(string sessionId, string writeToken, IReadOnlyList<EventRecord> events)
-            => Common();
-
-        private Task<bool> Common()
         {
             int n = Interlocked.Increment(ref Attempts);
             if (n <= _failTimes) return Task.FromResult(false);

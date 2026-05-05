@@ -1,5 +1,7 @@
+using System;
 using System.Collections;
-using System.Reflection;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Logging;
@@ -10,29 +12,33 @@ using MegaCrit.Sts2.Core.ValueProps;
 
 namespace StsStats;
 
+/// <summary>
+/// Harmony hook の postfix 群。
+/// Phase 3.5 ではすべてのゲームイベントを EventBuffer 経由で raw event として
+/// 発行する（旧 StatsCollector 集計値方式は廃止）。
+///
+/// 集計（戦闘単位サマリ・rDPS・カード別統計）は WebUI 側で行う。
+/// </summary>
 internal static class HookPatches
 {
-    // Tracks the player whose turn is currently active (set in AfterPlayerTurnStart)
+    // 現在ターン中のプレイヤー（AfterPlayerTurnStart で更新）。potion_used 等で使う。
     private static (string id, string name)? _currentTurnPlayer = null;
 
-    // run_start emit 状態は SessionManager.RunStartAlreadyEmitted（永続化される）で管理する。
-
-    // 現在の戦闘で AfterCombatVictory が発火したか。BeforeCombatStart でリセット、
-    // AfterCombatVictory で true、AfterCombatEnd で combat_end イベントの victory として送る。
-    // room.IsVictoryRoom は「ラン全体の最終勝利部屋」フラグなので使えない。
+    // 現在の戦闘で AfterCombatVictory が発火したか（combat_end の victory 判定に使う）
     private static bool _currentCombatWasVictory = false;
 
-    // BeforeCombatStart(IRunState runState, CombatState? combatState)
+    // === ライフサイクル hook ============================================
+
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
     {
         try
         {
             if (runState != null)
             {
-                // セッションを確保（同 run なら復元、新 run なら作成）
                 EnsureSessionForRun(runState);
+                int floor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+                EventBuffer.UpdateFloor(floor);
 
-                // run_start: 過去にこの run で emit していなければ発行
                 if (!SessionManager.RunStartAlreadyEmitted)
                 {
                     EmitRunStartForAllPlayers(runState);
@@ -41,11 +47,11 @@ internal static class HookPatches
                 }
             }
 
-            StatsCollector.BeginCombat();
+            EventBuffer.BeginCombat();
+            PowerOriginRegistry.ClearForCombat();
             _currentTurnPlayer = null;
             _currentCombatWasVictory = false;
 
-            // combat_start イベント発行（タブラベル等で使用）
             EmitCombatStart(runState, combatState);
 
             Log.Info("[StsStats] Combat started");
@@ -56,8 +62,6 @@ internal static class HookPatches
         }
     }
 
-    // AfterPlayerTurnStart(ICombatState combatState, PlayerChoiceContext choiceContext, Player player)
-    // 現在のターンプレイヤーを記憶するだけ。ターン確定は AfterTurnEnd で行う。
     public static void AfterPlayerTurnStartPostfix(CombatState? combatState, object? player)
     {
         try
@@ -70,20 +74,20 @@ internal static class HookPatches
         }
     }
 
-    // AfterTurnEnd(ICombatState combatState, CombatSide side)
-    // プレイヤー側ターン終了時に finalize。AfterPlayerTurnStart 起点だと
-    // 「ターン開始ドローだけの空ターン」が先頭に挟まる off-by-one のため、こちらに切替。
+    /// <summary>
+    /// AfterTurnEnd(ICombatState combatState, CombatSide side)
+    /// CombatSide.Player のときのみ「プレイヤー側ターン終了 → 次ターンへ」のシグナル
+    /// として扱い、turn_number を進める。
+    /// </summary>
     public static void AfterTurnEndPostfix(CombatState? combatState, object? side)
     {
         try
         {
-            // CombatSide enum: None=0, Player=1, Enemy=2 ; Player のみで finalize
             if (side == null) return;
-            int sideValue = Convert.ToInt32(side);
+            int sideValue = Convert.ToInt32(side);  // None=0, Player=1, Enemy=2
             if (sideValue != 1) return;
 
-            var payload = StatsCollector.FinalizeTurn(isFinal: false);
-            if (payload != null) DispatchTurn(payload);
+            EventBuffer.BeginTurn();
         }
         catch (Exception ex)
         {
@@ -91,16 +95,11 @@ internal static class HookPatches
         }
     }
 
-    // AfterCombatEnd(IRunState runState, CombatState? combatState, CombatRoom room)
     public static void AfterCombatEndPostfix(IRunState? runState, CombatState? combatState, object? room)
     {
         try
         {
-            var payload = StatsCollector.FinalizeTurn(isFinal: true);
-            if (payload != null) DispatchTurn(payload);
-
-            // combat_end イベント発行（勝敗を含む）
-            EmitCombatEnd(runState, combatState, room);
+            EmitCombatEnd(runState, combatState);
         }
         catch (Exception ex)
         {
@@ -108,23 +107,18 @@ internal static class HookPatches
         }
     }
 
-    // AfterCombatVictory(IRunState runState, ICombatState combatState, CombatRoom room)
-    // 最終ボス戦突破などで run 全体勝利を判定したい場合に拡張する。
-    // 現状は IsVictoryRoom かつ Act が最終 act の場合に run_end(victory) を emit。
     public static void AfterCombatVictoryPostfix(IRunState? runState, CombatState? combatState, object? room)
     {
         try
         {
-            // この戦闘は勝利した（後段の AfterCombatEnd で combat_end イベントの victory に使う）
             _currentCombatWasVictory = true;
-            Log.Info($"[StsStats] AfterCombatVictory fired (combat_index={StatsCollector.CurrentCombatIndex})");
+            Log.Info($"[StsStats] AfterCombatVictory fired (combat_index={EventBuffer.CurrentCombatIndex})");
 
+            // 最終ボス突破時の run_end(victory) 発行は維持
             if (runState == null || room == null) return;
-
             bool isVictoryRoom = (bool?)(room.GetType().GetProperty("IsVictoryRoom")?.GetValue(room)) ?? false;
             if (!isVictoryRoom) return;
 
-            // 最終 act の判定: CurrentActIndex が Acts.Count - 1
             int actIndex = (int?)runState.GetType().GetProperty("CurrentActIndex")?.GetValue(runState) ?? -1;
             int actCount = (runState.GetType().GetProperty("Acts")?.GetValue(runState) as IEnumerable)?.Cast<object>().Count() ?? -1;
             bool isFinalAct = actIndex >= 0 && actCount > 0 && actIndex == actCount - 1;
@@ -138,19 +132,14 @@ internal static class HookPatches
         }
     }
 
-    // AfterDeath(IRunState runState, ICombatState combatState, Creature creature, bool wasRemovalPrevented, float deathAnimLength)
     public static void AfterDeathPostfix(IRunState? runState, CombatState? combatState, Creature? creature)
     {
         try
         {
             if (runState == null || creature == null) return;
-
-            // 死亡したのがプレイヤー創物か
             var playerInfo = TryFindPlayerForCreature(combatState, creature);
             if (playerInfo == null) return;
 
-            // マルチプレイで他プレイヤーがまだ生きていれば run は続く。run_end は emit しない。
-            // 戦闘自体も他プレイヤーが続行するので combat_end / turn flush もここではやらない。
             int alive = CountAlivePlayers(runState);
             if (alive > 0)
             {
@@ -158,14 +147,8 @@ internal static class HookPatches
                 return;
             }
 
-            // 全員死亡 = run 終了（シングルプレイは常にこちらに来る）
-            // STS2 は player death では AfterCombatEnd を発火しないようなので、明示的に flush する。
-            var payload = StatsCollector.FinalizeTurn(isFinal: true);
-            if (payload != null) DispatchTurn(payload);
-
-            // 戦闘の負けでもあるので combat_end も明示送信（victory=false）
-            EmitCombatEnd(runState, combatState, room: null);
-
+            // 全員死亡 = run 終了
+            EmitCombatEnd(runState, combatState);   // combat_end (victory=false) を明示送信
             EmitRunEnd(runState, playerId: playerInfo.Value.id, outcome: "death");
         }
         catch (Exception ex)
@@ -174,9 +157,8 @@ internal static class HookPatches
         }
     }
 
-    // AfterDamageGiven(PlayerChoiceContext? choiceContext, CombatState? combatState,
-    //                  Creature? dealer, DamageResult? results, ValueProp props,
-    //                  Creature? target, CardModel? cardSource)
+    // === 戦闘内 hook =====================================================
+
     public static void AfterDamageGivenPostfix(
         CombatState? combatState,
         Creature?    dealer,
@@ -187,31 +169,45 @@ internal static class HookPatches
         try
         {
             if (dealer == null || results == null) return;
-
             int amount = (int)results.UnblockedDamage;
             if (amount <= 0) return;
 
-            // ケース1: プレイヤーが直接与えたダメージ
+            // dealer がプレイヤーか間接ダメージか判定
             var dealerPlayer = TryFindPlayerForCreature(combatState, dealer);
+            string? dealerPlayerId;
+            CardInfo? card;
+
             if (dealerPlayer != null)
             {
-                // cardSource が無い間接ダメージは DamageSourceContext から拾う
-                var card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
-                StatsCollector.RecordDamageDealt(dealerPlayer.Value.id, dealerPlayer.Value.name, amount, card);
-                return;
+                // 直接ダメージ
+                dealerPlayerId = dealerPlayer.Value.id;
+                card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
+            }
+            else
+            {
+                // 間接ダメージ（poison/doom/lightning など）→ DoT applier を探して帰属
+                if (target == null) return;
+                var applierPlayer = FindIndirectDamageApplier(target, combatState);
+                if (applierPlayer == null) return;
+                dealerPlayerId = applierPlayer.Value.id;
+                card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
             }
 
-            // ケース2: 間接ダメージ（Poison/Burn 等の DoT tick）
-            // dealer は通常 enemy 自身、target も enemy 自身。target に乗っている DoT の applier を探して帰属。
-            if (target != null)
+            string? targetPlayerId = TryFindPlayerForCreature(combatState, target)?.id;
+            int hitIndex = (int?)results.GetType().GetProperty("HitIndex")?.GetValue(results) ?? 0;
+
+            EventBuffer.EmitTurnEvent("damage_dealt", dealerPlayerId, new
             {
-                var applierPlayer = FindIndirectDamageApplier(target, combatState);
-                if (applierPlayer != null)
-                {
-                    var card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
-                    StatsCollector.RecordDamageDealt(applierPlayer.Value.id, applierPlayer.Value.name, amount, card);
-                }
-            }
+                amount               = amount,
+                target_creature_id   = target != null ? CreatureIdentity(target) : null,
+                target_player_id     = targetPlayerId,
+                source_card_id       = card?.CardId,
+                source_card_name     = card?.CardName,
+                source_card_type     = card?.CardType,
+                hit_index            = hitIndex,
+                active_on_target     = ActivePowersSnapshot.ForCreature(target),
+                active_on_dealer     = ActivePowersSnapshot.ForCreature(dealer),
+            });
         }
         catch (Exception ex)
         {
@@ -219,24 +215,29 @@ internal static class HookPatches
         }
     }
 
-    // AfterDamageReceived(PlayerChoiceContext choiceContext, IRunState runState, ICombatState combatState,
-    //                     Creature target, DamageResult result, ValueProp props, Creature dealer, CardModel cardSource)
     public static void AfterDamageReceivedPostfix(
         CombatState?  combatState,
         Creature?     target,
-        DamageResult? result)
+        DamageResult? result,
+        Creature?     dealer,
+        CardModel?    cardSource)
     {
         try
         {
             if (target == null || result == null) return;
-
             int amount = (int)result.UnblockedDamage;
             if (amount <= 0) return;
 
             var playerInfo = TryFindPlayerForCreature(combatState, target);
             if (playerInfo == null) return;
 
-            StatsCollector.RecordDamageReceived(playerInfo.Value.id, playerInfo.Value.name, amount);
+            EventBuffer.EmitTurnEvent("damage_received", playerInfo.Value.id, new
+            {
+                amount             = amount,
+                source_creature_id = dealer != null ? CreatureIdentity(dealer) : null,
+                source_card_id     = TryGetCardInfo(cardSource)?.CardId,
+                active_on_target   = ActivePowersSnapshot.ForCreature(target),
+            });
         }
         catch (Exception ex)
         {
@@ -244,7 +245,6 @@ internal static class HookPatches
         }
     }
 
-    // AfterBlockGained(ICombatState combatState, Creature creature, Decimal amount, ValueProp props, CardModel cardSource)
     public static void AfterBlockGainedPostfix(
         CombatState? combatState,
         Creature?    creature,
@@ -254,30 +254,19 @@ internal static class HookPatches
         try
         {
             if (creature == null || amount <= 0) return;
-
             int blockAmt = (int)amount;
 
-            // Who received the block?
             var receiver = TryFindPlayerForCreature(combatState, creature);
             if (receiver == null) return;
-
-            // Who gave the block? (the player who played the card)
             var giver = TryFindPlayerForCardOwner(cardSource);
+            var card = TryGetCardInfo(cardSource);
 
-            if (giver != null && giver.Value.id != receiver.Value.id)
+            EventBuffer.EmitTurnEvent("block_gained", receiver.Value.id, new
             {
-                // A player gave block to a different player
-                StatsCollector.RecordBlockGainedSelf(receiver.Value.id, receiver.Value.name, blockAmt,
-                    TryGetCardInfo(cardSource));
-                StatsCollector.RecordBlockGivenToAlly(giver.Value.id, giver.Value.name, blockAmt,
-                    TryGetCardInfo(cardSource));
-            }
-            else
-            {
-                // Self-block (or giver unknown)
-                StatsCollector.RecordBlockGainedSelf(receiver.Value.id, receiver.Value.name, blockAmt,
-                    TryGetCardInfo(cardSource));
-            }
+                amount         = blockAmt,
+                source_card_id = card?.CardId,
+                from_player    = giver?.id ?? receiver.Value.id,    // 自己付与なら自分自身
+            });
         }
         catch (Exception ex)
         {
@@ -285,17 +274,19 @@ internal static class HookPatches
         }
     }
 
-    // AfterEnergySpent(ICombatState combatState, CardModel card, Int32 amount)
     public static void AfterEnergySpentPostfix(CombatState? combatState, CardModel? card, int amount)
     {
         try
         {
             if (amount <= 0) return;
-
             var playerInfo = TryFindPlayerForCardOwner(card) ?? _currentTurnPlayer;
             if (playerInfo == null) return;
 
-            StatsCollector.RecordEnergyUsed(playerInfo.Value.id, playerInfo.Value.name, amount);
+            EventBuffer.EmitTurnEvent("energy_spent", playerInfo.Value.id, new
+            {
+                amount         = amount,
+                source_card_id = TryGetCardInfo(card)?.CardId,
+            });
         }
         catch (Exception ex)
         {
@@ -303,23 +294,35 @@ internal static class HookPatches
         }
     }
 
-    // AfterCardPlayed(ICombatState combatState, PlayerChoiceContext choiceContext, CardPlay cardPlay)
     public static void AfterCardPlayedPostfix(CombatState? combatState, object? cardPlay)
     {
         try
         {
             if (cardPlay == null) return;
-
             var cardModel = cardPlay.GetType().GetProperty("Card")?.GetValue(cardPlay) as CardModel;
             if (cardModel == null) return;
 
             var playerInfo = TryFindPlayerForCardOwner(cardModel);
             if (playerInfo == null) return;
+            var info = TryGetCardInfo(cardModel);
+            if (info == null) return;
 
-            var cardInfo = TryGetCardInfo(cardModel);
-            if (cardInfo == null) return;
+            // CardPlay.Target は省略可
+            string? targetCreatureId = null;
+            try
+            {
+                var t = cardPlay.GetType().GetProperty("Target")?.GetValue(cardPlay) as Creature;
+                if (t != null) targetCreatureId = CreatureIdentity(t);
+            }
+            catch { }
 
-            StatsCollector.RecordCardPlayed(playerInfo.Value.id, playerInfo.Value.name, cardInfo);
+            EventBuffer.EmitTurnEvent("card_played", playerInfo.Value.id, new
+            {
+                card_id            = info.CardId,
+                card_name          = info.CardName,
+                card_type          = info.CardType,
+                target_creature_id = targetCreatureId,
+            });
         }
         catch (Exception ex)
         {
@@ -327,17 +330,21 @@ internal static class HookPatches
         }
     }
 
-    // AfterCardDrawn(ICombatState combatState, PlayerChoiceContext choiceContext, CardModel card, Boolean fromHandDraw)
-    public static void AfterCardDrawnPostfix(CombatState? combatState, CardModel? card)
+    public static void AfterCardDrawnPostfix(CombatState? combatState, CardModel? card, bool fromHandDraw)
     {
         try
         {
             if (card == null) return;
-
             var playerInfo = TryFindPlayerForCardOwner(card) ?? _currentTurnPlayer;
             if (playerInfo == null) return;
+            var info = TryGetCardInfo(card);
 
-            StatsCollector.RecordCardDrawn(playerInfo.Value.id, playerInfo.Value.name);
+            EventBuffer.EmitTurnEvent("card_drawn", playerInfo.Value.id, new
+            {
+                card_id        = info?.CardId,
+                card_name      = info?.CardName,
+                from_hand_draw = fromHandDraw,
+            });
         }
         catch (Exception ex)
         {
@@ -345,8 +352,6 @@ internal static class HookPatches
         }
     }
 
-    // AfterPowerAmountChanged(ICombatState combatState, PlayerChoiceContext choiceContext,
-    //                         PowerModel power, Decimal amount, Creature applier, CardModel cardSource)
     public static void AfterPowerAmountChangedPostfix(
         CombatState? combatState,
         PowerModel?  power,
@@ -356,21 +361,31 @@ internal static class HookPatches
     {
         try
         {
-            if (power == null || applier == null || amount <= 0) return;
-
-            // applier must be a player
-            var playerInfo = TryFindPlayerForCreature(combatState, applier);
-            if (playerInfo == null) return;
-
-            // power.Owner must NOT be a player (i.e., it's an enemy getting debuffed)
-            var ownerIsPlayer = TryFindPlayerForCreature(combatState, power.Owner);
-            if (ownerIsPlayer != null) return;
+            if (power == null || applier == null) return;
+            int delta = (int)amount;
+            if (delta == 0) return;
 
             string powerId = power.Id.Entry;
-            int stacks = (int)amount;
+            var applierPlayer = TryFindPlayerForCreature(combatState, applier);
+            string? applierPlayerId = applierPlayer?.id;
 
-            StatsCollector.RecordDebuffApplied(playerInfo.Value.id, playerInfo.Value.name, powerId, stacks,
-                TryGetCardInfo(cardSource));
+            // PowerOriginRegistry に記録（applier が player の場合のみ、active power snapshot で逆引きするため）
+            if (applierPlayer != null && power.Owner != null && delta > 0)
+            {
+                PowerOriginRegistry.Record(power.Owner, powerId, applierPlayer.Value.id);
+            }
+
+            string? targetCreatureId = power.Owner != null ? CreatureIdentity(power.Owner) : null;
+            string? targetPlayerId = TryFindPlayerForCreature(combatState, power.Owner)?.id;
+
+            EventBuffer.EmitTurnEvent("power_changed", applierPlayerId, new
+            {
+                power_id           = powerId,
+                delta              = delta,
+                target_creature_id = targetCreatureId,
+                target_player_id   = targetPlayerId,
+                source_card_id     = TryGetCardInfo(cardSource)?.CardId,
+            });
         }
         catch (Exception ex)
         {
@@ -378,16 +393,26 @@ internal static class HookPatches
         }
     }
 
-    // AfterPotionUsed(IRunState runState, ICombatState combatState, PotionModel potion, Creature target)
-    public static void AfterPotionUsedPostfix(CombatState? combatState, object? target)
+    public static void AfterPotionUsedPostfix(CombatState? combatState, object? potion, Creature? target)
     {
         try
         {
-            // target is the Creature the potion was used on; find the acting player via current turn
             var playerInfo = _currentTurnPlayer;
             if (playerInfo == null) return;
 
-            StatsCollector.RecordPotionUsed(playerInfo.Value.id, playerInfo.Value.name);
+            string? potionId = null;
+            try
+            {
+                var idObj = potion?.GetType().GetProperty("Id")?.GetValue(potion);
+                potionId = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString();
+            }
+            catch { }
+
+            EventBuffer.EmitTurnEvent("potion_used", playerInfo.Value.id, new
+            {
+                potion_id          = potionId,
+                target_creature_id = target != null ? CreatureIdentity(target) : null,
+            });
         }
         catch (Exception ex)
         {
@@ -395,7 +420,168 @@ internal static class HookPatches
         }
     }
 
-    // --- helpers ---
+    // === run / combat ライフサイクル emit ヘルパ ==========================
+
+    private static void EmitRunStartForAllPlayers(IRunState runState)
+    {
+        try
+        {
+            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
+            if (players == null) return;
+            int ascension = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState) ?? 0;
+            string seed = TryGetSeed(runState);
+
+            foreach (var player in players)
+            {
+                var info = TryGetPlayerInfo(player);
+                if (info == null) continue;
+                string characterId = TryGetCharacterId(player) ?? "UNKNOWN";
+
+                EventBuffer.EmitGlobalEvent("run_start", info.Value.id, new
+                {
+                    character_id = characterId,
+                    ascension    = ascension,
+                    seed         = seed,
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitRunStartForAllPlayers error: {ex.Message}");
+        }
+    }
+
+    private static void EmitRunEndForAllPlayers(IRunState runState, string outcome)
+    {
+        try
+        {
+            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
+            if (players == null) return;
+            foreach (var player in players)
+            {
+                var info = TryGetPlayerInfo(player);
+                if (info == null) continue;
+                EmitRunEnd(runState, info.Value.id, outcome);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitRunEndForAllPlayers error: {ex.Message}");
+        }
+    }
+
+    private static void EmitRunEnd(IRunState runState, string playerId, string outcome)
+    {
+        try
+        {
+            int finalFloor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+            EventBuffer.EmitGlobalEvent("run_end", playerId, new
+            {
+                outcome     = outcome,
+                final_floor = finalFloor,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitRunEnd error: {ex.Message}");
+        }
+    }
+
+    private static void EmitCombatStart(IRunState? runState, CombatState? combatState)
+    {
+        try
+        {
+            int combatIndex = EventBuffer.CurrentCombatIndex;
+
+            string? encounterId   = null;
+            string? encounterName = null;
+            try
+            {
+                var enc = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
+                var encId = enc?.GetType().GetProperty("Id")?.GetValue(enc);
+                encounterId = encId?.GetType().GetProperty("Entry")?.GetValue(encId)?.ToString();
+                var title = enc?.GetType().GetProperty("Title")?.GetValue(enc);
+                encounterName = TryGetLocStringText(title) ?? encounterId;
+            }
+            catch { }
+
+            string? roomType = TryGetRoomType(runState, combatState);
+
+            EventBuffer.EmitCombatEvent("combat_start", null, new
+            {
+                combat_index   = combatIndex,
+                encounter_id   = encounterId,
+                encounter_name = encounterName,
+                room_type      = roomType,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitCombatStart error: {ex.Message}");
+        }
+    }
+
+    private static void EmitCombatEnd(IRunState? runState, CombatState? combatState)
+    {
+        try
+        {
+            int combatIndex = EventBuffer.CurrentCombatIndex;
+            bool victory = _currentCombatWasVictory;
+            Log.Info($"[StsStats] EmitCombatEnd combat_index={combatIndex} victory={victory}");
+
+            EventBuffer.EmitCombatEvent("combat_end", null, new
+            {
+                combat_index = combatIndex,
+                victory      = victory,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitCombatEnd error: {ex.Message}");
+        }
+    }
+
+    // === セッション初期化 ================================================
+
+    private static void EnsureSessionForRun(IRunState runState)
+    {
+        var api   = ModEntry.ApiClient;
+        var store = ModEntry.SessionStore;
+        if (api == null || store == null) return;
+
+        ulong localId = TryGetLocalPlayerId();
+        string? hostName = localId != 0UL ? TryGetSteamName(localId) : null;
+
+        string? characterId = TryGetHostCharacterId(runState, localId);
+        int    ascension    = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState) ?? 0;
+        string seed         = TryGetSeed(runState);
+        string seedForKey   = string.IsNullOrEmpty(seed) ? "no-seed" : seed;
+        string gameMode     = runState.GetType().GetProperty("GameMode")?.GetValue(runState)?.ToString() ?? "";
+        int    totalFloor   = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+
+        string lookupKey = RunKey.Lookup(localId, seedForKey);
+        var meta = new RunMetaForKey(
+            HostSteamId: localId,
+            Seed:        seedForKey,
+            CharacterId: characterId,
+            Ascension:   ascension,
+            GameMode:    gameMode);
+
+        SessionManager.EnsureSession(
+            lookupKey:        lookupKey,
+            currentTotalFloor: totalFloor,
+            api:              api,
+            requestBuilder:   (startedAt, runKey) => new CreateSessionRequest(
+                HostName:    hostName,
+                HostSteamId: localId != 0UL ? localId.ToString() : null,
+                CharacterId: characterId,
+                Ascension:   ascension,
+                Seed:        string.IsNullOrEmpty(seed) ? null : seed),
+            runMeta:          meta,
+            store:            store);
+    }
+
+    // === ヘルパ群（Phase 2 から踏襲） ====================================
 
     private static (string id, string name)? TryFindPlayerForCreature(CombatState? combatState, Creature? dealer)
     {
@@ -404,26 +590,19 @@ internal static class HookPatches
         {
             var runState = combatState?.RunState;
             if (runState == null) return null;
-
             var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
             if (players == null) return null;
-
             foreach (var player in players)
             {
                 var creature = player.GetType().GetProperty("Creature")?.GetValue(player) as Creature;
                 if (creature != dealer) continue;
-
                 return BuildPlayerInfo(player);
             }
         }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] TryFindPlayerForCreature error: {ex.Message}");
-        }
+        catch (Exception ex) { Log.Error($"[StsStats] TryFindPlayerForCreature error: {ex.Message}"); }
         return null;
     }
 
-    // CardModel.Owner is of type Player — extract player info from it directly
     private static (string id, string name)? TryFindPlayerForCardOwner(CardModel? cardModel)
     {
         if (cardModel == null) return null;
@@ -448,7 +627,6 @@ internal static class HookPatches
         string? steamName = ResolveSteamName(netId);
         ulong resolvedId = netId;
 
-        // GetPlayerName が解決できなかった（NetIdが合成IDなど）→ ローカルSteam IDで再試行
         if (steamName == null)
         {
             ulong localId = TryGetLocalPlayerId();
@@ -464,8 +642,6 @@ internal static class HookPatches
         return (id, name);
     }
 
-    // GetPlayerName は未解決時に netId の文字列をそのまま返してくるので、
-    // 入力IDの文字列化と一致する場合は「解決失敗」とみなす。
     private static string? ResolveSteamName(ulong steamId)
     {
         var raw = TryGetSteamName(steamId);
@@ -506,17 +682,14 @@ internal static class HookPatches
         }
     }
 
-    /// <summary>LocString からローカライズ済み実テキストを取得。失敗 / 空 → null。</summary>
     private static string? TryGetLocStringText(object? locString)
     {
         if (locString == null) return null;
         try
         {
-            var formatted = locString.GetType()
-                .GetMethod("GetFormattedText", Type.EmptyTypes)?.Invoke(locString, null) as string;
+            var formatted = locString.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)?.Invoke(locString, null) as string;
             if (!string.IsNullOrEmpty(formatted)) return formatted;
-            var raw = locString.GetType()
-                .GetMethod("GetRawText", Type.EmptyTypes)?.Invoke(locString, null) as string;
+            var raw = locString.GetType().GetMethod("GetRawText", Type.EmptyTypes)?.Invoke(locString, null) as string;
             return string.IsNullOrEmpty(raw) ? null : raw;
         }
         catch { return null; }
@@ -530,99 +703,11 @@ internal static class HookPatches
             var idObj  = cardModel.GetType().GetProperty("Id")?.GetValue(cardModel);
             string cardId = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString() ?? "";
             if (string.IsNullOrEmpty(cardId)) return null;
-
-            // CardModel.Title is String (not LocString)
             string cardName = cardModel.GetType().GetProperty("Title")?.GetValue(cardModel)?.ToString() ?? cardId;
             string cardType = cardModel.GetType().GetProperty("Type")?.GetValue(cardModel)?.ToString() ?? "";
-
             return new CardInfo(cardId, cardName, cardType);
         }
         catch { return null; }
-    }
-
-    // --- run lifecycle event helpers ---
-
-    private static void EmitRunStartForAllPlayers(IRunState runState)
-    {
-        try
-        {
-            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
-            if (players == null) return;
-
-            int ascension = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState) ?? 0;
-            string seed = TryGetSeed(runState);
-            int floor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
-
-            foreach (var player in players)
-            {
-                var info = TryGetPlayerInfo(player);
-                if (info == null) continue;
-
-                string characterId = TryGetCharacterId(player) ?? "UNKNOWN";
-
-                EventBuffer.Emit(new EventRecord(
-                    EventUuid:   Guid.NewGuid(),
-                    EventType:   "run_start",
-                    OccurredAt:  DateTime.UtcNow,
-                    PlayerId:    info.Value.id,
-                    Floor:       floor,
-                    Payload:     new
-                    {
-                        character_id = characterId,
-                        ascension    = ascension,
-                        seed         = seed,
-                    }
-                ));
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] EmitRunStartForAllPlayers error: {ex.Message}");
-        }
-    }
-
-    private static void EmitRunEndForAllPlayers(IRunState runState, string outcome)
-    {
-        try
-        {
-            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
-            if (players == null) return;
-
-            foreach (var player in players)
-            {
-                var info = TryGetPlayerInfo(player);
-                if (info == null) continue;
-                EmitRunEnd(runState, info.Value.id, outcome);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] EmitRunEndForAllPlayers error: {ex.Message}");
-        }
-    }
-
-    private static void EmitRunEnd(IRunState runState, string playerId, string outcome)
-    {
-        try
-        {
-            int finalFloor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
-            EventBuffer.Emit(new EventRecord(
-                EventUuid:   Guid.NewGuid(),
-                EventType:   "run_end",
-                OccurredAt:  DateTime.UtcNow,
-                PlayerId:    playerId,
-                Floor:       finalFloor,
-                Payload:     new
-                {
-                    outcome     = outcome,
-                    final_floor = finalFloor,
-                }
-            ));
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] EmitRunEnd error: {ex.Message}");
-        }
     }
 
     private static string TryGetSeed(IRunState runState)
@@ -635,162 +720,27 @@ internal static class HookPatches
         catch { return ""; }
     }
 
-    // --- HTTP dispatch helpers ---
-
-    /// <summary>turn ペイロードを JSONL と HTTP の両方へ送る。</summary>
-    private static void DispatchTurn(TurnPayload payload)
-    {
-        StatsLogger.LogTurn(payload);
-        var sender = ModEntry.HttpSender;
-        if (sender != null && SessionManager.IsReady)
-            sender.EnqueueTurn(SessionManager.SessionId!, SessionManager.WriteToken!, payload);
-    }
-
-    /// <summary>初回戦闘開始時にセッションを確保する（run メタ込みで POST または store から復元）。</summary>
-    private static void EnsureSessionForRun(IRunState runState)
-    {
-        var api   = ModEntry.ApiClient;
-        var store = ModEntry.SessionStore;
-        if (api == null || store == null) return;
-
-        // ホストは「ローカルのプレイヤー」とみなす（mod を入れているクライアント = 自分）
-        ulong localId = TryGetLocalPlayerId();
-        string? hostName = localId != 0UL ? TryGetSteamName(localId) : null;
-
-        // 自分のキャラクター ID
-        string? characterId = TryGetHostCharacterId(runState, localId);
-        int    ascension    = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState) ?? 0;
-        string seed         = TryGetSeed(runState);
-        string seedForKey   = string.IsNullOrEmpty(seed) ? "no-seed" : seed;
-        string gameMode     = runState.GetType().GetProperty("GameMode")?.GetValue(runState)?.ToString() ?? "";
-        int    totalFloor   = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
-
-        // 「同じ run か」は (host, seed) ペアで lookup し、TotalFloor の monotonicity で判断する
-        string lookupKey = RunKey.Lookup(localId, seedForKey);
-
-        var meta = new RunMetaForKey(
-            HostSteamId: localId,
-            Seed:        seedForKey,
-            CharacterId: characterId,
-            Ascension:   ascension,
-            GameMode:    gameMode
-        );
-
-        SessionManager.EnsureSession(
-            lookupKey:        lookupKey,
-            currentTotalFloor: totalFloor,
-            api:              api,
-            requestBuilder:   (startedAt, runKey) => new CreateSessionRequest(
-                HostName:    hostName,
-                HostSteamId: localId != 0UL ? localId.ToString() : null,
-                CharacterId: characterId,
-                Ascension:   ascension,
-                Seed:        string.IsNullOrEmpty(seed) ? null : seed
-            ),
-            runMeta:          meta,
-            store:            store
-        );
-    }
-
     private static string? TryGetHostCharacterId(IRunState runState, ulong localId)
     {
         try
         {
             var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
             if (players == null) return null;
-
             string? fallback = null;
             foreach (var p in players)
             {
                 ulong netId = (p.GetType().GetProperty("NetId")?.GetValue(p) as ulong?) ?? 0UL;
                 string? cid = TryGetCharacterId(p);
-                if (netId == localId) return cid;       // ローカルプレイヤー一致
-                fallback ??= cid;                       // 最初に見つかった character を保険として保持
+                if (netId == localId) return cid;
+                fallback ??= cid;
             }
             return fallback;
         }
         catch { return null; }
     }
 
-    /// <summary>combat_start イベントを emit。encounter 情報があれば付ける。</summary>
-    private static void EmitCombatStart(IRunState? runState, CombatState? combatState)
-    {
-        try
-        {
-            int combatIndex = StatsCollector.CurrentCombatIndex;
-            int floor = (int?)runState?.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
-
-            string? encounterId   = null;
-            string? encounterName = null;
-            try
-            {
-                var enc = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
-                var encId = enc?.GetType().GetProperty("Id")?.GetValue(enc);
-                encounterId = encId?.GetType().GetProperty("Entry")?.GetValue(encId)?.ToString();
-                // EncounterModel.Title は LocString。GetFormattedText() で実テキストを取る
-                var title = enc?.GetType().GetProperty("Title")?.GetValue(enc);
-                encounterName = TryGetLocStringText(title) ?? encounterId;
-            }
-            catch { /* encounter 取得失敗時は ID/Name なしでイベント発行 */ }
-
-            string? roomType = TryGetRoomType(runState, combatState);
-
-            EventBuffer.Emit(new EventRecord(
-                EventUuid:  Guid.NewGuid(),
-                EventType:  "combat_start",
-                OccurredAt: DateTime.UtcNow,
-                PlayerId:   null,
-                Floor:      floor,
-                Payload:    new
-                {
-                    combat_index   = combatIndex,
-                    encounter_id   = encounterId,
-                    encounter_name = encounterName,
-                    room_type      = roomType,
-                }
-            ));
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] EmitCombatStart error: {ex.Message}");
-        }
-    }
-
-    /// <summary>combat_end イベントを emit。AfterCombatVictory が事前に発火していれば victory=true。</summary>
-    private static void EmitCombatEnd(IRunState? runState, CombatState? combatState, object? room)
-    {
-        try
-        {
-            int combatIndex = StatsCollector.CurrentCombatIndex;
-            int floor = (int?)runState?.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
-
-            // combat の勝敗: AfterCombatVictory hook の発火有無で判定する。
-            // room.IsVictoryRoom はラン全体の最終勝利部屋専用なので使えない。
-            bool victory = _currentCombatWasVictory;
-            Log.Info($"[StsStats] EmitCombatEnd combat_index={combatIndex} victory={victory}");
-
-            EventBuffer.Emit(new EventRecord(
-                EventUuid:  Guid.NewGuid(),
-                EventType:  "combat_end",
-                OccurredAt: DateTime.UtcNow,
-                PlayerId:   null,
-                Floor:      floor,
-                Payload:    new
-                {
-                    combat_index = combatIndex,
-                    victory      = victory,
-                }
-            ));
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] EmitCombatEnd error: {ex.Message}");
-        }
-    }
-
     private static string? TryGetRoomType(IRunState? runState, CombatState? combatState)
     {
-        // 1. CombatState.Encounter.RoomType (enum) を優先（"Monster" / "Elite" / "Boss"）
         try
         {
             var encounter = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
@@ -802,7 +752,6 @@ internal static class HookPatches
             }
         }
         catch { }
-        // 2. フォールバック: encounter_id の suffix
         try
         {
             var encounter = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
@@ -816,7 +765,6 @@ internal static class HookPatches
         return null;
     }
 
-    /// <summary>run の生存プレイヤー数を返す。マルチプレイで全員死亡判定に使う。</summary>
     private static int CountAlivePlayers(IRunState runState)
     {
         int alive = 0;
@@ -837,16 +785,15 @@ internal static class HookPatches
     }
 
     /// <summary>
-    /// 指定された target に乗っている Poison（または同類の DoT）の applier を探す。
-    /// 自傷ダメージ（DoT tick）を applier プレイヤーに帰属させるために使う。
+    /// 指定 target に乗っている Poison/Burn 等の DoT の applier を探して返す。
+    /// 間接ダメージ（dealer がプレイヤーでない場合）の attribution に使う。
     /// </summary>
     private static (string id, string name)? FindIndirectDamageApplier(Creature? target, CombatState? combatState)
     {
         if (target == null) return null;
         try
         {
-            var powersProp = target.GetType().GetProperty("Powers");
-            var powers = powersProp?.GetValue(target) as IEnumerable;
+            var powers = target.GetType().GetProperty("Powers")?.GetValue(target) as IEnumerable;
             if (powers == null) return null;
             foreach (var power in powers)
             {
@@ -857,8 +804,7 @@ internal static class HookPatches
                     powerId = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString() ?? "";
                 }
                 catch { }
-                // Poison / 他 DoT 系（Burn / etc.）は名前に POISON / BURN を含むことを想定
-                if (powerId.Contains("POISON") || powerId.Contains("BURN"))
+                if (powerId.Contains("POISON") || powerId.Contains("BURN") || powerId.Contains("DOOM"))
                 {
                     var applier = power.GetType().GetProperty("Applier")?.GetValue(power) as Creature;
                     var info = TryFindPlayerForCreature(combatState, applier);
@@ -869,4 +815,8 @@ internal static class HookPatches
         catch { }
         return null;
     }
+
+    /// <summary>creature を一意に識別する文字列。同一 run 中は object identity で安定。</summary>
+    private static string CreatureIdentity(Creature c)
+        => "c:" + RuntimeHelpers.GetHashCode(c).ToString();
 }
