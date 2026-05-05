@@ -265,6 +265,8 @@ Content-Type: application/json
 |-----------|---------|------|
 | `run_start` | `character_id`, `ascension`, `seed` | run単位集計の起点 |
 | `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor` | 勝率算出 |
+| `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 戦闘タブのラベル・部屋種別 |
+| `combat_end` | `combat_index`, `victory` (bool) | 戦闘の勝敗表示 |
 
 **未知の `event_type` でもサーバは保存する**（前方互換）。クライアントが対応していないイベントは無視すればよい。将来追加予定の event_type は `ROADMAP.md` を参照。
 
@@ -282,9 +284,30 @@ Content-Type: application/json
 
 ## `GET /api/sessions/{id}`
 
-WebUI 用の閲覧エンドポイント。セッション全データを返す。集計はクライアント側 or サーバの集計用エンドポイントで行う。
+WebUI 用の閲覧エンドポイント。セッション全データを返す。集計はクライアント側で行う。
 
-**Response 200**
+### ETag によるポーリング効率化
+
+サーバはレスポンスに `ETag` ヘッダを付与する。クライアント（WebUI）は次回リクエストで `If-None-Match: <etag>` を送ることで、データに変化がない場合 `304 Not Modified`（ボディなし）を受け取れる。
+
+```
+GET /api/sessions/abc
+→ 200 OK, ETag: "v-7f3a..."
+
+GET /api/sessions/abc, If-None-Match: "v-7f3a..."
+→ 304 Not Modified (ボディなし)
+
+GET /api/sessions/abc, If-None-Match: "v-7f3a..."   # データ更新後
+→ 200 OK, ETag: "v-9c1b...", Body: {...}
+```
+
+ETag は `(session_id, latest received_at, turns 件数, events 件数)` から計算される。クライアントは ETag の中身を解釈する必要はなく、不透明な識別子として扱えばよい。
+
+### Response 200
+
+**Headers**: `ETag: "<opaque-string>"`
+
+**Body**:
 ```json
 {
   "session": {

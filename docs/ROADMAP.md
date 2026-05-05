@@ -26,10 +26,10 @@
 **目的**: 1ラン中の戦闘統計をブラウザから閲覧できるようにする。
 
 実装範囲:
-- バックエンド scaffolding（4テーブル + 認証 + 冪等性）
-- mod の HTTP送信化（turns + events最小）
+- バックエンド scaffolding（4テーブル + 認証 + 冪等性 + ETag）
+- mod の HTTP送信化（turns + events）
 - WebUI の最小実装（戦闘単位のグラフ・テーブル）
-- 送信される event_type: **`run_start`** / **`run_end`** のみ
+- 送信される event_type: **`run_start`** / **`run_end`** / **`combat_start`** / **`combat_end`**
 
 到達点: 共有URLを開くと、当該run内の全戦闘の per-turn 統計が見える。
 
@@ -61,7 +61,6 @@ mod 側で event 収集を拡張:
 | `event_chosen` | イベント選択肢 |
 | `shop_purchase` | ショップ購入 |
 | `gold_changed` | ゴールド増減 |
-| `combat_start` | 戦闘開始（encounter情報付き） |
 
 サーバ側で集計エンドポイント追加:
 - `GET /api/players/{steam_id}` — プレイヤー横断統計

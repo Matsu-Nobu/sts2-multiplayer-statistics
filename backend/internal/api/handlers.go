@@ -208,6 +208,18 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load session")
 		return
 	}
+
+	etag, err := s.Store.ComputeSessionETag(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to compute etag")
+		return
+	}
+	w.Header().Set("ETag", etag)
+	if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	turns, err := s.Store.ListTurns(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load turns")

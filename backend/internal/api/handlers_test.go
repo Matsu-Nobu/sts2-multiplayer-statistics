@@ -228,6 +228,99 @@ func TestPostTurn_RejectInvalidIndices(t *testing.T) {
 	}
 }
 
+func TestGetSession_ETag_NotModified(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, token := createSession(t, srv)
+	_ = token
+
+	// initial fetch — get ETag
+	res := do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	etag := res.Header.Get("ETag")
+	if etag == "" {
+		t.Fatal("expected ETag header")
+	}
+	res.Body.Close()
+
+	// re-fetch with If-None-Match — expect 304
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+id, nil)
+	req.Header.Set("If-None-Match", etag)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("expected 304, got %d", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("expected empty body on 304, got %d bytes", rec.Body.Len())
+	}
+}
+
+func TestGetSession_ETag_ChangesAfterUpdate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, token := createSession(t, srv)
+
+	res := do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
+	first := res.Header.Get("ETag")
+	res.Body.Close()
+
+	// post a turn → ETag should change
+	res = do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", token, turnFixture(1, 1, false))
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+
+	res = do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
+	second := res.Header.Get("ETag")
+	res.Body.Close()
+
+	if first == "" || second == "" {
+		t.Fatal("expected both ETags non-empty")
+	}
+	if first == second {
+		t.Fatalf("expected ETag to change after data update, got %s == %s", first, second)
+	}
+}
+
+func TestPostEvents_CombatStartAndEnd(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, token := createSession(t, srv)
+
+	events := []map[string]any{
+		{
+			"event_uuid":  "cs-1",
+			"event_type":  "combat_start",
+			"occurred_at": "2026-05-05T00:00:00Z",
+			"floor":       1,
+			"payload": map[string]any{
+				"combat_index":   1,
+				"encounter_id":   "CULTIST",
+				"encounter_name": "Cultist",
+				"room_type":      "Monster",
+			},
+		},
+		{
+			"event_uuid":  "ce-1",
+			"event_type":  "combat_end",
+			"occurred_at": "2026-05-05T00:01:00Z",
+			"floor":       1,
+			"payload":     map[string]any{"combat_index": 1, "victory": true},
+		},
+	}
+	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, events)
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+
+	res = do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
+	var doc sessionDoc
+	decodeJSON(t, res, &doc)
+	if len(doc.Events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(doc.Events))
+	}
+}
+
 func turnFixture(combat, turn int, isFinal bool) map[string]any {
 	return map[string]any{
 		"combat_index": combat,
