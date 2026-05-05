@@ -328,27 +328,33 @@ internal static class HookPatches
     private static (string id, string name) BuildPlayerInfo(object player)
     {
         ulong netId = (player.GetType().GetProperty("NetId")?.GetValue(player) as ulong?) ?? 0UL;
-
-        // 1. NetId が Steam ID ならそれで名前解決（マルチプレイ）
-        string? name = TryGetSteamName(netId);
-
-        // 2. シングルプレイでは NetId が合成ID（1等）になる。ローカルSteam IDで再試行
+        string? steamName = ResolveSteamName(netId);
         ulong resolvedId = netId;
-        if (string.IsNullOrEmpty(name))
+
+        // GetPlayerName が解決できなかった（NetIdが合成IDなど）→ ローカルSteam IDで再試行
+        if (steamName == null)
         {
             ulong localId = TryGetLocalPlayerId();
             if (localId != 0UL)
             {
-                name = TryGetSteamName(localId);
-                if (!string.IsNullOrEmpty(name)) resolvedId = localId;
+                steamName = ResolveSteamName(localId);
+                if (steamName != null) resolvedId = localId;
             }
         }
 
-        // 3. それでも取れなければキャラクターIDをフォールバック名に使う
-        name ??= TryGetCharacterId(player);
+        string name = steamName ?? TryGetCharacterId(player) ?? netId.ToString();
+        string id   = resolvedId != 0UL ? resolvedId.ToString() : name;
+        return (id, name);
+    }
 
-        string id = resolvedId != 0UL ? resolvedId.ToString() : (name ?? "unknown");
-        return (id, name ?? id);
+    // GetPlayerName は未解決時に netId の文字列をそのまま返してくるので、
+    // 入力IDの文字列化と一致する場合は「解決失敗」とみなす。
+    private static string? ResolveSteamName(ulong steamId)
+    {
+        var raw = TryGetSteamName(steamId);
+        if (string.IsNullOrEmpty(raw)) return null;
+        if (raw == steamId.ToString()) return null;
+        return raw;
     }
 
     private static string? TryGetCharacterId(object player)
