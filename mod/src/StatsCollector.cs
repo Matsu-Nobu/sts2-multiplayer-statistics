@@ -9,7 +9,7 @@ internal static class StatsCollector
 {
     private static int _combatIndex = 0;
     private static int _turnNumber = 0;
-    private static readonly Dictionary<string, MutableTurnData> _currentTurn = new();
+    private static readonly Dictionary<string, MutableTurnData>   _currentTurn   = new();
     private static readonly Dictionary<string, MutableCombatData> _currentCombat = new();
 
     public static void BeginCombat()
@@ -23,13 +23,19 @@ internal static class StatsCollector
     public static void RecordDamageDealt(string playerId, string playerName, int amount, CardInfo? card = null)
     {
         if (amount <= 0) return;
-        GetOrCreateTurn(playerId, playerName).DamageDealt += amount;
+
+        var turn = GetOrCreateTurn(playerId, playerName);
+        turn.DamageDealt += amount;
+        var turnCs = GetOrCreateCardStats(turn.CardStats, card);
+        turnCs.DamageDealt += amount;
+        if (amount > turnCs.MaxSingleHit) turnCs.MaxSingleHit = amount;
+
         var combat = GetOrCreateCombat(playerId, playerName);
         combat.DamageDealt += amount;
         if (amount > combat.MaxSingleHit) combat.MaxSingleHit = amount;
-        var cs = GetOrCreateCardStats(combat, card);
-        cs.DamageDealt += amount;
-        if (amount > cs.MaxSingleHit) cs.MaxSingleHit = amount;
+        var combatCs = GetOrCreateCardStats(combat.CardStats, card);
+        combatCs.DamageDealt += amount;
+        if (amount > combatCs.MaxSingleHit) combatCs.MaxSingleHit = amount;
     }
 
     public static void RecordDamageReceived(string playerId, string playerName, int amount)
@@ -42,19 +48,25 @@ internal static class StatsCollector
     public static void RecordBlockGainedSelf(string playerId, string playerName, int amount, CardInfo? card = null)
     {
         if (amount <= 0) return;
-        GetOrCreateTurn(playerId, playerName).BlockGainedSelf += amount;
+        var turn = GetOrCreateTurn(playerId, playerName);
+        turn.BlockGainedSelf += amount;
+        GetOrCreateCardStats(turn.CardStats, card).BlockProvided += amount;
+
         var combat = GetOrCreateCombat(playerId, playerName);
         combat.BlockGainedSelf += amount;
-        GetOrCreateCardStats(combat, card).BlockProvided += amount;
+        GetOrCreateCardStats(combat.CardStats, card).BlockProvided += amount;
     }
 
     public static void RecordBlockGivenToAlly(string playerId, string playerName, int amount, CardInfo? card = null)
     {
         if (amount <= 0) return;
-        GetOrCreateTurn(playerId, playerName).BlockGivenToAllies += amount;
+        var turn = GetOrCreateTurn(playerId, playerName);
+        turn.BlockGivenToAllies += amount;
+        GetOrCreateCardStats(turn.CardStats, card).BlockProvided += amount;
+
         var combat = GetOrCreateCombat(playerId, playerName);
         combat.BlockGivenToAllies += amount;
-        GetOrCreateCardStats(combat, card).BlockProvided += amount;
+        GetOrCreateCardStats(combat.CardStats, card).BlockProvided += amount;
     }
 
     public static void RecordEnergyUsed(string playerId, string playerName, int amount)
@@ -66,10 +78,13 @@ internal static class StatsCollector
 
     public static void RecordCardPlayed(string playerId, string playerName, CardInfo card)
     {
-        GetOrCreateTurn(playerId, playerName).CardsPlayed++;
+        var turn = GetOrCreateTurn(playerId, playerName);
+        turn.CardsPlayed++;
+        GetOrCreateCardStats(turn.CardStats, card).PlayCount++;
+
         var combat = GetOrCreateCombat(playerId, playerName);
         combat.CardsPlayed++;
-        GetOrCreateCardStats(combat, card).PlayCount++;
+        GetOrCreateCardStats(combat.CardStats, card).PlayCount++;
     }
 
     public static void RecordCardDrawn(string playerId, string playerName)
@@ -81,12 +96,18 @@ internal static class StatsCollector
     public static void RecordDebuffApplied(string playerId, string playerName, string powerId, int stacks, CardInfo? card = null)
     {
         if (stacks <= 0) return;
+
+        var turn = GetOrCreateTurn(playerId, playerName);
+        var turnCs = GetOrCreateCardStats(turn.CardStats, card);
+        turnCs.DebuffsApplied.TryGetValue(powerId, out int tPrev);
+        turnCs.DebuffsApplied[powerId] = tPrev + stacks;
+
         var combat = GetOrCreateCombat(playerId, playerName);
         combat.DebuffsApplied.TryGetValue(powerId, out int prev);
         combat.DebuffsApplied[powerId] = prev + stacks;
-        var cs = GetOrCreateCardStats(combat, card);
-        cs.DebuffsApplied.TryGetValue(powerId, out int csPrev);
-        cs.DebuffsApplied[powerId] = csPrev + stacks;
+        var combatCs = GetOrCreateCardStats(combat.CardStats, card);
+        combatCs.DebuffsApplied.TryGetValue(powerId, out int csPrev);
+        combatCs.DebuffsApplied[powerId] = csPrev + stacks;
     }
 
     public static void RecordPotionUsed(string playerId, string playerName)
@@ -94,44 +115,51 @@ internal static class StatsCollector
         GetOrCreateCombat(playerId, playerName).PotionsUsed++;
     }
 
-    public static TurnSnapshot? FinalizeCurrentTurn()
+    /// <summary>
+    /// 現在のターン情報を確定し、API.md 形式の TurnPayload を返す。
+    /// _currentTurn はクリアされる。_currentCombat は維持される。
+    /// </summary>
+    public static TurnPayload? FinalizeTurn(bool isFinal = false)
     {
-        if (_currentTurn.Count == 0) return null;
+        // ターン進行が無く、かつ最終フラッシュでもなければスキップ
+        if (_currentTurn.Count == 0 && !isFinal) return null;
+        // 最終フラッシュだが累計データもない（戦闘がそもそも始まっていない等）→ 何も出さない
+        if (_currentTurn.Count == 0 && _currentCombat.Count == 0) return null;
 
-        _turnNumber++;
-        var snapshot = new TurnSnapshot(
+        if (_currentTurn.Count > 0) _turnNumber++;
+
+        // turn 側の player 集合と combat 側の player 集合の和を取る（最終フラッシュで turn が空でも combat 累計は出したい）
+        var allPlayerIds = _currentTurn.Keys.Union(_currentCombat.Keys).Distinct().ToList();
+
+        var players = new Dictionary<string, PlayerTurnAndCombat>();
+        foreach (var pid in allPlayerIds)
+        {
+            string playerName =
+                (_currentTurn.TryGetValue(pid, out var t) ? t.PlayerName : null) ??
+                (_currentCombat.TryGetValue(pid, out var c) ? c.PlayerName : null) ??
+                pid;
+
+            var turnStats = (_currentTurn.TryGetValue(pid, out var td))
+                ? td.ToSummary()
+                : PlayerTurnSummary.Empty();
+
+            var combatStats = (_currentCombat.TryGetValue(pid, out var cd))
+                ? cd.ToSummary()
+                : PlayerCombatSummary.Empty();
+
+            players[pid] = new PlayerTurnAndCombat(playerName, turnStats, combatStats);
+        }
+
+        var payload = new TurnPayload(
             CombatIndex: _combatIndex,
             TurnNumber:  _turnNumber,
+            IsFinal:     isFinal,
             Timestamp:   DateTime.UtcNow,
-            StatsByPlayer: _currentTurn.ToDictionary(
-                kv => kv.Key,
-                kv => new PlayerTurnStats(
-                    kv.Key,
-                    kv.Value.PlayerName,
-                    kv.Value.DamageDealt,
-                    kv.Value.DamageReceived,
-                    kv.Value.BlockGainedSelf,
-                    kv.Value.BlockGivenToAllies,
-                    kv.Value.EnergyUsed,
-                    kv.Value.CardsPlayed,
-                    kv.Value.CardsDrawn))
+            Players:     players
         );
-        _currentTurn.Clear();
-        return snapshot;
-    }
 
-    public static CombatSummary FinalizeCurrentCombat()
-    {
-        bool hasUnfinalized = _currentTurn.Count > 0;
-        int totalTurns = _turnNumber + (hasUnfinalized ? 1 : 0);
         _currentTurn.Clear();
-
-        return new CombatSummary(
-            CombatIndex:    _combatIndex,
-            TotalTurns:     totalTurns,
-            Timestamp:      DateTime.UtcNow,
-            TotalsByPlayer: _currentCombat.ToDictionary(kv => kv.Key, kv => kv.Value.ToSummary())
-        );
+        return payload;
     }
 
     internal static void Reset()
@@ -141,6 +169,8 @@ internal static class StatsCollector
         _currentTurn.Clear();
         _currentCombat.Clear();
     }
+
+    // --- mutable state helpers ---
 
     private static MutableTurnData GetOrCreateTurn(string playerId, string playerName)
     {
@@ -156,11 +186,11 @@ internal static class StatsCollector
         return data;
     }
 
-    private static MutableCardStats GetOrCreateCardStats(MutableCombatData combat, CardInfo? card)
+    private static MutableCardStats GetOrCreateCardStats(Dictionary<string, MutableCardStats> bucket, CardInfo? card)
     {
         string key = card?.CardId ?? "(indirect)";
-        if (!combat.CardStats.TryGetValue(key, out var cs))
-            combat.CardStats[key] = cs = new MutableCardStats
+        if (!bucket.TryGetValue(key, out var cs))
+            bucket[key] = cs = new MutableCardStats
             {
                 CardId   = card?.CardId   ?? "(indirect)",
                 CardName = card?.CardName ?? "(間接ダメージ)",
@@ -169,6 +199,8 @@ internal static class StatsCollector
         return cs;
     }
 }
+
+// --- mutable internal state ---
 
 internal class MutableTurnData
 {
@@ -180,12 +212,20 @@ internal class MutableTurnData
     public int EnergyUsed;
     public int CardsPlayed;
     public int CardsDrawn;
+    public Dictionary<string, MutableCardStats> CardStats = new();
+
+    public PlayerTurnSummary ToSummary() => new(
+        DamageDealt, DamageReceived,
+        BlockGainedSelf, BlockGivenToAllies,
+        EnergyUsed, CardsPlayed, CardsDrawn,
+        CardStats.Values.Select(cs => cs.ToRecord()).ToList()
+    );
 }
 
 internal class MutableCombatData
 {
-    public string PlayerId    = "";
-    public string PlayerName  = "";
+    public string PlayerId   = "";
+    public string PlayerName = "";
     public int DamageDealt;
     public int DamageReceived;
     public int BlockGainedSelf;
@@ -195,18 +235,16 @@ internal class MutableCombatData
     public int CardsDrawn;
     public int PotionsUsed;
     public int MaxSingleHit;
-    public Dictionary<string, int>          DebuffsApplied = new();
-    public Dictionary<string, MutableCardStats> CardStats  = new();
+    public Dictionary<string, int>              DebuffsApplied = new();
+    public Dictionary<string, MutableCardStats> CardStats      = new();
 
     public PlayerCombatSummary ToSummary() => new(
-        PlayerId, PlayerName,
         DamageDealt, DamageReceived,
         BlockGainedSelf, BlockGivenToAllies,
         EnergyUsed, CardsPlayed, CardsDrawn,
-        PotionsUsed,
+        PotionsUsed, MaxSingleHit,
         new Dictionary<string, int>(DebuffsApplied),
-        CardStats.Values.Select(cs => cs.ToRecord()).ToList(),
-        MaxSingleHit
+        CardStats.Values.Select(cs => cs.ToRecord()).ToList()
     );
 }
 
@@ -229,17 +267,7 @@ internal class MutableCardStats
     );
 }
 
-internal record PlayerTurnStats(
-    string PlayerId,
-    string PlayerName,
-    int DamageDealt,
-    int DamageReceived     = 0,
-    int BlockGainedSelf    = 0,
-    int BlockGivenToAllies = 0,
-    int EnergyUsed         = 0,
-    int CardsPlayed        = 0,
-    int CardsDrawn         = 0
-);
+// --- API-shaped immutable DTOs (match docs/API.md) ---
 
 internal record CardStatsSummary(
     string CardId,
@@ -252,9 +280,22 @@ internal record CardStatsSummary(
     int MaxSingleHit
 );
 
+internal record PlayerTurnSummary(
+    int DamageDealt,
+    int DamageReceived,
+    int BlockGainedSelf,
+    int BlockGivenToAllies,
+    int EnergyUsed,
+    int CardsPlayed,
+    int CardsDrawn,
+    List<CardStatsSummary> Cards
+)
+{
+    public static PlayerTurnSummary Empty() =>
+        new(0, 0, 0, 0, 0, 0, 0, new List<CardStatsSummary>());
+}
+
 internal record PlayerCombatSummary(
-    string PlayerId,
-    string PlayerName,
     int DamageDealt,
     int DamageReceived,
     int BlockGainedSelf,
@@ -263,21 +304,27 @@ internal record PlayerCombatSummary(
     int CardsPlayed,
     int CardsDrawn,
     int PotionsUsed,
+    int MaxSingleHit,
     Dictionary<string, int> DebuffsApplied,
-    List<CardStatsSummary>  CardStats,
-    int MaxSingleHit
+    List<CardStatsSummary>  CardStats
+)
+{
+    public static PlayerCombatSummary Empty() =>
+        new(0, 0, 0, 0, 0, 0, 0, 0, 0,
+            new Dictionary<string, int>(),
+            new List<CardStatsSummary>());
+}
+
+internal record PlayerTurnAndCombat(
+    string PlayerName,
+    PlayerTurnSummary   Turn,
+    PlayerCombatSummary Combat
 );
 
-internal record TurnSnapshot(
+internal record TurnPayload(
     int CombatIndex,
     int TurnNumber,
+    bool IsFinal,
     DateTime Timestamp,
-    Dictionary<string, PlayerTurnStats> StatsByPlayer
-);
-
-internal record CombatSummary(
-    int CombatIndex,
-    int TotalTurns,
-    DateTime Timestamp,
-    Dictionary<string, PlayerCombatSummary> TotalsByPlayer
+    Dictionary<string, PlayerTurnAndCombat> Players
 );

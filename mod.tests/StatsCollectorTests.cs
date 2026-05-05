@@ -14,14 +14,14 @@ public class StatsCollectorTests : IDisposable
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        var s1 = StatsCollector.FinalizeCurrentTurn()!;
+        var p1 = StatsCollector.FinalizeTurn()!;
 
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 20);
-        var s2 = StatsCollector.FinalizeCurrentTurn()!;
+        var p2 = StatsCollector.FinalizeTurn()!;
 
-        Assert.Equal(1, s1.CombatIndex);
-        Assert.Equal(2, s2.CombatIndex);
+        Assert.Equal(1, p1.CombatIndex);
+        Assert.Equal(2, p2.CombatIndex);
     }
 
     [Fact]
@@ -29,18 +29,18 @@ public class StatsCollectorTests : IDisposable
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
+        StatsCollector.FinalizeTurn();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn(); // turn 2
+        StatsCollector.FinalizeTurn();
 
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
+        var p = StatsCollector.FinalizeTurn()!;
 
-        Assert.Equal(1, snapshot.TurnNumber);
+        Assert.Equal(1, p.TurnNumber);
     }
 
-    // --- RecordDamageDealt / FinalizeCurrentTurn ---
+    // --- per-turn delta ---
 
     [Fact]
     public void RecordDamageDealt_AccumulatesWithinTurn()
@@ -48,10 +48,8 @@ public class StatsCollectorTests : IDisposable
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 15);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(25, snapshot.StatsByPlayer["p1"].DamageDealt);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(25, p.Players["p1"].Turn.DamageDealt);
     }
 
     [Fact]
@@ -60,11 +58,9 @@ public class StatsCollectorTests : IDisposable
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 20);
         StatsCollector.RecordDamageDealt("p2", "PlayerB", 30);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(20, snapshot.StatsByPlayer["p1"].DamageDealt);
-        Assert.Equal(30, snapshot.StatsByPlayer["p2"].DamageDealt);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(20, p.Players["p1"].Turn.DamageDealt);
+        Assert.Equal(30, p.Players["p2"].Turn.DamageDealt);
     }
 
     [Fact]
@@ -73,71 +69,53 @@ public class StatsCollectorTests : IDisposable
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 0);
         StatsCollector.RecordDamageDealt("p1", "PlayerA", -5);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn();
-
-        Assert.Null(snapshot);
+        Assert.Null(StatsCollector.FinalizeTurn());
     }
 
     [Fact]
-    public void FinalizeCurrentTurn_ReturnsNullWhenNoDataThisTurn()
+    public void FinalizeTurn_ReturnsNullWhenNoData()
     {
         StatsCollector.BeginCombat();
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn();
-
-        Assert.Null(snapshot);
+        Assert.Null(StatsCollector.FinalizeTurn());
     }
 
     [Fact]
-    public void FinalizeCurrentTurn_ClearsAfterSnapshot()
+    public void FinalizeTurn_IncrementsTurnNumber()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
-
-        var second = StatsCollector.FinalizeCurrentTurn();
-
-        Assert.Null(second);
-    }
-
-    [Fact]
-    public void FinalizeCurrentTurn_IncrementsTurnNumber()
-    {
-        StatsCollector.BeginCombat();
-
+        var t1 = StatsCollector.FinalizeTurn()!;
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        var t1 = StatsCollector.FinalizeCurrentTurn()!;
-
-        StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        var t2 = StatsCollector.FinalizeCurrentTurn()!;
-
+        var t2 = StatsCollector.FinalizeTurn()!;
         Assert.Equal(1, t1.TurnNumber);
         Assert.Equal(2, t2.TurnNumber);
     }
 
-    // --- New per-turn stats ---
-
     [Fact]
-    public void RecordDamageReceived_AppearsInTurnSnapshot()
+    public void FinalizeTurn_IsFinal_True_WhenIsFinalRequested()
     {
         StatsCollector.BeginCombat();
-        StatsCollector.RecordDamageReceived("p1", "PlayerA", 12);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(12, snapshot.StatsByPlayer["p1"].DamageReceived);
+        StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
+        var p = StatsCollector.FinalizeTurn(isFinal: true)!;
+        Assert.True(p.IsFinal);
     }
 
     [Fact]
-    public void RecordBlockGainedSelf_AppearsInTurnSnapshot()
+    public void RecordDamageReceived_AppearsInTurnDelta()
+    {
+        StatsCollector.BeginCombat();
+        StatsCollector.RecordDamageReceived("p1", "PlayerA", 12);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(12, p.Players["p1"].Turn.DamageReceived);
+    }
+
+    [Fact]
+    public void RecordBlockGainedSelf_AppearsInTurnDelta()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordBlockGainedSelf("p1", "PlayerA", 8);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(8, snapshot.StatsByPlayer["p1"].BlockGainedSelf);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(8, p.Players["p1"].Turn.BlockGainedSelf);
     }
 
     [Fact]
@@ -146,10 +124,8 @@ public class StatsCollectorTests : IDisposable
         StatsCollector.BeginCombat();
         StatsCollector.RecordEnergyUsed("p1", "PlayerA", 2);
         StatsCollector.RecordEnergyUsed("p1", "PlayerA", 1);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(3, snapshot.StatsByPlayer["p1"].EnergyUsed);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(3, p.Players["p1"].Turn.EnergyUsed);
     }
 
     [Fact]
@@ -159,10 +135,8 @@ public class StatsCollectorTests : IDisposable
         StatsCollector.BeginCombat();
         StatsCollector.RecordCardPlayed("p1", "PlayerA", card);
         StatsCollector.RecordCardPlayed("p1", "PlayerA", card);
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(2, snapshot.StatsByPlayer["p1"].CardsPlayed);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(2, p.Players["p1"].Turn.CardsPlayed);
     }
 
     [Fact]
@@ -172,145 +146,142 @@ public class StatsCollectorTests : IDisposable
         StatsCollector.RecordCardDrawn("p1", "PlayerA");
         StatsCollector.RecordCardDrawn("p1", "PlayerA");
         StatsCollector.RecordCardDrawn("p1", "PlayerA");
-
-        var snapshot = StatsCollector.FinalizeCurrentTurn()!;
-
-        Assert.Equal(3, snapshot.StatsByPlayer["p1"].CardsDrawn);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(3, p.Players["p1"].Turn.CardsDrawn);
     }
 
-    // --- FinalizeCurrentCombat ---
+    // --- per-turn cards (★新規) ---
 
     [Fact]
-    public void FinalizeCurrentCombat_AggregatesTotalAcrossTurns()
+    public void TurnCards_BuiltFromCardPlayedAndDamageDealt()
+    {
+        var bash = new CardInfo("BASH", "バッシュ", "Attack");
+        StatsCollector.BeginCombat();
+        StatsCollector.RecordCardPlayed("p1", "PlayerA", bash);
+        StatsCollector.RecordDamageDealt("p1", "PlayerA", 8, bash);
+        StatsCollector.RecordDebuffApplied("p1", "PlayerA", "Vulnerable", 2, bash);
+
+        var p = StatsCollector.FinalizeTurn()!;
+        var card = p.Players["p1"].Turn.Cards.First(c => c.CardId == "BASH");
+
+        Assert.Equal(1, card.PlayCount);
+        Assert.Equal(8, card.DamageDealt);
+        Assert.Equal(8, card.MaxSingleHit);
+        Assert.Equal(2, card.DebuffsApplied["Vulnerable"]);
+    }
+
+    [Fact]
+    public void TurnCards_AreClearedBetweenTurns()
+    {
+        var card = new CardInfo("STRIKE", "ストライク", "Attack");
+        StatsCollector.BeginCombat();
+        StatsCollector.RecordDamageDealt("p1", "PlayerA", 6, card);
+        StatsCollector.FinalizeTurn();   // turn 1 確定
+
+        StatsCollector.RecordDamageDealt("p1", "PlayerA", 9, card);
+        var t2 = StatsCollector.FinalizeTurn()!;
+
+        var c = t2.Players["p1"].Turn.Cards.First(x => x.CardId == "STRIKE");
+        Assert.Equal(9, c.DamageDealt);          // turn1 の 6 が混じっていないこと
+    }
+
+    // --- combat 累計 ---
+
+    [Fact]
+    public void CombatTotals_AccumulateAcrossTurns()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
+        StatsCollector.FinalizeTurn();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 20);
-        StatsCollector.FinalizeCurrentTurn();
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-
-        Assert.Equal(30, summary.TotalsByPlayer["p1"].DamageDealt);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(30, p.Players["p1"].Combat.DamageDealt);
     }
 
     [Fact]
-    public void FinalizeCurrentCombat_IncludesUnfinalizedCurrentTurn()
+    public void CombatTotals_PersistAfterFinalizeTurn()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
-        // ターン確定せずに戦闘終了
-        StatsCollector.RecordDamageDealt("p1", "PlayerA", 5);
+        var p = StatsCollector.FinalizeTurn()!;
 
-        var summary = StatsCollector.FinalizeCurrentCombat();
-
-        Assert.Equal(15, summary.TotalsByPlayer["p1"].DamageDealt);
-        Assert.Equal(2, summary.TotalTurns);
+        Assert.Equal(10, p.Players["p1"].Combat.DamageDealt);
+        Assert.Equal(10, p.Players["p1"].Turn.DamageDealt);
     }
 
     [Fact]
-    public void FinalizeCurrentCombat_ReportsCorrectTotalTurns()
+    public void IsFinalFlush_EmitsCombatTotalsEvenWithoutTurnDelta()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
-        StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
-        StatsCollector.RecordDamageDealt("p1", "PlayerA", 10);
-        StatsCollector.FinalizeCurrentTurn();
+        StatsCollector.FinalizeTurn();   // turn 1: combat=10
 
-        var summary = StatsCollector.FinalizeCurrentCombat();
+        // 何も Record しない状態で is_final 送信
+        var p = StatsCollector.FinalizeTurn(isFinal: true)!;
 
-        Assert.Equal(3, summary.TotalTurns);
+        Assert.True(p.IsFinal);
+        Assert.Equal(10, p.Players["p1"].Combat.DamageDealt);
+        Assert.Equal(0,  p.Players["p1"].Turn.DamageDealt);
     }
 
-    // --- Card stats ---
+    // --- card_stats (combat 累計のカード別) ---
 
     [Fact]
-    public void RecordDamageDealt_WithCard_TrackedInCardStats()
+    public void CardStats_TrackedInCombatTotals()
     {
         var card = new CardInfo("Strike_R", "Strike", "Attack");
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 10, card);
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 15, card);
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-        var cs = summary.TotalsByPlayer["p1"].CardStats.First(c => c.CardId == "Strike_R");
-
+        var p = StatsCollector.FinalizeTurn()!;
+        var cs = p.Players["p1"].Combat.CardStats.First(c => c.CardId == "Strike_R");
         Assert.Equal(25, cs.DamageDealt);
     }
 
     [Fact]
-    public void RecordDamageDealt_MaxSingleHit_TrackedPerPlayerAndCard()
+    public void MaxSingleHit_TrackedPerPlayerAndCard()
     {
         var card = new CardInfo("Bash", "Bash", "Attack");
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 20, card);
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 8, card);
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-        var player  = summary.TotalsByPlayer["p1"];
-        var cs      = player.CardStats.First(c => c.CardId == "Bash");
-
-        Assert.Equal(20, player.MaxSingleHit);
-        Assert.Equal(20, cs.MaxSingleHit);
+        var p = StatsCollector.FinalizeTurn()!;
+        var combat = p.Players["p1"].Combat;
+        Assert.Equal(20, combat.MaxSingleHit);
+        Assert.Equal(20, combat.CardStats.First(c => c.CardId == "Bash").MaxSingleHit);
     }
 
     [Fact]
-    public void RecordDamageDealt_NullCard_TracksAsIndirect()
+    public void NullCard_TracksAsIndirect()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordDamageDealt("p1", "PlayerA", 6, null);
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-        var cs = summary.TotalsByPlayer["p1"].CardStats.First(c => c.CardId == "(indirect)");
-
+        var p = StatsCollector.FinalizeTurn()!;
+        var cs = p.Players["p1"].Combat.CardStats.First(c => c.CardId == "(indirect)");
         Assert.Equal(6, cs.DamageDealt);
     }
 
     [Fact]
-    public void RecordCardPlayed_PlayCount_AppearsInCardStats()
-    {
-        var card = new CardInfo("Defend_R", "Defend", "Skill");
-        StatsCollector.BeginCombat();
-        StatsCollector.RecordCardPlayed("p1", "PlayerA", card);
-        StatsCollector.RecordCardPlayed("p1", "PlayerA", card);
-        StatsCollector.RecordCardPlayed("p1", "PlayerA", card);
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-        var cs = summary.TotalsByPlayer["p1"].CardStats.First(c => c.CardId == "Defend_R");
-
-        Assert.Equal(3, cs.PlayCount);
-    }
-
-    [Fact]
-    public void RecordDebuffApplied_AccumulatesInCombatAndCardStats()
+    public void DebuffApplied_AccumulatesInCombatAndCardStats()
     {
         var card = new CardInfo("Bash", "Bash", "Attack");
         StatsCollector.BeginCombat();
         StatsCollector.RecordDebuffApplied("p1", "PlayerA", "Vulnerable", 2, card);
         StatsCollector.RecordDebuffApplied("p1", "PlayerA", "Vulnerable", 1, card);
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-        var player  = summary.TotalsByPlayer["p1"];
-        var cs      = player.CardStats.First(c => c.CardId == "Bash");
-
-        Assert.Equal(3, player.DebuffsApplied["Vulnerable"]);
-        Assert.Equal(3, cs.DebuffsApplied["Vulnerable"]);
+        var p = StatsCollector.FinalizeTurn()!;
+        var combat = p.Players["p1"].Combat;
+        Assert.Equal(3, combat.DebuffsApplied["Vulnerable"]);
+        Assert.Equal(3, combat.CardStats.First(c => c.CardId == "Bash").DebuffsApplied["Vulnerable"]);
     }
 
     [Fact]
-    public void RecordBlockGivenToAlly_SeparateFromBlockGainedSelf()
+    public void BlockGivenToAlly_SeparateFromBlockGainedSelf()
     {
         StatsCollector.BeginCombat();
         StatsCollector.RecordBlockGainedSelf("p1", "PlayerA", 10);
         StatsCollector.RecordBlockGivenToAlly("p1", "PlayerA", 5);
-
-        var summary = StatsCollector.FinalizeCurrentCombat();
-        var player  = summary.TotalsByPlayer["p1"];
-
-        Assert.Equal(10, player.BlockGainedSelf);
-        Assert.Equal(5,  player.BlockGivenToAllies);
+        var p = StatsCollector.FinalizeTurn()!;
+        Assert.Equal(10, p.Players["p1"].Combat.BlockGainedSelf);
+        Assert.Equal(5,  p.Players["p1"].Combat.BlockGivenToAllies);
     }
 }

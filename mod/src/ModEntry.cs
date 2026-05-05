@@ -31,6 +31,8 @@ public static class ModEntry
             PatchHook(nameof(Hook.AfterCardDrawn),           nameof(HookPatches.AfterCardDrawnPostfix));
             PatchHook(nameof(Hook.AfterPowerAmountChanged),  nameof(HookPatches.AfterPowerAmountChangedPostfix));
             PatchHook(nameof(Hook.AfterPotionUsed),          nameof(HookPatches.AfterPotionUsedPostfix));
+            PatchHook(nameof(Hook.AfterCombatVictory),       nameof(HookPatches.AfterCombatVictoryPostfix));
+            PatchHook(nameof(Hook.AfterDeath),               nameof(HookPatches.AfterDeathPostfix));
 
             StatsLogger.Initialize();
             Log.Info("[StsStats] Initialized successfully");

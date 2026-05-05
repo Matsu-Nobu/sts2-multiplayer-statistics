@@ -19,11 +19,21 @@ internal static class HookPatches
     // マルチプレイで AfterPlayerTurnStart がプレイヤー数ぶん発火する問題への対策。
     private static int _lastFinalizedRound = 0;
 
+    // run_start を1度だけ emit するためのフラグ。BeforeCombatStart の最初の呼び出しで送る。
+    private static bool _runStartEmitted = false;
+
     // BeforeCombatStart(IRunState runState, CombatState? combatState)
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
     {
         try
         {
+            // run_start: 初回戦闘の前に各プレイヤーぶんイベントを発行
+            if (!_runStartEmitted && runState != null)
+            {
+                EmitRunStartForAllPlayers(runState);
+                _runStartEmitted = true;
+            }
+
             StatsCollector.BeginCombat();
             _currentTurnPlayer = null;
             _lastFinalizedRound = 0;
@@ -41,14 +51,11 @@ internal static class HookPatches
     {
         try
         {
-            // ラウンド番号が変化したときだけ前ターンを確定する。
-            // 同一ラウンド内で複数プレイヤーぶん発火しても2重 finalize しない。
             int round = combatState?.RoundNumber ?? 0;
             if (round > _lastFinalizedRound)
             {
-                var snapshot = StatsCollector.FinalizeCurrentTurn();
-                if (snapshot != null)
-                    StatsLogger.LogTurnEnd(snapshot);
+                var payload = StatsCollector.FinalizeTurn(isFinal: false);
+                if (payload != null) StatsLogger.LogTurn(payload);
                 _lastFinalizedRound = round;
             }
 
@@ -65,12 +72,57 @@ internal static class HookPatches
     {
         try
         {
-            var summary = StatsCollector.FinalizeCurrentCombat();
-            StatsLogger.LogCombatEnd(summary);
+            var payload = StatsCollector.FinalizeTurn(isFinal: true);
+            if (payload != null) StatsLogger.LogTurn(payload);
         }
         catch (Exception ex)
         {
             Log.Error($"[StsStats] AfterCombatEnd error: {ex.Message}");
+        }
+    }
+
+    // AfterCombatVictory(IRunState runState, ICombatState combatState, CombatRoom room)
+    // 最終ボス戦突破などで run 全体勝利を判定したい場合に拡張する。
+    // 現状は IsVictoryRoom かつ Act が最終 act の場合に run_end(victory) を emit。
+    public static void AfterCombatVictoryPostfix(IRunState? runState, CombatState? combatState, object? room)
+    {
+        try
+        {
+            if (runState == null || room == null) return;
+
+            bool isVictoryRoom = (bool?)(room.GetType().GetProperty("IsVictoryRoom")?.GetValue(room)) ?? false;
+            if (!isVictoryRoom) return;
+
+            // 最終 act の判定: CurrentActIndex が Acts.Count - 1
+            int actIndex = (int?)runState.GetType().GetProperty("CurrentActIndex")?.GetValue(runState) ?? -1;
+            int actCount = (runState.GetType().GetProperty("Acts")?.GetValue(runState) as IEnumerable)?.Cast<object>().Count() ?? -1;
+            bool isFinalAct = actIndex >= 0 && actCount > 0 && actIndex == actCount - 1;
+            if (!isFinalAct) return;
+
+            EmitRunEndForAllPlayers(runState, outcome: "victory");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] AfterCombatVictory error: {ex.Message}");
+        }
+    }
+
+    // AfterDeath(IRunState runState, ICombatState combatState, Creature creature, bool wasRemovalPrevented, float deathAnimLength)
+    public static void AfterDeathPostfix(IRunState? runState, CombatState? combatState, Creature? creature)
+    {
+        try
+        {
+            if (runState == null || creature == null) return;
+
+            // 死亡したのがプレイヤー創物なら run_end(death) を発行
+            var playerInfo = TryFindPlayerForCreature(combatState, creature);
+            if (playerInfo == null) return;
+
+            EmitRunEnd(runState, playerId: playerInfo.Value.id, outcome: "death");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] AfterDeath error: {ex.Message}");
         }
     }
 
@@ -405,5 +457,100 @@ internal static class HookPatches
             return new CardInfo(cardId, cardName, cardType);
         }
         catch { return null; }
+    }
+
+    // --- run lifecycle event helpers ---
+
+    private static void EmitRunStartForAllPlayers(IRunState runState)
+    {
+        try
+        {
+            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
+            if (players == null) return;
+
+            int ascension = (int?)runState.GetType().GetProperty("AscensionLevel")?.GetValue(runState) ?? 0;
+            string seed = TryGetSeed(runState);
+            int floor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+
+            foreach (var player in players)
+            {
+                var info = TryGetPlayerInfo(player);
+                if (info == null) continue;
+
+                string characterId = TryGetCharacterId(player) ?? "UNKNOWN";
+
+                EventBuffer.Emit(new EventRecord(
+                    EventUuid:   Guid.NewGuid(),
+                    EventType:   "run_start",
+                    OccurredAt:  DateTime.UtcNow,
+                    PlayerId:    info.Value.id,
+                    Floor:       floor,
+                    Payload:     new
+                    {
+                        character_id = characterId,
+                        ascension    = ascension,
+                        seed         = seed,
+                    }
+                ));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitRunStartForAllPlayers error: {ex.Message}");
+        }
+    }
+
+    private static void EmitRunEndForAllPlayers(IRunState runState, string outcome)
+    {
+        try
+        {
+            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
+            if (players == null) return;
+
+            foreach (var player in players)
+            {
+                var info = TryGetPlayerInfo(player);
+                if (info == null) continue;
+                EmitRunEnd(runState, info.Value.id, outcome);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitRunEndForAllPlayers error: {ex.Message}");
+        }
+    }
+
+    private static void EmitRunEnd(IRunState runState, string playerId, string outcome)
+    {
+        try
+        {
+            int finalFloor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
+            EventBuffer.Emit(new EventRecord(
+                EventUuid:   Guid.NewGuid(),
+                EventType:   "run_end",
+                OccurredAt:  DateTime.UtcNow,
+                PlayerId:    playerId,
+                Floor:       finalFloor,
+                Payload:     new
+                {
+                    outcome     = outcome,
+                    final_floor = finalFloor,
+                }
+            ));
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] EmitRunEnd error: {ex.Message}");
+        }
+    }
+
+    private static string TryGetSeed(IRunState runState)
+    {
+        try
+        {
+            var rng = runState.GetType().GetProperty("Rng")?.GetValue(runState);
+            return rng?.GetType().GetProperty("StringSeed")?.GetValue(rng)?.ToString() ?? "";
+        }
+        catch { return ""; }
     }
 }
