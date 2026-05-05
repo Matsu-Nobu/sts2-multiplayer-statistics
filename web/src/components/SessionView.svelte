@@ -32,11 +32,11 @@
   );
 
   function combatLabel(c: typeof combats[number]): string {
-    const name  = c.encounter_name ? `${c.combat_index}. ${c.encounter_name}` : `戦闘 ${c.combat_index}`;
+    const name = c.encounter_name ? `${c.combat_index}. ${c.encounter_name}` : `戦闘 ${c.combat_index}`;
     // Monster は冗長なので付けない。Elite / Boss のみラベル表示。
-    const room  = (c.room_type === 'Elite' || c.room_type === 'Boss') ? ` [${c.room_type}]` : '';
-    const result = c.victory === true ? ' ✓' : c.victory === false ? ' ✗' : '';
-    return name + room + result;
+    const room = (c.room_type === 'Elite' || c.room_type === 'Boss') ? ` [${c.room_type}]` : '';
+    // 勝敗マークは出さない（mod 側の判定が不安定なときに誤情報になるため）
+    return name + room;
   }
 
   function onSelect(e: Event) {
