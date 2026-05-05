@@ -117,6 +117,7 @@ internal static class HookPatches
         {
             // この戦闘は勝利した（後段の AfterCombatEnd で combat_end イベントの victory に使う）
             _currentCombatWasVictory = true;
+            Log.Info($"[StsStats] AfterCombatVictory fired (combat_index={StatsCollector.CurrentCombatIndex})");
 
             if (runState == null || room == null) return;
 
@@ -144,16 +145,25 @@ internal static class HookPatches
         {
             if (runState == null || creature == null) return;
 
-            // 死亡したのがプレイヤー創物なら、死亡ターンのデータを送ってから run_end を emit
+            // 死亡したのがプレイヤー創物か
             var playerInfo = TryFindPlayerForCreature(combatState, creature);
             if (playerInfo == null) return;
 
-            // 死亡ターン（被ダメや使ったエナジー等）を送る。STS2 は player death では
-            // AfterCombatEnd を発火しないようなので、ここで明示的に flush する必要がある。
+            // マルチプレイで他プレイヤーがまだ生きていれば run は続く。run_end は emit しない。
+            // 戦闘自体も他プレイヤーが続行するので combat_end / turn flush もここではやらない。
+            int alive = CountAlivePlayers(runState);
+            if (alive > 0)
+            {
+                Log.Info($"[StsStats] Player {playerInfo.Value.name} fell, {alive} player(s) still alive — run continues");
+                return;
+            }
+
+            // 全員死亡 = run 終了（シングルプレイは常にこちらに来る）
+            // STS2 は player death では AfterCombatEnd を発火しないようなので、明示的に flush する。
             var payload = StatsCollector.FinalizeTurn(isFinal: true);
             if (payload != null) DispatchTurn(payload);
 
-            // 死亡 = 戦闘の負け。combat_end イベントも明示送信（victory=false）。
+            // 戦闘の負けでもあるので combat_end も明示送信（victory=false）
             EmitCombatEnd(runState, combatState, room: null);
 
             EmitRunEnd(runState, playerId: playerInfo.Value.id, outcome: "death");
@@ -171,6 +181,7 @@ internal static class HookPatches
         CombatState? combatState,
         Creature?    dealer,
         DamageResult? results,
+        Creature?    target,
         CardModel?   cardSource)
     {
         try
@@ -180,12 +191,27 @@ internal static class HookPatches
             int amount = (int)results.UnblockedDamage;
             if (amount <= 0) return;
 
-            var playerInfo = TryFindPlayerForCreature(combatState, dealer);
-            if (playerInfo == null) return;
+            // ケース1: プレイヤーが直接与えたダメージ
+            var dealerPlayer = TryFindPlayerForCreature(combatState, dealer);
+            if (dealerPlayer != null)
+            {
+                // cardSource が無い間接ダメージは DamageSourceContext から拾う
+                var card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
+                StatsCollector.RecordDamageDealt(dealerPlayer.Value.id, dealerPlayer.Value.name, amount, card);
+                return;
+            }
 
-            // cardSource が無い間接ダメージは DamageSourceContext（毒・オーブ等）から拾う
-            var card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
-            StatsCollector.RecordDamageDealt(playerInfo.Value.id, playerInfo.Value.name, amount, card);
+            // ケース2: 間接ダメージ（Poison/Burn 等の DoT tick）
+            // dealer は通常 enemy 自身、target も enemy 自身。target に乗っている DoT の applier を探して帰属。
+            if (target != null)
+            {
+                var applierPlayer = FindIndirectDamageApplier(target, combatState);
+                if (applierPlayer != null)
+                {
+                    var card = TryGetCardInfo(cardSource) ?? DamageSourceContext.Current;
+                    StatsCollector.RecordDamageDealt(applierPlayer.Value.id, applierPlayer.Value.name, amount, card);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -707,7 +733,7 @@ internal static class HookPatches
             }
             catch { /* encounter 取得失敗時は ID/Name なしでイベント発行 */ }
 
-            string? roomType = TryGetRoomType(runState);
+            string? roomType = TryGetRoomType(runState, combatState);
 
             EventBuffer.Emit(new EventRecord(
                 EventUuid:  Guid.NewGuid(),
@@ -741,6 +767,7 @@ internal static class HookPatches
             // combat の勝敗: AfterCombatVictory hook の発火有無で判定する。
             // room.IsVictoryRoom はラン全体の最終勝利部屋専用なので使えない。
             bool victory = _currentCombatWasVictory;
+            Log.Info($"[StsStats] EmitCombatEnd combat_index={combatIndex} victory={victory}");
 
             EventBuffer.Emit(new EventRecord(
                 EventUuid:  Guid.NewGuid(),
@@ -761,18 +788,85 @@ internal static class HookPatches
         }
     }
 
-    private static string? TryGetRoomType(IRunState? runState)
+    private static string? TryGetRoomType(IRunState? runState, CombatState? combatState)
     {
+        // 1. CombatState.Encounter.RoomType (enum) を優先（"Monster" / "Elite" / "Boss"）
         try
         {
-            var room = runState?.GetType().GetProperty("CurrentRoom")?.GetValue(runState);
-            // 型名から判別（"NormalCombatRoom" / "EliteCombatRoom" / "BossCombatRoom" 等を想定）
-            string typeName = room?.GetType().Name ?? "";
-            if (typeName.Contains("Boss"))    return "Boss";
-            if (typeName.Contains("Elite"))   return "Elite";
-            if (typeName.Contains("Combat"))  return "Monster";
-            return typeName;
+            var encounter = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
+            var rt = encounter?.GetType().GetProperty("RoomType")?.GetValue(encounter);
+            if (rt != null)
+            {
+                string name = rt.ToString() ?? "";
+                if (!string.IsNullOrEmpty(name) && name != "Unassigned") return name;
+            }
         }
-        catch { return null; }
+        catch { }
+        // 2. フォールバック: encounter_id の suffix
+        try
+        {
+            var encounter = combatState?.GetType().GetProperty("Encounter")?.GetValue(combatState);
+            var idObj = encounter?.GetType().GetProperty("Id")?.GetValue(encounter);
+            string id = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString() ?? "";
+            if (id.EndsWith("_ELITE")) return "Elite";
+            if (id.EndsWith("_BOSS"))  return "Boss";
+            if (!string.IsNullOrEmpty(id)) return "Monster";
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>run の生存プレイヤー数を返す。マルチプレイで全員死亡判定に使う。</summary>
+    private static int CountAlivePlayers(IRunState runState)
+    {
+        int alive = 0;
+        try
+        {
+            var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
+            if (players == null) return 0;
+            foreach (var p in players)
+            {
+                var cr = p.GetType().GetProperty("Creature")?.GetValue(p) as Creature;
+                if (cr == null) continue;
+                bool isAlive = (bool?)cr.GetType().GetProperty("IsAlive")?.GetValue(cr) ?? false;
+                if (isAlive) alive++;
+            }
+        }
+        catch { }
+        return alive;
+    }
+
+    /// <summary>
+    /// 指定された target に乗っている Poison（または同類の DoT）の applier を探す。
+    /// 自傷ダメージ（DoT tick）を applier プレイヤーに帰属させるために使う。
+    /// </summary>
+    private static (string id, string name)? FindIndirectDamageApplier(Creature? target, CombatState? combatState)
+    {
+        if (target == null) return null;
+        try
+        {
+            var powersProp = target.GetType().GetProperty("Powers");
+            var powers = powersProp?.GetValue(target) as IEnumerable;
+            if (powers == null) return null;
+            foreach (var power in powers)
+            {
+                string powerId = "";
+                try
+                {
+                    var idObj = power.GetType().GetProperty("Id")?.GetValue(power);
+                    powerId = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString() ?? "";
+                }
+                catch { }
+                // Poison / 他 DoT 系（Burn / etc.）は名前に POISON / BURN を含むことを想定
+                if (powerId.Contains("POISON") || powerId.Contains("BURN"))
+                {
+                    var applier = power.GetType().GetProperty("Applier")?.GetValue(power) as Creature;
+                    var info = TryFindPlayerForCreature(combatState, applier);
+                    if (info != null) return info;
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 }
