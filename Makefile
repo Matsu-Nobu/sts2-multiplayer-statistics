@@ -46,9 +46,6 @@ help:
 	@echo ""
 	@echo "make docker-build     コンテナイメージ生成"
 	@echo "make docker-run       :8080 で起動 (./.docker-data に永続化)"
-	@echo ""
-	@echo "make fly-deploy       Fly.io にデプロイ"
-	@echo "make fly-logs         Fly.io リモートログ"
 
 # --- mod ----------------------------------------------------------------------
 
@@ -113,7 +110,7 @@ docker-run: docker-build
 		-v $(DOCKER_DATA_DIR):/data \
 		$(DOCKER_IMAGE):dev
 
-# --- Fly.io -------------------------------------------------------------------
+# --- Fly.io（メンテナ専用、help からは隠す） ------------------------------
 
 fly-deploy:
 	fly deploy
