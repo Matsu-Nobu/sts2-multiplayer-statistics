@@ -327,20 +327,28 @@ internal static class HookPatches
 
     private static (string id, string name) BuildPlayerInfo(object player)
     {
-        ulong netId = (ulong?)(player.GetType().GetProperty("NetId")?.GetValue(player) as ulong?) ?? 0UL;
-        string id = netId == 0UL ? "unknown" : netId.ToString();
+        ulong netId = (player.GetType().GetProperty("NetId")?.GetValue(player) as ulong?) ?? 0UL;
 
-        // Steam名を最優先（マルチプレイ）。取れなければキャラクター名にフォールバック。
-        string? name = TryGetSteamName(netId) ?? TryGetCharacterTitle(player);
+        // シングルプレイ等で NetId=0 のときはローカルプレイヤーIDで補う
+        ulong steamId = netId != 0UL ? netId : TryGetLocalPlayerId();
+
+        string id = steamId != 0UL ? steamId.ToString() : "unknown";
+        string? name = TryGetSteamName(steamId) ?? TryGetCharacterTitle(player);
         return (id, name ?? id);
     }
 
-    private static string? TryGetSteamName(ulong netId)
+    private static ulong TryGetLocalPlayerId()
     {
-        if (netId == 0UL) return null;
+        try { return PlatformUtil.GetLocalPlayerId(PlatformUtil.PrimaryPlatform); }
+        catch { return 0UL; }
+    }
+
+    private static string? TryGetSteamName(ulong steamId)
+    {
+        if (steamId == 0UL) return null;
         try
         {
-            string name = PlatformUtil.GetPlayerName(PlatformUtil.PrimaryPlatform, netId);
+            string name = PlatformUtil.GetPlayerName(PlatformUtil.PrimaryPlatform, steamId);
             return string.IsNullOrEmpty(name) ? null : name;
         }
         catch (Exception ex)
