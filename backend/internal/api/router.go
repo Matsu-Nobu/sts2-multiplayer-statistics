@@ -73,12 +73,12 @@ func (s *Server) Routes() http.Handler {
 
 	r.Get("/api/sessions/{id}", s.getSession)
 
-	// --- 静的 SPA 配信 ---
-	// 共有URL（mod がクリップボードにコピーするやつ）はこのルートで開ける。
-	r.Get("/", indexHTML())
+	// --- 静的配信 ---
+	// "/" はランディングページ（プロジェクト紹介・使い方）
+	// "/s/{id}" は SPA（共有URLで開かれる統計ビュー）
+	r.Get("/", landingHTML())
 	r.Get("/s/{id}", indexHTML())
 	r.Mount("/assets/", staticAssets())
-	// favicon 等のルート直下静的ファイルがあれば追加で配信
 	r.Get("/favicon.ico", staticAssets().ServeHTTP)
 
 	return r
