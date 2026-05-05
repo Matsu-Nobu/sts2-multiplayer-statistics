@@ -25,15 +25,18 @@ internal static class EventBuffer
     private static readonly List<EventRecord> _pending = new();
     private static readonly object _lock = new();
 
-    /// <summary>戦闘開始時。combat_index を増やし turn_number / sequence をリセット。</summary>
+    /// <summary>戦闘開始時。combat_index を増やし、turn_number=1（1ターン目が即時開始する想定）、sequence=0 にリセット。</summary>
     public static void BeginCombat()
     {
         _combatIndex++;
-        _turnNumber = 0;
+        _turnNumber = 1;
         _sequence   = 0;
     }
 
-    /// <summary>各ターン終了直後。次ターンの sequence を 0 にリセットし turn_number を進める。</summary>
+    /// <summary>
+    /// プレイヤー側ターン終了時に呼ぶ。次ターン用に turn_number を進め sequence をリセット。
+    /// AfterTurnEnd(side=Player) hook 起点。
+    /// </summary>
     public static void BeginTurn()
     {
         _turnNumber++;
