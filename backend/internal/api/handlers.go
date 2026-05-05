@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -55,7 +54,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pre-register the host as a known player so future filters work even if
-	// they never appear in turns/events explicitly.
+	// they never appear in events explicitly.
 	if in.HostSteamID != nil && *in.HostSteamID != "" {
 		display := *in.HostSteamID
 		if in.HostName != nil && *in.HostName != "" {
@@ -71,63 +70,30 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- POST /sessions/{id}/turns ---
+// --- POST /sessions/{id}/turns (Phase 3.5: deprecated) ---
 
-type turnReq struct {
-	CombatIndex int                     `json:"combat_index"`
-	TurnNumber  int                     `json:"turn_number"`
-	IsFinal     bool                    `json:"is_final"`
-	Timestamp   string                  `json:"timestamp"`
-	Players     map[string]turnReqEntry `json:"players"`
-}
-
-type turnReqEntry struct {
-	PlayerName string `json:"player_name"`
-	// turn / combat are arbitrary blobs validated by the mod side. We store the entire body verbatim.
-}
-
-func (s *Server) postTurn(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read body")
-		return
-	}
-	var in turnReq
-	if err := json.Unmarshal(body, &in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	if in.CombatIndex < 1 || in.TurnNumber < 1 {
-		writeError(w, http.StatusBadRequest, "combat_index and turn_number must be >= 1")
-		return
-	}
-
-	if err := s.Store.UpsertTurn(r.Context(), id, in.CombatIndex, in.TurnNumber, in.IsFinal, body); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to store turn")
-		return
-	}
-	for steamID, p := range in.Players {
-		display := p.PlayerName
-		if display == "" {
-			display = steamID
-		}
-		_ = s.Store.UpsertPlayer(r.Context(), steamID, display)
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+// postTurnGone always returns 410. Phase 3.5 で集計 payload を廃止し、
+// すべての記録は POST /events に統合された。古い mod クライアント向けの
+// 明示的なシグナル。
+func postTurnGone(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusGone, map[string]string{
+		"error":  "POST /turns is no longer supported (Phase 3.5)",
+		"hint":   "update the StsStats mod and use POST /sessions/{id}/events instead",
+	})
 }
 
 // --- POST /sessions/{id}/events ---
 
 type eventReq struct {
-	EventUUID  string          `json:"event_uuid"`
-	EventType  string          `json:"event_type"`
-	OccurredAt string          `json:"occurred_at"`
-	PlayerID   *string         `json:"player_id,omitempty"`
-	Floor      *int            `json:"floor,omitempty"`
-	Payload    json.RawMessage `json:"payload"`
+	EventUUID    string          `json:"event_uuid"`
+	EventType    string          `json:"event_type"`
+	OccurredAt   string          `json:"occurred_at"`
+	PlayerID     *string         `json:"player_id,omitempty"`
+	Floor        *int            `json:"floor,omitempty"`
+	CombatIndex  *int            `json:"combat_index,omitempty"`
+	TurnNumber   *int            `json:"turn_number,omitempty"`
+	Sequence     *int            `json:"sequence,omitempty"`
+	Payload      json.RawMessage `json:"payload"`
 }
 
 func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +104,7 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json body (expected array)")
 		return
 	}
-	for i, ev := range in {
+	for _, ev := range in {
 		if ev.EventUUID == "" || ev.EventType == "" || ev.OccurredAt == "" {
 			writeError(w, http.StatusBadRequest, "events[].event_uuid, event_type, occurred_at are required")
 			return
@@ -148,13 +114,16 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 			payload = json.RawMessage("{}")
 		}
 		_, err := s.Store.InsertEvent(r.Context(), store.EventInput{
-			EventUUID:  ev.EventUUID,
-			SessionID:  id,
-			PlayerID:   ev.PlayerID,
-			EventType:  ev.EventType,
-			OccurredAt: ev.OccurredAt,
-			Floor:      ev.Floor,
-			Payload:    payload,
+			EventUUID:   ev.EventUUID,
+			SessionID:   id,
+			PlayerID:    ev.PlayerID,
+			EventType:   ev.EventType,
+			OccurredAt:  ev.OccurredAt,
+			Floor:       ev.Floor,
+			CombatIndex: ev.CombatIndex,
+			TurnNumber:  ev.TurnNumber,
+			Sequence:    ev.Sequence,
+			Payload:     payload,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to store event")
@@ -165,7 +134,6 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		if ev.EventType == "run_end" {
 			s.applyRunEnd(r, id, ev)
 		}
-		_ = i
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -193,7 +161,6 @@ func (s *Server) applyRunEnd(r *http.Request, sessionID string, ev eventReq) {
 type sessionDoc struct {
 	Session *store.Session    `json:"session"`
 	Players []store.Player    `json:"players"`
-	Turns   []json.RawMessage `json:"turns"`
 	Events  []json.RawMessage `json:"events"`
 }
 
@@ -220,11 +187,6 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	turns, err := s.Store.ListTurns(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load turns")
-		return
-	}
 	events, err := s.Store.ListEvents(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load events")
@@ -235,9 +197,6 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load players")
 		return
 	}
-	if turns == nil {
-		turns = []json.RawMessage{}
-	}
 	if events == nil {
 		events = []json.RawMessage{}
 	}
@@ -247,7 +206,6 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessionDoc{
 		Session: sess,
 		Players: players,
-		Turns:   turns,
 		Events:  events,
 	})
 }

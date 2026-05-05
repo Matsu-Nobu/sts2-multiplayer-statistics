@@ -26,8 +26,6 @@ const (
 	// rate limit: IP あたり N req / windowSec
 	// POST /sessions: ボットによる無制限 session 作成を防ぐ。1分10件もあれば実用上十分。
 	rateSessionsPerMin = 10
-	// POST /sessions/{id}/turns: mod は1ターンに1回しか送らない。1分300件で正常 mod は通る。
-	rateTurnsPerMin = 300
 	// POST /sessions/{id}/events: bulk なので mod 側は更に低頻度。1分300件で十分。
 	rateEventsPerMin = 300
 )
@@ -64,8 +62,8 @@ func (s *Server) Routes() http.Handler {
 		r.With(rateLimit(rateSessionsPerMin, time.Minute)).Post("/sessions", s.createSession)
 
 		r.Route("/sessions/{id}", func(r chi.Router) {
-			r.With(s.requireWriteToken, rateLimit(rateTurnsPerMin, time.Minute)).
-				Post("/turns", s.postTurn)
+			// /turns は Phase 3.5 で廃止。古い mod クライアントには 410 を返す。
+			r.Post("/turns", postTurnGone)
 			r.With(s.requireWriteToken, rateLimit(rateEventsPerMin, time.Minute)).
 				Post("/events", s.postEvents)
 		})

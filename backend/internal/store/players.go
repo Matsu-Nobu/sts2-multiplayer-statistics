@@ -24,8 +24,8 @@ func (s *Store) UpsertPlayer(ctx context.Context, steamID, displayName string) e
 	return err
 }
 
-// ListPlayersForSession returns the players who have produced any turn or event
-// for the given session.
+// ListPlayersForSession returns the players who have produced any event for the
+// given session.
 func (s *Store) ListPlayersForSession(ctx context.Context, sessionID string) ([]Player, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.steam_id, p.display_name
@@ -33,10 +33,8 @@ func (s *Store) ListPlayersForSession(ctx context.Context, sessionID string) ([]
 		WHERE p.steam_id IN (
 			SELECT DISTINCT player_id FROM events
 			WHERE session_id = ? AND player_id IS NOT NULL
-			UNION
-			SELECT DISTINCT json_each.key FROM turns, json_each(json_extract(turns.payload_json, '$.players'))
-			WHERE turns.session_id = ?
 		)
+		   OR p.steam_id = (SELECT host_steam_id FROM sessions WHERE id = ?)
 		ORDER BY p.steam_id
 	`, sessionID, sessionID)
 	if err != nil {

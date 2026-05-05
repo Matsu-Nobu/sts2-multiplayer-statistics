@@ -86,51 +86,62 @@ func TestCreateSession(t *testing.T) {
 	createSession(t, srv)
 }
 
-func TestPostTurn_Auth(t *testing.T) {
+// Phase 3.5: /turns は廃止、常に 410 を返す
+func TestPostTurns_Gone(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, _ := createSession(t, srv)
 
-	body := turnFixture(1, 1, false)
+	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", "any", map[string]any{
+		"combat_index": 1, "turn_number": 1,
+	})
+	if res.StatusCode != http.StatusGone {
+		t.Fatalf("expected 410 Gone, got %d", res.StatusCode)
+	}
+}
 
-	// without token
-	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", "", body)
+func TestPostEvents_Auth(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, _ := createSession(t, srv)
+
+	body := []map[string]any{eventFixture("e-1", "card_played", 1, 1, 0)}
+
+	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", "", body)
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", res.StatusCode)
 	}
 
-	// wrong token
-	res = do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", "wrong", body)
+	res = do(t, srv, http.MethodPost, "/sessions/"+id+"/events", "wrong", body)
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", res.StatusCode)
 	}
 
-	// unknown session
-	res = do(t, srv, http.MethodPost, "/sessions/unknown/turns", "any", body)
+	res = do(t, srv, http.MethodPost, "/sessions/unknown/events", "any", body)
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", res.StatusCode)
 	}
 }
 
-func TestPostTurn_Idempotent(t *testing.T) {
+func TestPostEvents_Idempotent(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, token := createSession(t, srv)
 
+	body := []map[string]any{eventFixture("e-dup", "card_played", 1, 1, 0)}
 	for i := 0; i < 3; i++ {
-		res := do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", token, turnFixture(1, 1, false))
+		res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, body)
 		if res.StatusCode != http.StatusNoContent {
 			t.Fatalf("status=%d", res.StatusCode)
 		}
 	}
-	// only 1 row
+
 	res := do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
 	var doc sessionDoc
 	decodeJSON(t, res, &doc)
-	if len(doc.Turns) != 1 {
-		t.Fatalf("expected 1 turn, got %d", len(doc.Turns))
+	if len(doc.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(doc.Events))
 	}
 }
 
-func TestPostEvents_BulkAndIdempotent(t *testing.T) {
+func TestPostEvents_RunStartEnd_UpdatesSession(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, token := createSession(t, srv)
 
@@ -157,12 +168,6 @@ func TestPostEvents_BulkAndIdempotent(t *testing.T) {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
 
-	// re-post: should be idempotent
-	res = do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, events)
-	if res.StatusCode != http.StatusNoContent {
-		t.Fatalf("status=%d", res.StatusCode)
-	}
-
 	res = do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
 	var doc sessionDoc
 	decodeJSON(t, res, &doc)
@@ -172,17 +177,26 @@ func TestPostEvents_BulkAndIdempotent(t *testing.T) {
 	if doc.Session.Outcome == nil || *doc.Session.Outcome != "victory" {
 		t.Errorf("session outcome not updated: %+v", doc.Session)
 	}
-	if doc.Session.FinalFloor == nil || *doc.Session.FinalFloor != 51 {
-		t.Errorf("session final_floor not updated: %+v", doc.Session)
-	}
 }
 
-func TestGetSession_PlayersUpsertedFromTurns(t *testing.T) {
+func TestPostEvents_TurnContext_Persisted(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, token := createSession(t, srv)
 
-	body := turnFixture(1, 1, true)
-	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", token, body)
+	events := []map[string]any{
+		{
+			"event_uuid":   "tc-1",
+			"event_type":   "card_played",
+			"occurred_at":  "2026-05-05T00:00:00Z",
+			"player_id":    "76561199000000000",
+			"floor":        1,
+			"combat_index": 1,
+			"turn_number":  1,
+			"sequence":     0,
+			"payload":      map[string]any{"card_id": "BASH", "card_name": "Bash"},
+		},
+	}
+	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, events)
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
@@ -190,9 +204,31 @@ func TestGetSession_PlayersUpsertedFromTurns(t *testing.T) {
 	res = do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
 	var doc sessionDoc
 	decodeJSON(t, res, &doc)
-	if len(doc.Players) == 0 {
-		t.Fatalf("expected players to be populated")
+	if len(doc.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(doc.Events))
 	}
+	var ev map[string]any
+	if err := json.Unmarshal(doc.Events[0], &ev); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if v, ok := ev["combat_index"]; !ok || int(v.(float64)) != 1 {
+		t.Errorf("combat_index missing/wrong: %+v", ev)
+	}
+	if v, ok := ev["turn_number"]; !ok || int(v.(float64)) != 1 {
+		t.Errorf("turn_number missing/wrong: %+v", ev)
+	}
+	if v, ok := ev["sequence"]; !ok || int(v.(float64)) != 0 {
+		t.Errorf("sequence missing/wrong: %+v", ev)
+	}
+}
+
+func TestGetSession_PlayersIncludeHostFromCreate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, _ := createSession(t, srv)
+
+	res := do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
+	var doc sessionDoc
+	decodeJSON(t, res, &doc)
 	found := false
 	for _, p := range doc.Players {
 		if p.SteamID == "76561199000000000" && p.DisplayName == "Nobu" {
@@ -200,7 +236,7 @@ func TestGetSession_PlayersUpsertedFromTurns(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected player from turn payload, got %+v", doc.Players)
+		t.Errorf("expected host player to be listed, got %+v", doc.Players)
 	}
 }
 
@@ -212,28 +248,10 @@ func TestGetSession_NotFound(t *testing.T) {
 	}
 }
 
-func TestPostTurn_RejectInvalidIndices(t *testing.T) {
-	srv, _ := newTestServer(t)
-	id, token := createSession(t, srv)
-
-	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", token, map[string]any{
-		"combat_index": 0,
-		"turn_number":  0,
-		"is_final":     false,
-		"timestamp":    "2026-05-05T00:00:00Z",
-		"players":      map[string]any{},
-	})
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", res.StatusCode)
-	}
-}
-
 func TestGetSession_ETag_NotModified(t *testing.T) {
 	srv, _ := newTestServer(t)
-	id, token := createSession(t, srv)
-	_ = token
+	id, _ := createSession(t, srv)
 
-	// initial fetch — get ETag
 	res := do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", res.StatusCode)
@@ -244,7 +262,6 @@ func TestGetSession_ETag_NotModified(t *testing.T) {
 	}
 	res.Body.Close()
 
-	// re-fetch with If-None-Match — expect 304
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+id, nil)
 	req.Header.Set("If-None-Match", etag)
 	rec := httptest.NewRecorder()
@@ -257,7 +274,7 @@ func TestGetSession_ETag_NotModified(t *testing.T) {
 	}
 }
 
-func TestGetSession_ETag_ChangesAfterUpdate(t *testing.T) {
+func TestGetSession_ETag_ChangesAfterEvent(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, token := createSession(t, srv)
 
@@ -265,8 +282,9 @@ func TestGetSession_ETag_ChangesAfterUpdate(t *testing.T) {
 	first := res.Header.Get("ETag")
 	res.Body.Close()
 
-	// post a turn → ETag should change
-	res = do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", token, turnFixture(1, 1, false))
+	res = do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, []map[string]any{
+		eventFixture("etag-1", "card_played", 1, 1, 0),
+	})
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
@@ -283,56 +301,16 @@ func TestGetSession_ETag_ChangesAfterUpdate(t *testing.T) {
 	}
 }
 
-func TestPostEvents_CombatStartAndEnd(t *testing.T) {
-	srv, _ := newTestServer(t)
-	id, token := createSession(t, srv)
-
-	events := []map[string]any{
-		{
-			"event_uuid":  "cs-1",
-			"event_type":  "combat_start",
-			"occurred_at": "2026-05-05T00:00:00Z",
-			"floor":       1,
-			"payload": map[string]any{
-				"combat_index":   1,
-				"encounter_id":   "CULTIST",
-				"encounter_name": "Cultist",
-				"room_type":      "Monster",
-			},
-		},
-		{
-			"event_uuid":  "ce-1",
-			"event_type":  "combat_end",
-			"occurred_at": "2026-05-05T00:01:00Z",
-			"floor":       1,
-			"payload":     map[string]any{"combat_index": 1, "victory": true},
-		},
-	}
-	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, events)
-	if res.StatusCode != http.StatusNoContent {
-		t.Fatalf("status=%d", res.StatusCode)
-	}
-
-	res = do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
-	var doc sessionDoc
-	decodeJSON(t, res, &doc)
-	if len(doc.Events) != 2 {
-		t.Fatalf("expected 2 events, got %d", len(doc.Events))
-	}
-}
-
-func turnFixture(combat, turn int, isFinal bool) map[string]any {
+func eventFixture(uuid, eventType string, combat, turn, seq int) map[string]any {
 	return map[string]any{
+		"event_uuid":   uuid,
+		"event_type":   eventType,
+		"occurred_at":  "2026-05-05T00:00:00Z",
+		"player_id":    "76561199000000000",
+		"floor":        1,
 		"combat_index": combat,
 		"turn_number":  turn,
-		"is_final":     isFinal,
-		"timestamp":    "2026-05-05T00:00:00Z",
-		"players": map[string]any{
-			"76561199000000000": map[string]any{
-				"player_name": "Nobu",
-				"turn":        map[string]any{"damage_dealt": 10},
-				"combat":      map[string]any{"damage_dealt": 10},
-			},
-		},
+		"sequence":     seq,
+		"payload":      map[string]any{},
 	}
 }

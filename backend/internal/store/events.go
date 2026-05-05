@@ -7,14 +7,20 @@ import (
 	"time"
 )
 
+// EventInput is the payload accepted by InsertEvent. Combat context fields
+// (CombatIndex / TurnNumber / Sequence) are nullable: turn-scoped events set
+// them, run/floor-scoped events leave them nil.
 type EventInput struct {
-	EventUUID  string
-	SessionID  string
-	PlayerID   *string
-	EventType  string
-	OccurredAt string
-	Floor      *int
-	Payload    json.RawMessage
+	EventUUID    string
+	SessionID    string
+	PlayerID     *string
+	EventType    string
+	OccurredAt   string
+	Floor        *int
+	CombatIndex  *int
+	TurnNumber   *int
+	Sequence     *int
+	Payload      json.RawMessage
 }
 
 // InsertEvent inserts an event. Duplicates by event_uuid are silently ignored.
@@ -23,9 +29,14 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO events
-			(event_uuid, session_id, player_id, event_type, occurred_at, received_at, floor, payload_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, in.EventUUID, in.SessionID, in.PlayerID, in.EventType, in.OccurredAt, now, in.Floor, string(in.Payload))
+			(event_uuid, session_id, player_id, event_type, occurred_at, received_at,
+			 floor, combat_index, turn_number, sequence, payload_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		in.EventUUID, in.SessionID, in.PlayerID, in.EventType, in.OccurredAt, now,
+		in.Floor, in.CombatIndex, in.TurnNumber, in.Sequence,
+		string(in.Payload),
+	)
 	if err != nil {
 		return false, err
 	}
@@ -36,14 +47,23 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 	return n > 0, nil
 }
 
-// ListEvents returns all events for a session ordered by occurred_at, id.
-// Each element is a JSON object containing the request shape plus received_at.
+// ListEvents returns all events for a session ordered by combat context first
+// (NULL combat_index sorts last), then turn_number / sequence / id for total
+// ordering. Each element is a JSON object containing the request shape plus
+// received_at and the optional combat context fields.
 func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMessage, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT event_uuid, event_type, occurred_at, received_at, player_id, floor, payload_json
+		SELECT event_uuid, event_type, occurred_at, received_at, player_id,
+		       floor, combat_index, turn_number, sequence, payload_json
 		FROM events
 		WHERE session_id = ?
-		ORDER BY occurred_at, id
+		ORDER BY
+			(combat_index IS NULL),     -- non-combat events go to the end inside same occurred_at
+			combat_index,
+			turn_number,
+			sequence,
+			occurred_at,
+			id
 	`, sessionID)
 	if err != nil {
 		return nil, err
@@ -55,10 +75,11 @@ func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMes
 		var (
 			uuid, etype, occ, recv string
 			player                 sql.NullString
-			floor                  sql.NullInt64
+			floor, combat, turn, seq sql.NullInt64
 			payload                string
 		)
-		if err := rows.Scan(&uuid, &etype, &occ, &recv, &player, &floor, &payload); err != nil {
+		if err := rows.Scan(&uuid, &etype, &occ, &recv, &player,
+			&floor, &combat, &turn, &seq, &payload); err != nil {
 			return nil, err
 		}
 		obj := map[string]any{
@@ -73,6 +94,15 @@ func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMes
 		}
 		if floor.Valid {
 			obj["floor"] = floor.Int64
+		}
+		if combat.Valid {
+			obj["combat_index"] = combat.Int64
+		}
+		if turn.Valid {
+			obj["turn_number"] = turn.Int64
+		}
+		if seq.Valid {
+			obj["sequence"] = seq.Int64
 		}
 		raw, err := json.Marshal(obj)
 		if err != nil {
