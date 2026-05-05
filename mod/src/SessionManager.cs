@@ -44,6 +44,9 @@ internal static class SessionManager
 
             CopyToClipboard(result.ShareUrl);
             Log.Info($"[StsStats] Session created: {result.ShareUrl}");
+
+            // JSONL ログにも残す（make log で確認できるように）
+            StatsLogger.LogSessionCreated(result.SessionId, result.ShareUrl);
         });
     }
 

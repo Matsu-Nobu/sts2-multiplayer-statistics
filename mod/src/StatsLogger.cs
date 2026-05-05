@@ -26,6 +26,10 @@ internal static class StatsLogger
         Write("system", new { message = "StsStats initialized", log_path = _logPath });
     }
 
+    /// <summary>セッション作成成功時に共有URLを記録する。make log で確認できるように。</summary>
+    public static void LogSessionCreated(string sessionId, string shareUrl) =>
+        Write("session", new { event_type = "session_created", session_id = sessionId, share_url = shareUrl });
+
     /// <summary>POST /sessions/{id}/turns の Body と同じ形を出力する。</summary>
     public static void LogTurn(TurnPayload payload) =>
         Write("turn", PayloadJson.BuildTurnBody(payload));
