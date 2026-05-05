@@ -27,7 +27,7 @@ async function main() {
 
   const auth = { 'Content-Type': 'application/json', Authorization: `Bearer ${write_token}` };
 
-  // 2. POST events (bulk)
+  // 2. POST events (bulk) — Phase 3.5 では events 1 本に統合
   const evRes = await fetch(`${BACKEND_URL}/sessions/${session_id}/events`, {
     method: 'POST',
     headers: auth,
@@ -35,17 +35,6 @@ async function main() {
   });
   if (!evRes.ok) throw new Error(`post events failed: ${evRes.status} ${await evRes.text()}`);
   console.log(`posted ${mock.events.length} events`);
-
-  // 3. POST turns (one by one)
-  for (const t of mock.turns) {
-    const r = await fetch(`${BACKEND_URL}/sessions/${session_id}/turns`, {
-      method: 'POST',
-      headers: auth,
-      body: JSON.stringify(t),
-    });
-    if (!r.ok) throw new Error(`post turn ${t.combat_index}/${t.turn_number} failed: ${r.status} ${await r.text()}`);
-  }
-  console.log(`posted ${mock.turns.length} turns`);
 
   console.log('');
   console.log(`backend:  ${share_url}`);

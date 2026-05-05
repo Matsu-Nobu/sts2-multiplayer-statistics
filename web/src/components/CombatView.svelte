@@ -1,17 +1,24 @@
 <script lang="ts">
   import type { CombatInfo } from '../lib/aggregate';
+  import type { EventRecord } from '../lib/types';
+  import { computeRdps } from '../lib/rdps';
   import StatCard from './StatCard.svelte';
   import CardTable from './CardTable.svelte';
   import DebuffTable from './DebuffTable.svelte';
   import DamageChart from './DamageChart.svelte';
   import PerTurnTable from './PerTurnTable.svelte';
+  import RdpsPanel from './RdpsPanel.svelte';
+  import TimelineView from './TimelineView.svelte';
 
   interface Props {
     combat: CombatInfo;
     playerIds: string[];
     playerNames: Record<string, string>;
+    combatEvents: EventRecord[];   // この戦闘の生 events（rDPS/タイムライン用）
   }
-  let { combat, playerIds, playerNames }: Props = $props();
+  let { combat, playerIds, playerNames, combatEvents }: Props = $props();
+  let view: 'summary' | 'timeline' = $state('summary');
+  let rdps = $derived(computeRdps(combatEvents));
 
   let activePlayer: string = $state('');
 
@@ -62,6 +69,16 @@
 
 <div class="space-y-6">
 
+  <!-- サマリ／タイムライン切替 -->
+  <div class="flex gap-1 bg-bg-2 border border-bg-3 rounded p-0.5 text-xs w-fit">
+    <button type="button" class="px-3 py-1 rounded {view === 'summary'  ? 'bg-accent text-bg-0' : 'text-slate-300'}" onclick={() => { view = 'summary'; }}>サマリ</button>
+    <button type="button" class="px-3 py-1 rounded {view === 'timeline' ? 'bg-accent text-bg-0' : 'text-slate-300'}" onclick={() => { view = 'timeline'; }}>タイムライン</button>
+  </div>
+
+  {#if view === 'timeline'}
+    <TimelineView events={combatEvents} {playerNames} />
+  {:else}
+
   <!-- プレイヤー切替 -->
   {#if playerIds.length > 1}
     <div class="flex gap-2">
@@ -109,6 +126,11 @@
     {/if}
   </section>
 
+  <!-- rDPS -->
+  {#if playerIds.length > 1}
+    <RdpsPanel {rdps} {playerNames} />
+  {/if}
+
   <!-- ターン別 -->
   <section class="space-y-3">
     <h3 class="text-xs uppercase tracking-wide text-slate-500">ターン別内訳</h3>
@@ -116,5 +138,7 @@
       <PerTurnTable turns={combat.turns} playerId={activePlayer} />
     {/if}
   </section>
+
+  {/if}
 
 </div>

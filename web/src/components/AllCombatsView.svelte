@@ -1,17 +1,22 @@
 <script lang="ts">
   import type { CombatInfo, RunTotals } from '../lib/aggregate';
+  import type { EventRecord } from '../lib/types';
+  import { computeRdps } from '../lib/rdps';
   import StatCard from './StatCard.svelte';
   import CardTable from './CardTable.svelte';
   import DebuffTable from './DebuffTable.svelte';
   import DamageChart from './DamageChart.svelte';
+  import RdpsPanel from './RdpsPanel.svelte';
 
   interface Props {
     combats: CombatInfo[];
     totals: RunTotals;
     playerIds: string[];
     playerNames: Record<string, string>;
+    allCombatEvents: EventRecord[];   // run 全体の戦闘内 events（rDPS 用）
   }
-  let { combats, totals, playerIds, playerNames }: Props = $props();
+  let { combats, totals, playerIds, playerNames, allCombatEvents }: Props = $props();
+  let rdps = $derived(computeRdps(allCombatEvents));
 
   let activePlayer: string = $state('');
 
@@ -105,5 +110,9 @@
       <div class="text-slate-500">データなし</div>
     {/if}
   </section>
+
+  {#if playerIds.length > 1}
+    <RdpsPanel {rdps} {playerNames} title="貢献度ダメージ (rDPS) — ラン全体" />
+  {/if}
 
 </div>
