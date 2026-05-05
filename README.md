@@ -163,6 +163,8 @@ cp .env.example .env
 
 ### Makefile タスク
 
+`make help` で一覧表示。
+
 | カテゴリ | コマンド | 内容 |
 |---------|---------|------|
 | **mod** | `make all` | テスト → ビルド → インストール |
@@ -170,12 +172,16 @@ cp .env.example .env
 |         | `make build` | mod のビルドのみ |
 |         | `make install` | mod を STS2 の `mods/` に配置 |
 |         | `make log` | mod の JSONL ログを tail |
-| **backend** | `make backend-dev` | `:8080` で開発サーバ起動（フロントは別ポートで dev） |
+| **mod 接続先** | `make mod-use-local` | mod を `http://localhost:8080` に向ける |
+|              | `make mod-use-public` | mod を公開バックエンドに戻す |
+|              | `make mod-status` | 現在の接続先を表示 |
+| **backend** | `make backend-dev` | `:8080` で開発サーバ起動 |
 |             | `make backend-test` | Go ユニットテスト |
 |             | `make backend-build` | Go バイナリのみビルド |
-| **web** | `make web-dev` | Vite dev server（`:5173`、`/api` はバックエンドへプロキシ） |
+|             | `make backend-clean` | bin / SQLite 削除 |
+| **web** | `make web-install` | npm install |
+|         | `make web-dev` | Vite dev server（`:5173`、`/api` はバックエンドへプロキシ） |
 |         | `make web-build` | 本番ビルド（`web/dist/` 生成） |
-|         | `make web-install` | npm install |
 | **統合** | `make app-build` | web ビルド → backend に embed → 単一バイナリ生成 |
 |         | `make app-run` | 上記＋起動 |
 | **Docker** | `make docker-build` | コンテナイメージ生成 |
@@ -191,6 +197,26 @@ cp .env.example .env
 1. **mod を変更したら**: `make all`（再ビルド・インストール）してゲーム再起動
 2. **backend を変更したら**: `make backend-dev`（自動 reload なし、再起動が必要）
 3. **frontend を変更したら**: `make web-dev`（HMR で即座反映）
+
+### mod の接続先を切り替える
+
+開発中は **ローカル backend** に、普段は **公開 backend** に向けたい、という切り替えは Make 一発:
+
+```bash
+make mod-use-local      # http://localhost:8080 に向ける（config.json 作成）
+make mod-use-public     # 公開バックエンドに戻す（config.json 削除）
+make mod-status         # 現在どちらに向いているか確認
+```
+
+切替は **mod の DLL と同じディレクトリの `config.json` の有無**で制御している。再ビルド不要、ゲーム再起動だけで反映。`config.json` が無ければ DLL に焼き込まれた既定 URL（`https://sts2stats.fly.dev`）が使われる。
+
+開発時の典型ワークフロー:
+```bash
+make mod-use-local        # ローカルに向ける
+make backend-dev          # 別ターミナルでローカル backend 起動
+# ゲーム再起動 → ローカルにデータが流れる
+make mod-use-public       # 終わったら公開バックエンドに戻す
+```
 
 ---
 
