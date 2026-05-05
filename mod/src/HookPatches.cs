@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.ValueProps;
 
@@ -14,6 +15,10 @@ internal static class HookPatches
     // Tracks the player whose turn is currently active (set in AfterPlayerTurnStart)
     private static (string id, string name)? _currentTurnPlayer = null;
 
+    // 直近で finalize したラウンド番号。CombatState.RoundNumber が増えたときだけターン確定する。
+    // マルチプレイで AfterPlayerTurnStart がプレイヤー数ぶん発火する問題への対策。
+    private static int _lastFinalizedRound = 0;
+
     // BeforeCombatStart(IRunState runState, CombatState? combatState)
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
     {
@@ -21,6 +26,7 @@ internal static class HookPatches
         {
             StatsCollector.BeginCombat();
             _currentTurnPlayer = null;
+            _lastFinalizedRound = 0;
             Log.Info("[StsStats] Combat started");
         }
         catch (Exception ex)
@@ -35,9 +41,16 @@ internal static class HookPatches
     {
         try
         {
-            var snapshot = StatsCollector.FinalizeCurrentTurn();
-            if (snapshot != null)
-                StatsLogger.LogTurnEnd(snapshot);
+            // ラウンド番号が変化したときだけ前ターンを確定する。
+            // 同一ラウンド内で複数プレイヤーぶん発火しても2重 finalize しない。
+            int round = combatState?.RoundNumber ?? 0;
+            if (round > _lastFinalizedRound)
+            {
+                var snapshot = StatsCollector.FinalizeCurrentTurn();
+                if (snapshot != null)
+                    StatsLogger.LogTurnEnd(snapshot);
+                _lastFinalizedRound = round;
+            }
 
             _currentTurnPlayer = TryGetPlayerInfo(player);
         }
@@ -314,9 +327,27 @@ internal static class HookPatches
 
     private static (string id, string name) BuildPlayerInfo(object player)
     {
-        string id   = player.GetType().GetProperty("NetId")?.GetValue(player)?.ToString() ?? "unknown";
-        string name = TryGetCharacterTitle(player) ?? id;
-        return (id, name);
+        ulong netId = (ulong?)(player.GetType().GetProperty("NetId")?.GetValue(player) as ulong?) ?? 0UL;
+        string id = netId == 0UL ? "unknown" : netId.ToString();
+
+        // Steam名を最優先（マルチプレイ）。取れなければキャラクター名にフォールバック。
+        string? name = TryGetSteamName(netId) ?? TryGetCharacterTitle(player);
+        return (id, name ?? id);
+    }
+
+    private static string? TryGetSteamName(ulong netId)
+    {
+        if (netId == 0UL) return null;
+        try
+        {
+            string name = PlatformUtil.GetPlayerName(PlatformUtil.PrimaryPlatform, netId);
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] TryGetSteamName error: {ex.Message}");
+            return null;
+        }
     }
 
     private static string? TryGetCharacterTitle(object player)
@@ -329,14 +360,12 @@ internal static class HookPatches
             var title = character.GetType().GetProperty("Title")?.GetValue(character);
             if (title == null) return null;
 
-            // LocString型: Valueプロパティかstring変換演算子で実テキストを取得
-            var valueStr = title.GetType().GetProperty("Value")?.GetValue(title)?.ToString();
-            if (!string.IsNullOrEmpty(valueStr)) return valueStr;
+            // LocString.GetFormattedText() で実テキストを取得
+            var formatted = title.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)?.Invoke(title, null) as string;
+            if (!string.IsNullOrEmpty(formatted)) return formatted;
 
-            var op = title.GetType().GetMethod("op_Implicit", [title.GetType()]);
-            if (op != null) return op.Invoke(null, [title])?.ToString();
-
-            return null;
+            var raw = title.GetType().GetMethod("GetRawText", Type.EmptyTypes)?.Invoke(title, null) as string;
+            return string.IsNullOrEmpty(raw) ? null : raw;
         }
         catch { return null; }
     }
