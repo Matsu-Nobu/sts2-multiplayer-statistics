@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StS2 Multiplayer Statistics</title>
+    <meta name="description" content="Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を mod で収集し、URL でブラウザから共有・閲覧できるサービス。" />
+    <style>
+      * { box-sizing: border-box; }
+      :root {
+        --bg-0: #0b0e14;
+        --bg-1: #11151c;
+        --bg-2: #161c25;
+        --fg-0: #e6edf3;
+        --fg-1: #9ba8b8;
+        --fg-2: #6b7785;
+        --accent: #f5c84a;
+        --link: #7cc1ff;
+        --border: #232a35;
+      }
+      html, body {
+        margin: 0; padding: 0;
+        background: var(--bg-0);
+        color: var(--fg-0);
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+        line-height: 1.7;
+        font-size: 16px;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      code {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.1em 0.4em;
+        font-size: 0.9em;
+      }
+      pre {
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1rem;
+        overflow-x: auto;
+        font-size: 0.9em;
+      }
+      pre code {
+        background: transparent; border: none; padding: 0;
+      }
+      .container {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 4rem 1.5rem 6rem;
+      }
+      header {
+        margin-bottom: 3rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px solid var(--border);
+      }
+      h1 {
+        font-size: 2rem;
+        margin: 0 0 0.5rem;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .tagline {
+        color: var(--fg-1);
+        margin: 0;
+      }
+      h2 {
+        margin-top: 3rem;
+        margin-bottom: 1rem;
+        font-size: 1.3rem;
+        color: var(--fg-0);
+        border-left: 3px solid var(--accent);
+        padding-left: 0.6rem;
+      }
+      h3 {
+        margin-top: 2rem;
+        margin-bottom: 0.5rem;
+        font-size: 1rem;
+        color: var(--fg-0);
+      }
+      ol, ul { padding-left: 1.5rem; }
+      li { margin: 0.4rem 0; }
+      .meta {
+        margin-top: 0.6rem;
+        font-size: 0.9rem;
+        color: var(--fg-2);
+      }
+      .note {
+        background: var(--bg-1);
+        border-left: 3px solid var(--link);
+        padding: 0.8rem 1rem;
+        margin: 1rem 0;
+        border-radius: 0 4px 4px 0;
+        font-size: 0.95em;
+        color: var(--fg-1);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+        font-size: 0.95em;
+      }
+      th, td {
+        padding: 0.5rem 0.8rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      th { color: var(--fg-1); font-weight: 600; font-size: 0.85em; }
+      td code { font-size: 0.85em; }
+      footer {
+        margin-top: 4rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.9em;
+        color: var(--fg-2);
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+      .badge {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        border-radius: 4px;
+        background: var(--bg-2);
+        border: 1px solid var(--border);
+        font-size: 0.8em;
+        color: var(--fg-1);
+        margin-right: 0.4rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>StS2 Multiplayer Statistics</h1>
+        <p class="tagline">Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を mod で収集し、URL を共有して仲間と閲覧できるサービス。</p>
+        <p class="meta">
+          <span class="badge">Status: 公開中</span>
+          <span class="badge">無料 / 個人運用</span>
+          <a href="https://github.com/Matsu-Nobu/sts2-multiplayer-statistics">GitHub</a>
+        </p>
+      </header>
+
+      <h2>このページは何？</h2>
+      <p>このサーバ自体（<code>https://sts2stats.fly.dev</code>）は API バックエンドです。</p>
+      <p>ラン統計を見るには、mod が発行する <strong>共有 URL</strong>（<code>/s/&lt;uuid&gt;</code> 形式）を開く必要があります。</p>
+      <div class="note">
+        共有 URL は mod がゲーム内でラン開始時に <strong>自動でクリップボードにコピー</strong> します。
+        マルチプレイならホストの友達からその URL をもらってください。
+      </div>
+
+      <h2>使い方</h2>
+
+      <h3>1. mod を入れる</h3>
+      <p>
+        <a href="https://github.com/Matsu-Nobu/sts2-multiplayer-statistics/releases">GitHub Releases</a>
+        から <code>StsStats.dll</code> と <code>StsStats.json</code> をダウンロードし、Slay the Spire 2 の mods フォルダに置きます。
+      </p>
+      <pre><code>Slay the Spire 2/...../mods/StsStats/
+  ├── StsStats.dll
+  └── StsStats.json</code></pre>
+
+      <h3>2. ゲームを起動してラン開始</h3>
+      <p>mod が以下を自動で行います:</p>
+      <ul>
+        <li>このサーバにセッションを作成</li>
+        <li>共有 URL をクリップボードにコピー</li>
+        <li>ローカルログ（<code>sts_stats.jsonl</code>）にも URL を記録</li>
+      </ul>
+
+      <h3>3. ブラウザで共有 URL を開く</h3>
+      <p>クリップボードを貼り付けるだけ。戦闘中はリアルタイム（10秒ポーリング）で更新されます。</p>
+
+      <h2>マルチプレイ</h2>
+      <p>
+        <strong>ホスト 1 人だけが mod を入れていれば全員ぶんの統計が記録されます。</strong>
+        Slay the Spire 2 は決定論的ロックステップ方式で、全クライアントが同じイベントを処理しているためです。
+      </p>
+      <p>共有 URL を Discord 等で渡せば、仲間は mod を入れずに閲覧だけできます。</p>
+
+      <h2>送信されるデータ</h2>
+      <table>
+        <tr><th>項目</th><th>内容</th></tr>
+        <tr><td>プレイヤー識別</td><td>Steam ID と Steam 表示名</td></tr>
+        <tr><td>ラン情報</td><td>キャラクター・Ascension・seed</td></tr>
+        <tr><td>戦闘統計</td><td>ターンごとの与/被ダメ、ブロック、カード使用、デバフ付与</td></tr>
+        <tr><td>結果</td><td>戦闘の勝敗、ラン全体の勝敗・最終階層</td></tr>
+      </table>
+      <p class="meta">
+        詳細仕様は <a href="https://github.com/Matsu-Nobu/sts2-multiplayer-statistics/blob/main/docs/API.md">API 仕様</a> 参照。
+        送信を完全に止めたい場合は mod を削除するか、<code>config.json</code> でセルフホストに切り替えてください。
+      </p>
+
+      <h2>プライバシー・セキュリティ</h2>
+      <ul>
+        <li>共有 URL を知っている人は誰でも統計を <strong>閲覧</strong> できます（書き込みは不可）</li>
+        <li>書き込みトークンは mod のローカルにのみ保存され、URL には含まれません</li>
+        <li>セッションデータは予告なく削除する場合があります（個人運用のため）</li>
+        <li>サーバの可用性は保証しません。バックアップは mod のローカルログにあります</li>
+      </ul>
+
+      <h2>セルフホストしたい</h2>
+      <p>公開サーバを使いたくない場合、自分で立てて mod の接続先を切り替えられます。詳細は GitHub の README 参照。</p>
+      <pre><code># 1. リポジトリを clone してビルド
+make docker-run
+
+# 2. mod の接続先を localhost に向ける
+make mod-use-local</code></pre>
+
+      <footer>
+        <span>
+          <a href="https://github.com/Matsu-Nobu/sts2-multiplayer-statistics">Source on GitHub</a>
+          ・
+          <a href="https://github.com/Matsu-Nobu/sts2-multiplayer-statistics/blob/main/LICENSE">MIT License</a>
+        </span>
+        <span>運営: <a href="https://github.com/Matsu-Nobu">@Matsu-Nobu</a></span>
+      </footer>
+    </div>
+  </body>
+</html>

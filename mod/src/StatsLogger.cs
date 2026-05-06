@@ -30,10 +30,6 @@ internal static class StatsLogger
     public static void LogSessionCreated(string sessionId, string shareUrl) =>
         Write("session", new { event_type = "session_created", session_id = sessionId, share_url = shareUrl });
 
-    /// <summary>POST /sessions/{id}/turns の Body と同じ形を出力する。</summary>
-    public static void LogTurn(TurnPayload payload) =>
-        Write("turn", PayloadJson.BuildTurnBody(payload));
-
     /// <summary>POST /sessions/{id}/events の各要素と同じ形を出力する。</summary>
     public static void LogEvent(EventRecord ev) =>
         Write("event", PayloadJson.BuildEventBody(ev));

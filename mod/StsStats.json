@@ -1,6 +1,6 @@
 {
   "id": "StsStats",
-  "name": "STS Multiplayer Statistics",
+  "name": "StS2 Multiplayer Statistics",
   "author": "nobu",
   "description": "Tracks per-player combat statistics and sends them to a shared server for browser-based viewing.",
   "version": "0.1.0",

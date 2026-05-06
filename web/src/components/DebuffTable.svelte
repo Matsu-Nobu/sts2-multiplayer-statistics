@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { formatPowerName } from '../lib/powers';
   interface Props {
     debuffs: Record<string, number>;
     title?: string;
+    powerNames?: Record<string, string>;
   }
-  let { debuffs, title }: Props = $props();
+  let { debuffs, title, powerNames = {} }: Props = $props();
   let entries = $derived(Object.entries(debuffs).sort((a, b) => b[1] - a[1]));
 </script>
 
@@ -21,7 +23,7 @@
     <tbody>
       {#each entries as [k, v] (k)}
         <tr class="border-t border-bg-3">
-          <td class="py-2 px-3">{k}</td>
+          <td class="py-2 px-3">{formatPowerName(k, powerNames)}</td>
           <td class="text-right py-2 px-3">{v}</td>
         </tr>
       {/each}

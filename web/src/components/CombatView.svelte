@@ -1,17 +1,29 @@
 <script lang="ts">
   import type { CombatInfo } from '../lib/aggregate';
+  import type { EventRecord } from '../lib/types';
+  import { computeRdps } from '../lib/rdps';
+  import { computeRmit } from '../lib/rmit';
   import StatCard from './StatCard.svelte';
+  import { STAT_HELP } from '../lib/statHelp';
   import CardTable from './CardTable.svelte';
   import DebuffTable from './DebuffTable.svelte';
   import DamageChart from './DamageChart.svelte';
   import PerTurnTable from './PerTurnTable.svelte';
+  import RdpsPanel from './RdpsPanel.svelte';
+  import RmitPanel from './RmitPanel.svelte';
+  import TimelineView from './TimelineView.svelte';
 
   interface Props {
     combat: CombatInfo;
     playerIds: string[];
     playerNames: Record<string, string>;
+    powerNames: Record<string, string>;
+    combatEvents: EventRecord[];   // この戦闘の生 events（rDPS/タイムライン用）
   }
-  let { combat, playerIds, playerNames }: Props = $props();
+  let { combat, playerIds, playerNames, powerNames, combatEvents }: Props = $props();
+  let view: 'summary' | 'timeline' = $state('summary');
+  let rdps = $derived(computeRdps(combatEvents));
+  let rmit = $derived(computeRmit(combatEvents));
 
   let activePlayer: string = $state('');
 
@@ -26,19 +38,16 @@
   let turnsCount = $derived(combat.turns.length || 1);
 
   // プレイヤー間スタッツ比較用の棒グラフ
-  type StatKey = 'damage_dealt' | 'damage_received' | 'block_gained_self' | 'block_given_allies' | 'energy_used' | 'cards_played' | 'max_single_hit';
-  const STAT_KEYS: { key: StatKey; label: string; perTurn: boolean }[] = [
-    { key: 'damage_dealt',       label: '与ダメ',       perTurn: true  },
-    { key: 'damage_received',    label: '被ダメ',       perTurn: true  },
-    { key: 'block_gained_self',  label: 'ブロック',     perTurn: true  },
-    { key: 'block_given_allies', label: '味方ブロック', perTurn: true  },
-    { key: 'energy_used',        label: 'エナジー',     perTurn: true  },
-    { key: 'cards_played',       label: 'カード使用',   perTurn: true  },
-    { key: 'max_single_hit',     label: '最大単発',     perTurn: false },  // 平均しても意味ない
+  type StatKey = 'effective_damage_dealt' | 'damage_received' | 'effective_block' | 'max_single_hit';
+  const STAT_KEYS: { key: StatKey; label: string }[] = [
+    { key: 'effective_damage_dealt', label: '有効与ダメージ' },
+    { key: 'damage_received',        label: '被ダメージ' },
+    { key: 'effective_block',        label: '有効ブロック' },
+    { key: 'max_single_hit',         label: '最大カードダメージ' },
   ];
-  const COLORS = ['#7aa2f7', '#bb9af7', '#9ece6a', '#e0af68', '#f7768e'];
-
-  let mode: 'total' | 'avg' = $state('total');
+  // プレイヤーごとに固定色（全チャートで一貫させる）
+  const PLAYER_COLORS = ['#7aa2f7', '#bb9af7', '#9ece6a', '#e0af68', '#f7768e'];
+  let playerColors = $derived(playerIds.map((_, i) => PLAYER_COLORS[i % PLAYER_COLORS.length]));
 
   function fmtNum(n: number, decimals = 1): string {
     if (Number.isInteger(n)) return n.toString();
@@ -48,19 +57,35 @@
     return value / turnsCount;
   }
 
-  let chartLabels = $derived(STAT_KEYS.map(s => s.label));
-  let chartSeries = $derived(playerIds.map((pid, i) => ({
-    label: playerNames[pid] ?? pid,
-    color: COLORS[i % COLORS.length],
-    values: STAT_KEYS.map(s => {
-      const c = combat.finalTurn.players[pid]?.combat;
-      const raw = c ? (c[s.key] as number) ?? 0 : 0;
-      return mode === 'avg' && s.perTurn ? +(raw / turnsCount).toFixed(2) : raw;
-    }),
+  // メトリックごとに「プレイヤー名を X 軸にした単一系列のチャート」を生成
+  let perMetricCharts = $derived(STAT_KEYS.map(s => ({
+    key: s.key,
+    label: s.label,
+    chart: {
+      labels: playerIds.map(pid => playerNames[pid] ?? pid),
+      series: [{
+        label: s.label,
+        color: playerColors,
+        values: playerIds.map(pid => {
+          const c = combat.finalTurn.players[pid]?.combat;
+          return c ? (c[s.key] as number) ?? 0 : 0;
+        }),
+      }],
+    },
   })));
 </script>
 
 <div class="space-y-6">
+
+  <!-- サマリ／タイムライン切替 -->
+  <div class="flex gap-1 bg-bg-2 border border-bg-3 rounded p-0.5 text-xs w-fit">
+    <button type="button" class="px-3 py-1 rounded {view === 'summary'  ? 'bg-accent text-bg-0' : 'text-slate-300'}" onclick={() => { view = 'summary'; }}>サマリ</button>
+    <button type="button" class="px-3 py-1 rounded {view === 'timeline' ? 'bg-accent text-bg-0' : 'text-slate-300'}" onclick={() => { view = 'timeline'; }}>タイムライン</button>
+  </div>
+
+  {#if view === 'timeline'}
+    <TimelineView events={combatEvents} {playerNames} {powerNames} />
+  {:else}
 
   <!-- プレイヤー切替 -->
   {#if playerIds.length > 1}
@@ -81,33 +106,43 @@
   <section class="space-y-3">
     <h3 class="text-xs uppercase tracking-wide text-slate-500">戦闘サマリ</h3>
     {#if entry}
-      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-        <StatCard label="与ダメージ"     value={entry.combat.damage_dealt}       sub={`ターン平均: ${fmtNum(avg(entry.combat.damage_dealt))}`} />
-        <StatCard label="被ダメージ"     value={entry.combat.damage_received}    sub={`ターン平均: ${fmtNum(avg(entry.combat.damage_received))}`} />
-        <StatCard label="ブロック獲得"   value={entry.combat.block_gained_self}  sub={`ターン平均: ${fmtNum(avg(entry.combat.block_gained_self))}`} />
-        <StatCard label="味方付与ブロック" value={entry.combat.block_given_allies} sub={`ターン平均: ${fmtNum(avg(entry.combat.block_given_allies))}`} />
-        <StatCard label="エナジー使用"   value={entry.combat.energy_used}        sub={`ターン平均: ${fmtNum(avg(entry.combat.energy_used))}`} />
-        <StatCard label="カード使用枚数" value={entry.combat.cards_played}       sub={`ターン平均: ${fmtNum(avg(entry.combat.cards_played))}`} />
-        <StatCard label="最大単発"       value={entry.combat.max_single_hit}     sub={`${turnsCount}ターン`} />
+      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+        <StatCard label="有効与ダメージ"   value={entry.combat.effective_damage_dealt}  sub={`ターン平均: ${fmtNum(avg(entry.combat.effective_damage_dealt))}`} help={STAT_HELP['有効与ダメージ']} />
+        <StatCard label="与ダメージ(HP)"   value={entry.combat.damage_dealt}            sub={`ターン平均: ${fmtNum(avg(entry.combat.damage_dealt))}`} help={STAT_HELP['与ダメージ(HP)']} />
+        <StatCard label="オーバーキル"     value={entry.combat.overkill_damage}         sub={`ターン平均: ${fmtNum(avg(entry.combat.overkill_damage))}`} help={STAT_HELP['オーバーキル']} />
+        <StatCard label="被ダメージ"       value={entry.combat.damage_received}         sub={`ターン平均: ${fmtNum(avg(entry.combat.damage_received))}`} help={STAT_HELP['被ダメージ']} />
+        <StatCard label="有効ブロック"     value={entry.combat.effective_block}         sub={`ターン平均: ${fmtNum(avg(entry.combat.effective_block))}`} help={STAT_HELP['有効ブロック']} />
+        <StatCard label="総獲得ブロック"   value={entry.combat.block_gained_self}       sub={`ターン平均: ${fmtNum(avg(entry.combat.block_gained_self))}`} help={STAT_HELP['総獲得ブロック']} />
+        <StatCard label="味方付与ブロック" value={entry.combat.block_given_allies}      sub={`ターン平均: ${fmtNum(avg(entry.combat.block_given_allies))}`} help={STAT_HELP['味方付与ブロック']} />
+        <StatCard label="エナジー使用"     value={entry.combat.energy_used}             sub={`ターン平均: ${fmtNum(avg(entry.combat.energy_used))}`} help={STAT_HELP['エナジー使用']} />
+        <StatCard label="カード使用枚数"   value={entry.combat.cards_played}            sub={`ターン平均: ${fmtNum(avg(entry.combat.cards_played))}`} help={STAT_HELP['カード使用枚数']} />
+        <StatCard label="最大カードダメージ" value={entry.combat.max_single_hit}        sub={entry.combat.max_single_hit_card ?? `${turnsCount}ターン`} help={STAT_HELP['最大カードダメージ']} />
       </div>
 
-      <div class="flex items-center justify-between">
-        <h3 class="text-xs uppercase tracking-wide text-slate-500">プレイヤー比較</h3>
-        <div class="flex gap-1 bg-bg-2 border border-bg-3 rounded p-0.5 text-xs">
-          <button type="button" class="px-2 py-1 rounded {mode === 'total' ? 'bg-accent text-bg-0' : 'text-slate-300'}" onclick={() => { mode = 'total'; }}>合計</button>
-          <button type="button" class="px-2 py-1 rounded {mode === 'avg'   ? 'bg-accent text-bg-0' : 'text-slate-300'}" onclick={() => { mode = 'avg'; }}>ターン平均</button>
-        </div>
+      <h3 class="text-xs uppercase tracking-wide text-slate-500">プレイヤー比較</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {#each perMetricCharts as m (m.key)}
+          <DamageChart
+            labels={m.chart.labels}
+            series={m.chart.series}
+            type="bar"
+            title={m.label}
+          />
+        {/each}
       </div>
-      <DamageChart labels={chartLabels} series={chartSeries} type="bar" title={mode === 'avg' ? `戦闘合計 ÷ ${turnsCount}ターン` : '戦闘合計'} />
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <CardTable cards={entry.combat.card_stats} title="カード別集計（戦闘合計）" />
-        <DebuffTable debuffs={entry.combat.debuffs_applied} title="デバフ付与（戦闘合計）" />
+        <CardTable cards={entry.combat.card_stats} title="カード別集計（戦闘合計）" {powerNames} />
+        <DebuffTable debuffs={entry.combat.debuffs_applied} title="デバフ付与（戦闘合計）" {powerNames} />
       </div>
     {:else}
       <div class="text-slate-500">このプレイヤーのデータはありません</div>
     {/if}
   </section>
+
+  <!-- rDPS / rMit -->
+  <RdpsPanel {rdps} {playerNames} />
+  <RmitPanel {rmit} {playerNames} />
 
   <!-- ターン別 -->
   <section class="space-y-3">
@@ -116,5 +151,7 @@
       <PerTurnTable turns={combat.turns} playerId={activePlayer} />
     {/if}
   </section>
+
+  {/if}
 
 </div>

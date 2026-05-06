@@ -25,8 +25,8 @@
       <tr>
         <th class="text-left py-2 px-3 w-10"></th>
         <th class="text-right py-2 px-3">ターン</th>
-        <th class="text-right py-2 px-3">与ダメ</th>
-        <th class="text-right py-2 px-3">被ダメ</th>
+        <th class="text-right py-2 px-3">与ダメージ</th>
+        <th class="text-right py-2 px-3">被ダメージ</th>
         <th class="text-right py-2 px-3">ブロック</th>
         <th class="text-right py-2 px-3">エナジー</th>
         <th class="text-right py-2 px-3">使用</th>

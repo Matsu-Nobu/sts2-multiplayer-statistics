@@ -3,7 +3,12 @@
   import { Chart, registerables, type ChartConfiguration } from 'chart.js';
   Chart.register(...registerables);
 
-  interface Series { label: string; values: number[]; color: string; }
+  interface Series {
+    label: string;
+    values: number[];
+    /** 単一カラー、または各バーごとのカラー配列（プレイヤー個別色等） */
+    color: string | string[];
+  }
 
   interface Props {
     labels: (string | number)[];
@@ -12,6 +17,11 @@
     title?: string;
   }
   let { labels, series, type = 'line', title }: Props = $props();
+
+  function bg(c: string | string[], t: 'line' | 'bar'): string | string[] {
+    const suffix = t === 'bar' ? 'cc' : '33';
+    return Array.isArray(c) ? c.map(x => x + suffix) : c + suffix;
+  }
 
   let canvas: HTMLCanvasElement;
   let chart: Chart | null = null;
@@ -25,7 +35,7 @@
           label: s.label,
           data: s.values,
           borderColor: s.color,
-          backgroundColor: type === 'bar' ? s.color + 'cc' : s.color + '33',
+          backgroundColor: bg(s.color, type),
           borderWidth: 2,
           tension: 0.3,
           pointRadius: 3,
@@ -35,7 +45,7 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { labels: { color: '#cbd5e1' } },
+          legend: { display: false },
           title: title ? { display: true, text: title, color: '#cbd5e1' } : undefined,
         },
         scales: {

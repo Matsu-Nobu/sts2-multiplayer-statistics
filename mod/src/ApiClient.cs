@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -14,7 +15,6 @@ namespace StsStats;
 internal interface IApiClient
 {
     Task<CreateSessionResult?> CreateSessionAsync(CreateSessionRequest req);
-    Task<bool> PostTurnAsync(string sessionId, string writeToken, TurnPayload payload);
     Task<bool> PostEventsAsync(string sessionId, string writeToken, IReadOnlyList<EventRecord> events);
 }
 
@@ -48,13 +48,6 @@ internal sealed class ApiClient : IApiClient
             MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] CreateSession error: {ex.Message}");
             return null;
         }
-    }
-
-    public async Task<bool> PostTurnAsync(string sessionId, string writeToken, TurnPayload payload)
-    {
-        string url = $"{_baseUrl}/sessions/{sessionId}/turns";
-        var body = PayloadJson.BuildTurnBody(payload);
-        return await PostJsonAsync(url, writeToken, body);
     }
 
     public async Task<bool> PostEventsAsync(string sessionId, string writeToken, IReadOnlyList<EventRecord> events)
