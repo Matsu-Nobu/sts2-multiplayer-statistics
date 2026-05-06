@@ -192,9 +192,15 @@ function buildTurnsForCombat(
       return { turn, cum };
     };
 
-    // ★ プレイヤーごとの「現在進行中のカードプレイ」状態。card_played で開き、
-    //    次の card_played または turn 終端で閉じる。閉じる時に max_single_hit を更新。
-    //    これにより max_single_hit は「カード1枚で与えた最大ダメージ」となる
+    // ★ プレイヤーごとの「現在進行中のカードプレイ」状態。
+    //    AfterCardPlayed hook は全ヒット解決後に発火するため、event の sequence 順では
+    //      damage_dealt(N) → damage_dealt(N+1) → ... → card_played(N+k)
+    //    となる。よって以下のように動かす:
+    //      - damage_dealt: 同じ source_card_id が連続している間は一つの play として累積
+    //      - card_played:  対応する damage 群の終端なので finalize（card_name/type を上書き）
+    //      - source_card_id が「(...)」で始まる合成タグ (poison/doom/lightning 等) は
+    //        1 hit = 1 play 扱いにして個別に finalize（DoT を 1 つの play にまとめないため）
+    //    これにより max_single_hit は「カード1枚で与えた最大ダメージ」になる
     //    （Whirlwind のような multi-hit カードはヒット合計、Strike 単発はそのダメ）。
     interface CardPlay { card_id: string; card_name: string; card_type: string; damage: number; }
     const inProgress = new Map<string, CardPlay>();
@@ -214,38 +220,62 @@ function buildTurnsForCombat(
 
     for (const ev of turnEvents) {
       const pid = ev.player_id;
-      // card_played 境界での finalize
-      if (ev.event_type === 'card_played' && pid) {
-        const prev = inProgress.get(pid);
-        if (prev) finalizeCardPlay(pid, prev);
-        const p = ev.payload as CardPlayedPayload;
-        inProgress.set(pid, { card_id: p.card_id, card_name: p.card_name, card_type: p.card_type, damage: 0 });
-      }
-      // damage_dealt は進行中カードプレイへ accumulate（無ければスタンドアロン1ヒット扱い）。
-      // max_single_hit も「HP に通った分」基準にするため amt − overkill を使う
-      // （amt はオーバーキル込みなので、引かないとカード扱いダメが膨らむ）。
+
       if (ev.event_type === 'damage_dealt' && pid) {
         const p = ev.payload as DamageDealtPayload;
         const amt      = p.amount ?? 0;
         const overkill = p.overkill_damage ?? 0;
         const hpLost   = Math.max(0, amt - overkill);
-        const cur = inProgress.get(pid);
-        if (cur && p.source_card_id === cur.card_id) {
-          cur.damage += hpLost;
-        } else {
-          // poison tick / 間接ダメ等はその場で 1 ヒット = 1 プレイ扱い
+        const sid = p.source_card_id ?? '(unknown)';
+        const isSynthetic = sid.startsWith('(');
+
+        if (isSynthetic) {
+          // poison / doom / lightning 等は 1 hit = 1 play 扱い
+          // 既存の in-progress（実カード分）があればここで一旦 finalize する
+          const cur = inProgress.get(pid);
+          if (cur) { finalizeCardPlay(pid, cur); inProgress.delete(pid); }
           finalizeCardPlay(pid, {
-            card_id:   p.source_card_id ?? '(unknown)',
-            card_name: p.source_card_name ?? p.source_card_id ?? '(unknown)',
+            card_id:   sid,
+            card_name: p.source_card_name ?? sid,
             card_type: p.source_card_type ?? '',
             damage:    hpLost,
           });
+        } else {
+          const cur = inProgress.get(pid);
+          if (cur && cur.card_id === sid) {
+            cur.damage += hpLost;
+          } else {
+            if (cur) finalizeCardPlay(pid, cur);
+            inProgress.set(pid, {
+              card_id:   sid,
+              card_name: p.source_card_name ?? sid,
+              card_type: p.source_card_type ?? '',
+              damage:    hpLost,
+            });
+          }
+        }
+      } else if (ev.event_type === 'card_played' && pid) {
+        // 対応する damage 群の終端。in-progress が同じ card_id を持っていれば finalize。
+        const cur = inProgress.get(pid);
+        const p = ev.payload as CardPlayedPayload;
+        if (cur && cur.card_id === p.card_id) {
+          // card_played の方が name/type が信頼できるので上書き
+          cur.card_name = p.card_name;
+          cur.card_type = p.card_type;
+          finalizeCardPlay(pid, cur);
+          inProgress.delete(pid);
+        } else if (cur) {
+          // 直前の damage 群とこの card_played が一致しない（=damage を出さないカード等）
+          // 旧 group を finalize しておく
+          finalizeCardPlay(pid, cur);
+          inProgress.delete(pid);
         }
       }
+
       // 通常のカウンタ集計（max_single_hit 以外）
       applyEvent(ev, ensure);
     }
-    // ターン終端で進行中カードプレイを閉じる
+    // ターン終端で残った進行中グループを finalize
     for (const [pid, play] of inProgress.entries()) {
       finalizeCardPlay(pid, play);
     }
