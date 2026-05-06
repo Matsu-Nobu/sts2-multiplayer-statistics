@@ -49,9 +49,15 @@ internal static class SessionManager
             return;
         }
 
-        // lookup_key が変わっていればこれまでの状態を捨てる
+        // lookup_key が変わっていればこれまでの状態を捨てる。
+        // EventBuffer 側の combat_index / pending / outgoing も new run へ
+        // 持ち越さないようにここで一緒にリセットする。これをやらないと、
+        // 旧 run の AfterCombatEnd 等が遅れて発火したときに、新セッション側に
+        // combat_index = 旧最後値 の空戦闘として残ってしまう。
         if (CurrentLookupKey != lookupKey)
         {
+            // 旧 SessionId がまだ参照可能な状態で _outgoing を吐き切る
+            EventBuffer.Reset();
             ResetState();
             CurrentLookupKey = lookupKey;
         }
