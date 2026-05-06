@@ -24,6 +24,11 @@ Thumbs.db
 *.nupkg
 .docker-data/
 
+# ローカル開発用 SQLite ワーキングファイル
+data.db
+data.db-shm
+data.db-wal
+
 # メンテナ専用（git 管理しない）
 fly.toml
 Makefile.local

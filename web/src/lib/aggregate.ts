@@ -88,14 +88,20 @@ export function buildRunTotals(combats: CombatInfo[]): RunTotals {
       const cum = perPlayer[pid];
       const e = entry.combat;
       cum.damage_dealt        += e.damage_dealt;
+      cum.effective_damage_dealt += e.effective_damage_dealt;
+      cum.overkill_damage     += e.overkill_damage;
       cum.damage_received     += e.damage_received;
+      cum.effective_block     += e.effective_block;
       cum.block_gained_self   += e.block_gained_self;
       cum.block_given_allies  += e.block_given_allies;
       cum.energy_used         += e.energy_used;
       cum.cards_played        += e.cards_played;
       cum.cards_drawn         += e.cards_drawn;
       cum.potions_used        += e.potions_used;
-      cum.max_single_hit       = Math.max(cum.max_single_hit, e.max_single_hit);
+      if (e.max_single_hit > cum.max_single_hit) {
+        cum.max_single_hit = e.max_single_hit;
+        cum.max_single_hit_card = e.max_single_hit_card ?? cum.max_single_hit_card;
+      }
       for (const [k, v] of Object.entries(e.debuffs_applied))
         cum.debuffs_applied[k] = (cum.debuffs_applied[k] ?? 0) + v;
       cum.card_stats = mergeCardStats(cum.card_stats, e.card_stats);
@@ -121,6 +127,28 @@ export function mergeCardStats(a: CardStats[], b: CardStats[]): CardStats[] {
     }
   }
   return [...map.values()];
+}
+
+/**
+ * events から power_id → ローカライズ済み power_name の lookup を作る。
+ * power_changed.payload と damage_*.payload.active_on_{target,dealer} を走査。
+ * 同じ id に複数の name がある場合は後勝ち（実運用では同一 session 内では同じ）。
+ */
+export function buildPowerNames(events: EventRecord[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const visit = (id: unknown, name: unknown): void => {
+    if (typeof id === 'string' && typeof name === 'string' && name.length > 0) out[id] = name;
+  };
+  for (const ev of events) {
+    const p = ev.payload as Record<string, unknown> | undefined;
+    if (!p) continue;
+    if (ev.event_type === 'power_changed') visit(p.power_id, p.power_name);
+    for (const arr of [p.active_on_target, p.active_on_dealer]) {
+      if (!Array.isArray(arr)) continue;
+      for (const s of arr) visit((s as any)?.power_id, (s as any)?.power_name);
+    }
+  }
+  return out;
 }
 
 export function playerName(doc: SessionDoc, pid: string): string {
@@ -164,9 +192,60 @@ function buildTurnsForCombat(
       return { turn, cum };
     };
 
+    // ★ プレイヤーごとの「現在進行中のカードプレイ」状態。card_played で開き、
+    //    次の card_played または turn 終端で閉じる。閉じる時に max_single_hit を更新。
+    //    これにより max_single_hit は「カード1枚で与えた最大ダメージ」となる
+    //    （Whirlwind のような multi-hit カードはヒット合計、Strike 単発はそのダメ）。
+    interface CardPlay { card_id: string; card_name: string; card_type: string; damage: number; }
+    const inProgress = new Map<string, CardPlay>();
+
+    const finalizeCardPlay = (pid: string, play: CardPlay): void => {
+      if (play.damage <= 0) return;
+      const { turn, cum } = ensure(pid);
+      const tCard = upsertCard(turn.cards, play.card_id, play.card_name, play.card_type);
+      tCard.max_single_hit = Math.max(tCard.max_single_hit, play.damage);
+      const cCard = upsertCard(cum.card_stats, play.card_id, play.card_name, play.card_type);
+      cCard.max_single_hit = Math.max(cCard.max_single_hit, play.damage);
+      if (play.damage > cum.max_single_hit) {
+        cum.max_single_hit = play.damage;
+        cum.max_single_hit_card = play.card_name || play.card_id;
+      }
+    };
+
     for (const ev of turnEvents) {
+      const pid = ev.player_id;
+      // card_played 境界での finalize
+      if (ev.event_type === 'card_played' && pid) {
+        const prev = inProgress.get(pid);
+        if (prev) finalizeCardPlay(pid, prev);
+        const p = ev.payload as CardPlayedPayload;
+        inProgress.set(pid, { card_id: p.card_id, card_name: p.card_name, card_type: p.card_type, damage: 0 });
+      }
+      // damage_dealt は進行中カードプレイへ accumulate（無ければスタンドアロン1ヒット扱い）
+      if (ev.event_type === 'damage_dealt' && pid) {
+        const p = ev.payload as DamageDealtPayload;
+        const amt = p.amount ?? 0;
+        const cur = inProgress.get(pid);
+        if (cur && p.source_card_id === cur.card_id) {
+          cur.damage += amt;
+        } else {
+          // poison tick / 間接ダメ等はその場で 1 ヒット = 1 プレイ扱い
+          finalizeCardPlay(pid, {
+            card_id:   p.source_card_id ?? '(unknown)',
+            card_name: p.source_card_name ?? p.source_card_id ?? '(unknown)',
+            card_type: p.source_card_type ?? '',
+            damage:    amt,
+          });
+        }
+      }
+      // 通常のカウンタ集計（max_single_hit 以外）
       applyEvent(ev, ensure);
     }
+    // ターン終端で進行中カードプレイを閉じる
+    for (const [pid, play] of inProgress.entries()) {
+      finalizeCardPlay(pid, play);
+    }
+    inProgress.clear();
 
     // この turn の TurnPayload を構築。
     // 既知の player すべて（このターン delta が 0 でも）を含めて、累計を carry-forward。
@@ -202,27 +281,41 @@ function applyEvent(
     case 'damage_dealt': {
       if (!pid) return;
       const p = ev.payload as DamageDealtPayload;
-      const amt = p.amount ?? 0;
+      const amt      = p.amount ?? 0;
+      const total    = p.total_damage ?? amt;       // 旧形式互換: total が無ければ amount
+      const blocked  = p.blocked_damage ?? 0;
+      const overkill = p.overkill_damage ?? 0;
+      // 有効与ダメ = HP に通った分 + 敵 block 削り = total − overkill
+      // （= (amt - overkill) + blocked。amt はオーバーキル分も含むため引いて補正する）
+      const effective = (p.total_damage != null)
+        ? Math.max(0, total - overkill)
+        : (amt + blocked);                          // 旧 payload フォールバック
       const { turn, cum } = ensure(pid);
       turn.damage_dealt += amt;
       cum.damage_dealt  += amt;
-      cum.max_single_hit = Math.max(cum.max_single_hit, amt);
+      turn.effective_damage_dealt += effective;
+      cum.effective_damage_dealt  += effective;
+      turn.overkill_damage += overkill;
+      cum.overkill_damage  += overkill;
+      // max_single_hit は呼び出し元ループで「カード1プレイあたり」に集計するためここでは触らない
       if (p.source_card_id) {
         const tCard = upsertCard(turn.cards, p.source_card_id, p.source_card_name ?? p.source_card_id, p.source_card_type ?? '');
-        tCard.damage_dealt   += amt;
-        tCard.max_single_hit  = Math.max(tCard.max_single_hit, amt);
+        tCard.damage_dealt += amt;
         const cCard = upsertCard(cum.card_stats, p.source_card_id, p.source_card_name ?? p.source_card_id, p.source_card_type ?? '');
-        cCard.damage_dealt   += amt;
-        cCard.max_single_hit  = Math.max(cCard.max_single_hit, amt);
+        cCard.damage_dealt += amt;
       }
       break;
     }
     case 'damage_received': {
       if (!pid) return;
-      const amt = (ev.payload as DamageReceivedPayload).amount ?? 0;
+      const p = ev.payload as DamageReceivedPayload;
+      const amt     = p.amount ?? 0;
+      const blocked = p.blocked_damage ?? 0;
       const { turn, cum } = ensure(pid);
       turn.damage_received += amt;
       cum.damage_received  += amt;
+      turn.effective_block += blocked;
+      cum.effective_block  += blocked;
       break;
     }
     case 'block_gained': {
@@ -234,9 +327,11 @@ function applyEvent(
       turn.block_gained_self += amt;
       cum.block_gained_self  += amt;
       if (p.source_card_id) {
-        const tCard = upsertCard(turn.cards, p.source_card_id, p.source_card_id, '');
+        const name = p.source_card_name ?? p.source_card_id;
+        const type = p.source_card_type ?? '';
+        const tCard = upsertCard(turn.cards, p.source_card_id, name, type);
         tCard.block_provided += amt;
-        const cCard = upsertCard(cum.card_stats, p.source_card_id, p.source_card_id, '');
+        const cCard = upsertCard(cum.card_stats, p.source_card_id, name, type);
         cCard.block_provided += amt;
       }
       // 味方付与の場合: giver にも記録
@@ -245,7 +340,9 @@ function applyEvent(
         g.turn.block_given_allies += amt;
         g.cum.block_given_allies  += amt;
         if (p.source_card_id) {
-          const gCard = upsertCard(g.cum.card_stats, p.source_card_id, p.source_card_id, '');
+          const name = p.source_card_name ?? p.source_card_id;
+          const type = p.source_card_type ?? '';
+          const gCard = upsertCard(g.cum.card_stats, p.source_card_id, name, type);
           gCard.block_provided += amt;
         }
       }
@@ -324,15 +421,20 @@ function upsertCard(arr: CardStats[], id: string, name: string, type: string): C
 
 function emptyTurn(): PlayerTurnSummary {
   return {
-    damage_dealt: 0, damage_received: 0, block_gained_self: 0, block_given_allies: 0,
+    damage_dealt: 0, effective_damage_dealt: 0, overkill_damage: 0,
+    damage_received: 0, effective_block: 0,
+    block_gained_self: 0, block_given_allies: 0,
     energy_used: 0, cards_played: 0, cards_drawn: 0, cards: [],
   };
 }
 
 function emptyCombat(): PlayerCombatSummary {
   return {
-    damage_dealt: 0, damage_received: 0, block_gained_self: 0, block_given_allies: 0,
-    energy_used: 0, cards_played: 0, cards_drawn: 0, potions_used: 0, max_single_hit: 0,
+    damage_dealt: 0, effective_damage_dealt: 0, overkill_damage: 0,
+    damage_received: 0, effective_block: 0,
+    block_gained_self: 0, block_given_allies: 0,
+    energy_used: 0, cards_played: 0, cards_drawn: 0, potions_used: 0,
+    max_single_hit: 0, max_single_hit_card: null,
     debuffs_applied: {}, card_stats: [],
   };
 }

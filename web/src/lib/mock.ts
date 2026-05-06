@@ -75,6 +75,7 @@ function genTurn(ctx: TurnCtx, draws: { player: string; cards: { id: string; nam
                   type: 'card_played'; player: string; cardId: string; cardName: string; cardType: string;
                 } | {
                   type: 'damage_dealt'; player: string; amount: number; cardId: string; cardName: string; cardType: string;
+                  blocked?: number; overkill?: number;
                   active_on_target?: PowerSnapshot[];
                 } | {
                   type: 'block_gained'; player: string; amount: number; cardId: string; from?: string;
@@ -83,7 +84,7 @@ function genTurn(ctx: TurnCtx, draws: { player: string; cards: { id: string; nam
                 } | {
                   type: 'energy_spent'; player: string; amount: number; cardId: string;
                 } | {
-                  type: 'damage_received'; player: string; amount: number;
+                  type: 'damage_received'; player: string; amount: number; blocked?: number;
                 })[]): void {
   // ターン頭のドロー
   for (const d of draws) {
@@ -99,14 +100,21 @@ function genTurn(ctx: TurnCtx, draws: { player: string; cards: { id: string; nam
           card_id: a.cardId, card_name: a.cardName, card_type: a.cardType, target_creature_id: 'enemy:0',
         }, true);
         break;
-      case 'damage_dealt':
+      case 'damage_dealt': {
+        const blocked = a.blocked ?? 0;
+        const overkill = a.overkill ?? 0;
         emit<DamageDealtPayload>(ctx, 'damage_dealt', a.player, {
-          amount: a.amount, target_creature_id: 'enemy:0', source_card_id: a.cardId,
+          amount: a.amount,
+          total_damage: a.amount + blocked,
+          blocked_damage: blocked,
+          overkill_damage: overkill,
+          target_creature_id: 'enemy:0', source_card_id: a.cardId,
           source_card_name: a.cardName, source_card_type: a.cardType, hit_index: 0,
           active_on_target: a.active_on_target ?? [],
           active_on_dealer: [],
         }, true);
         break;
+      }
       case 'block_gained':
         emit<BlockGainedPayload>(ctx, 'block_gained', a.player, {
           amount: a.amount, source_card_id: a.cardId, from_player: a.from ?? a.player,
@@ -121,11 +129,17 @@ function genTurn(ctx: TurnCtx, draws: { player: string; cards: { id: string; nam
       case 'energy_spent':
         emit<EnergySpentPayload>(ctx, 'energy_spent', a.player, { amount: a.amount, source_card_id: a.cardId }, true);
         break;
-      case 'damage_received':
+      case 'damage_received': {
+        const blocked = a.blocked ?? 0;
         emit<DamageReceivedPayload>(ctx, 'damage_received', a.player, {
-          amount: a.amount, source_creature_id: 'enemy:0',
+          amount: a.amount,
+          total_damage: a.amount + blocked,
+          blocked_damage: blocked,
+          source_creature_id: 'enemy:0',
+          active_on_target: [],
         }, true);
         break;
+      }
     }
   }
 }

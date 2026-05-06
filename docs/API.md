@@ -174,20 +174,47 @@ Content-Type: application/json
 |-----------|---------|-----------|
 | `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?`, `energy_cost?` | dealer |
 | `card_drawn` | `card_id`, `from_hand_draw?` | drawer |
-| `damage_dealt` | `amount`, `target_creature_id`, `target_player_id?`, `source_card_id?`, `hit_index`, `active_on_target[]`, `active_on_dealer[]` | dealer |
-| `damage_received` | `amount`, `source_creature_id`, `source_card_id?`, `active_on_target[]` | target |
-| `block_gained` | `amount`, `source_card_id?`, `from_player?` | receiver |
-| `power_changed` | `power_id`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | applier |
+| `damage_dealt` | `amount` (敵HPに通った分), `total_damage?` (試行総ダメ), `blocked_damage?` (敵blockで吸収), `overkill_damage?` (HP超過分), `was_target_killed?`, `target_creature_id`, `target_player_id?`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `hit_index`, `active_on_target[]`, `active_on_dealer[]` | dealer |
+| `damage_received` | `amount` (自HPに受けた分), `total_damage?` (試行総ダメ), `blocked_damage?` (自blockで吸収=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]?` | target |
+| `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `from_player?` | receiver |
+| `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | applier |
 | `energy_spent` | `amount`, `source_card_id?` | spender |
 | `potion_used` | `potion_id`, `target_creature_id?` | user |
+
+#### 予約 source_card_id（合成タグ）
+
+`AfterDamageGiven` / `AfterBlockGained` の `cardSource` が null の間接ダメ・パワー発生源は、以下の予約 ID で識別する。`source_card_type` には `"Power"` / `"Orb"` が入る。
+
+| 予約 ID | 意味 |
+|---|---|
+| `(poison)` | PoisonPower の tick |
+| `(doom)` | DoomPower の発動（残 HP 即死） |
+| `(lightning_evoke)` | Lightning Orb の手動 Evoke（Zap 等） |
+| `(lightning_evoke_auto)` | Lightning Orb のターン終端等で起こる自動 Evoke |
+| `(lightning_passive)` | Lightning Orb の Passive |
+| `(thorns)` | Thorns Power の反射ダメ |
+| `(flame_barrier)` | Flame Barrier Power の反射ダメ |
+| `(rampart)` | Rampart Power のターン頭 block |
+| `(block_next_turn)` | BlockNextTurn Power の発動 block |
 
 #### power snapshot（`active_on_target` / `active_on_dealer` の中身）
 
 ```json
-[ { "power_id": "VULNERABLE_POWER", "stacks": 2, "applier": "76561...B" } ]
+[
+  {
+    "power_id":   "VULNERABLE_POWER",
+    "power_name": "脆弱",
+    "stacks":     5,
+    "applier":    "76561...B",
+    "appliers":   [ { "player_id": "76561...A", "stacks": 2 },
+                    { "player_id": "76561...B", "stacks": 3 } ]
+  }
+]
 ```
 
-`applier` は power を付与したプレイヤーの steam_id。passive / 不明な場合は `null`。Phase 3.5 v1 では `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` のみを whitelist として記録。
+- `applier` は最大 stacks の applier（後方互換）。
+- `appliers` は各プレイヤーの寄与 stacks 内訳。複数人が同じデバフを撒いた場合は stacks 比で按分する rDPS / rMit 計算に使う。
+- whitelist: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` / `WEAK_POWER` / `STRENGTH_POWER`。
 
 ### 冪等性
 

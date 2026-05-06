@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SessionDoc } from '../lib/types';
-  import { buildCombatInfos, buildRunTotals } from '../lib/aggregate';
+  import { buildCombatInfos, buildRunTotals, buildPowerNames } from '../lib/aggregate';
   import Header from './Header.svelte';
   import CombatView from './CombatView.svelte';
   import AllCombatsView from './AllCombatsView.svelte';
@@ -16,6 +16,7 @@
   let totals = $derived(buildRunTotals(combats));
   let playerIds = $derived(doc.players.map(p => p.steam_id));
   let playerNames = $derived(Object.fromEntries(doc.players.map(p => [p.steam_id, p.display_name])));
+  let powerNames = $derived(buildPowerNames(doc.events));
 
   // events を combat_index でバケット化（CombatView / AllCombatsView へ渡す）
   let eventsByCombat = $derived.by(() => {
@@ -75,13 +76,14 @@
   </div>
 
   {#if activeTab === 'all'}
-    <AllCombatsView {combats} {totals} {playerIds} {playerNames} allCombatEvents={allCombatEvents} />
+    <AllCombatsView {combats} {totals} {playerIds} {playerNames} {powerNames} allCombatEvents={allCombatEvents} />
   {:else if activeCombat}
     {#key activeCombat.combat_index}
       <CombatView
         combat={activeCombat}
         {playerIds}
         {playerNames}
+        {powerNames}
         combatEvents={eventsByCombat.get(activeCombat.combat_index) ?? []}
       />
     {/key}

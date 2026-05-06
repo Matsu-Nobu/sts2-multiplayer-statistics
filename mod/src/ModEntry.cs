@@ -42,6 +42,7 @@ public static class ModEntry
             PatchHook(nameof(Hook.AfterDamageReceived),      nameof(HookPatches.AfterDamageReceivedPostfix));
             PatchHook(nameof(Hook.AfterBlockGained),         nameof(HookPatches.AfterBlockGainedPostfix));
             PatchHook(nameof(Hook.AfterEnergySpent),         nameof(HookPatches.AfterEnergySpentPostfix));
+            PatchHook(nameof(Hook.BeforeCardPlayed),         nameof(HookPatches.BeforeCardPlayedPostfix));
             PatchHook(nameof(Hook.AfterCardPlayed),          nameof(HookPatches.AfterCardPlayedPostfix));
             PatchHook(nameof(Hook.AfterCardDrawn),           nameof(HookPatches.AfterCardDrawnPostfix));
             PatchHook(nameof(Hook.AfterPowerAmountChanged),  nameof(HookPatches.AfterPowerAmountChangedPostfix));
@@ -58,6 +59,18 @@ public static class ModEntry
                 nameof(IndirectDamagePatches.LightningEvokePrefix), nameof(IndirectDamagePatches.LightningEvokePostfix));
             PatchOrb<LightningOrb>(nameof(LightningOrb.Passive),
                 nameof(IndirectDamagePatches.LightningPassivePrefix), nameof(IndirectDamagePatches.LightningPassivePostfix));
+
+            // 反射ダメ（Thorns / FlameBarrier）
+            PatchPower<ThornsPower>("BeforeDamageReceived",
+                nameof(IndirectDamagePatches.ThornsPrefix), nameof(IndirectDamagePatches.ThornsPostfix));
+            PatchPower<FlameBarrierPower>("AfterDamageReceived",
+                nameof(IndirectDamagePatches.FlameBarrierPrefix), nameof(IndirectDamagePatches.FlameBarrierPostfix));
+
+            // パワー由来ブロック（Rampart / BlockNextTurn / MockGainBlockOnAttack）
+            PatchPower<RampartPower>("AfterSideTurnStart",
+                nameof(IndirectDamagePatches.RampartPrefix), nameof(IndirectDamagePatches.RampartPostfix));
+            PatchPower<BlockNextTurnPower>("AfterBlockCleared",
+                nameof(IndirectDamagePatches.BlockNextTurnPrefix), nameof(IndirectDamagePatches.BlockNextTurnPostfix));
 
             StatsLogger.Initialize();
 

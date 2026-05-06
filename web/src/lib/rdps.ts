@@ -1,34 +1,31 @@
 /**
- * Skada 風 rDPS（貢献度ダメージ）算出。
+ * Skada 風 rDPS（ダメージ貢献度）算出。
+ *
+ * 基準は「有効ダメージ」= 敵 HP に通った分 + 敵 block を削った分（total - overkill）。
+ * シールド削りも貢献として扱う。
  *
  * 各 damage_dealt イベントについて:
- *   - 通常ダメ + Vulnerable on target by 別プレイヤー → 1/3 を applier に
- *   - 間接ダメ source_card_id="(poison)" → 100% を POISON_POWER の applier に
- *   - 間接ダメ source_card_id="(doom)"   → 100% を DOOM_POWER の applier に
+ *   - 通常ダメ + Vulnerable on target → 1/3 を Vulnerable applier に stacks 加重で配分
+ *   - 間接ダメ source_card_id="(poison)" → 100% を POISON_POWER の applier 群に stacks 加重で配分
+ *   - 間接ダメ source_card_id="(doom)"   → 100% を DOOM_POWER の applier 群に stacks 加重で配分
  *
- * 各 player の rDPS 内訳:
- *   - self: 自分が dealer のとき自分に残った分
- *   - from_buffs / from_debuffs: 他人が自分の damage に貢献した分（受ける側）
- *   - to_others_via_*: 自分が他人の damage に貢献した分（出す側）
+ * 複数プレイヤーが同じデバフを撒いた場合、各 applier の stacks 比で按分する。
+ * stacks 情報が無い旧 payload では `applier` 単独に全額を帰属（後方互換）。
  */
 
 import type { EventRecord, DamageDealtPayload, PowerSnapshot } from './types';
 
 export interface RdpsBreakdown {
-  total: number;          // self + from_*
+  total: number;          // self + to の合計
   self: number;
-  from: { source: string; applier: string; amount: number }[];   // 他人から貰った分（受領側）
-  to:   { source: string; recipient: string; amount: number }[]; // 他人の damage に貢献した分（出す側）
+  from: { source: string; applier: string; amount: number }[];
+  to:   { source: string; recipient: string; amount: number }[];
 }
 
 export interface RdpsTable {
   byPlayer: Record<string, RdpsBreakdown>;
 }
 
-/**
- * 与えられた damage_dealt event 列から rDPS を計算する。
- * 戦闘単位 / ラン単位どちらでも使える（呼び出し側でフィルタしてから渡す）。
- */
 export function computeRdps(events: EventRecord[]): RdpsTable {
   const byPlayer: Record<string, RdpsBreakdown> = {};
   const ensure = (pid: string): RdpsBreakdown => {
@@ -37,9 +34,8 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
   };
   const credit = (recipient: string, applier: string, source: string, amount: number) => {
     if (amount <= 0) return;
-    if (recipient === applier) {
-      ensure(recipient).self += amount;
-    } else {
+    if (recipient === applier) ensure(recipient).self += amount;
+    else {
       ensure(recipient).from.push({ source, applier, amount });
       ensure(applier).to.push({ source, recipient, amount });
     }
@@ -50,35 +46,36 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
     const p = ev.payload as DamageDealtPayload;
     const dealer = ev.player_id;
     if (!dealer) continue;
+    // 「有効ダメージ」基準で計算: HP に通った分 + 敵 block を削った分（= total - overkill）
+    // 旧 payload (total_damage 無し) では amount にフォールバック
     const amount = p.amount ?? 0;
-    if (amount <= 0) continue;
+    const blocked = p.blocked_damage ?? 0;
+    const effective = (p.total_damage != null)
+      ? Math.max(0, p.total_damage - (p.overkill_damage ?? 0))
+      : (amount + blocked);
+    if (effective <= 0) continue;
 
-    // 1. 間接ダメ: poison / doom の applier に 100%
+    // 1. 間接ダメ: poison / doom の applier に 100%（stacks 加重で按分）
     if (p.source_card_id === '(poison)') {
-      const applier = findApplier(p.active_on_target, 'POISON_POWER');
-      credit(applier ?? dealer, applier ?? dealer, 'poison', amount);
+      distributeByStacks(p.active_on_target, 'POISON_POWER', effective, dealer, 'poison', credit);
       continue;
     }
     if (p.source_card_id === '(doom)') {
-      const applier = findApplier(p.active_on_target, 'DOOM_POWER');
-      credit(applier ?? dealer, applier ?? dealer, 'doom', amount);
+      distributeByStacks(p.active_on_target, 'DOOM_POWER', effective, dealer, 'doom', credit);
       continue;
     }
 
-    // 2. 通常ダメ: dealer に self、Vulnerable applier が他人なら 1/3 を applier に
-    let dealerShare = amount;
-    const vulnApplier = findApplier(p.active_on_target, 'VULNERABLE_POWER');
-    if (vulnApplier && vulnApplier !== dealer) {
-      const vulnContrib = Math.round(amount / 3);   // 1.5 倍効果 → 全 dmg の 1/3 が Vulnerable 由来
-      credit(dealer, vulnApplier, 'vulnerable', vulnContrib);
-      dealerShare -= vulnContrib;
+    // 2. 通常ダメ: dealer に self、Vulnerable があれば 1/3 を applier 群に配分
+    const vulnContrib = Math.round(effective / 3);     // VULN は 1.5 倍効果 → 1/3 が VULN 由来
+    let dealerShare = effective;
+    const vulnSnap = findPower(p.active_on_target, 'VULNERABLE_POWER');
+    if (vulnSnap) {
+      const distributed = distributeAmongAppliers(vulnSnap, vulnContrib, dealer, 'vulnerable', credit);
+      dealerShare -= distributed;
     }
     credit(dealer, dealer, 'self', dealerShare);
   }
 
-  // total = 自分の素ダメ (self) + 他人にバフ・デバフで貢献した分 (to)
-  // (b.from は「他人のバフから受け取った分」で、これは別の dealer の self に
-  //  含まれているのでここでは加算しない。表示用の情報として残す)
   for (const pid of Object.keys(byPlayer)) {
     const b = byPlayer[pid];
     b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
@@ -86,8 +83,73 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
   return { byPlayer };
 }
 
-function findApplier(snapshot: PowerSnapshot[] | undefined, powerId: string): string | null {
-  if (!snapshot) return null;
-  const m = snapshot.find(s => s.power_id === powerId);
-  return m?.applier ?? null;
+function findPower(snap: PowerSnapshot[] | undefined, powerId: string): PowerSnapshot | null {
+  if (!snap) return null;
+  return snap.find(s => s.power_id === powerId) ?? null;
+}
+
+/**
+ * power の applier 群に amount を stacks 加重で配分し、`credit` に流す。
+ * 戻り値: 実際に配分された合計（rounding により amount と僅差になり得る）。
+ * 自分自身が全 stacks を持つ等で fallback できない場合は dealer に self として戻す。
+ */
+function distributeAmongAppliers(
+  snap: PowerSnapshot,
+  amount: number,
+  dealer: string,
+  source: string,
+  credit: (recipient: string, applier: string, source: string, amt: number) => void,
+): number {
+  const appliers = snap.appliers && snap.appliers.length > 0
+    ? snap.appliers
+    : (snap.applier ? [{ player_id: snap.applier, stacks: snap.stacks }] : []);
+  if (appliers.length === 0) return 0;
+
+  const totalStacks = appliers.reduce((s, a) => s + a.stacks, 0);
+  if (totalStacks <= 0) return 0;
+
+  // 整数誤差は最後の applier に押し付ける
+  let distributed = 0;
+  for (let i = 0; i < appliers.length - 1; i++) {
+    const share = Math.round(amount * appliers[i].stacks / totalStacks);
+    credit(dealer, appliers[i].player_id, source, share);
+    distributed += share;
+  }
+  const last = appliers[appliers.length - 1];
+  credit(dealer, last.player_id, source, amount - distributed);
+  return amount;
+}
+
+/**
+ * 間接ダメ用: amount 全額を power の applier 群に「self ダメ」として配分。
+ * Poison/Doom は本来 applier の与ダメなので、各 applier に self credit。
+ * applier 不明時は dealer に self としてフォールバック。
+ */
+function distributeByStacks(
+  snap: PowerSnapshot[] | undefined,
+  powerId: string,
+  amount: number,
+  dealer: string,
+  source: string,
+  credit: (recipient: string, applier: string, source: string, amt: number) => void,
+): void {
+  const power = findPower(snap, powerId);
+  const appliers = power?.appliers && power.appliers.length > 0
+    ? power.appliers
+    : (power?.applier ? [{ player_id: power.applier, stacks: power.stacks }] : []);
+
+  if (appliers.length === 0) {
+    credit(dealer, dealer, source, amount);
+    return;
+  }
+
+  const totalStacks = appliers.reduce((s, a) => s + a.stacks, 0) || 1;
+  let distributed = 0;
+  for (let i = 0; i < appliers.length - 1; i++) {
+    const share = Math.round(amount * appliers[i].stacks / totalStacks);
+    credit(appliers[i].player_id, appliers[i].player_id, source, share);
+    distributed += share;
+  }
+  const last = appliers[appliers.length - 1];
+  credit(last.player_id, last.player_id, source, amount - distributed);
 }

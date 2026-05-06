@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Logging;
 
@@ -19,9 +20,13 @@ internal static class ActivePowersSnapshot
     /// </summary>
     private static readonly HashSet<string> Whitelist = new()
     {
+        // 与ダメ攻撃強化 / 間接ダメ
         "VULNERABLE_POWER",
         "POISON_POWER",
         "DOOM_POWER",
+        // 被ダメ軽減（dealer に乗ってると被ダメが減る）
+        "WEAK_POWER",
+        "STRENGTH_POWER",     // 負の stacks のときに軽減として扱う（rMit 側で判定）
     };
 
     public static List<object> ForCreature(Creature? c)
@@ -42,14 +47,22 @@ internal static class ActivePowersSnapshot
                 int stacks = (int?)p.GetType().GetProperty("Amount")?.GetValue(p) ?? 0;
                 if (stacks == 0) continue;
 
-                string? applier = PowerOriginRegistry.Lookup(c, powerId);
+                var appliers = PowerOriginRegistry.LookupAll(c, powerId);
+                string? powerName = PowerNameResolver.Resolve(p);
+
+                // 後方互換: 単一 applier 想定の旧フィールドは「最大 stacks の applier」を入れる
+                string? primaryApplier = appliers.Count == 0
+                    ? null
+                    : appliers.OrderByDescending(a => a.Stacks).First().Applier;
 
                 // PayloadJson は SnakeCaseLower で property 名を変換するため、PascalCase にしておく
                 result.Add(new
                 {
-                    PowerId = powerId,
-                    Stacks  = stacks,
-                    Applier = applier,
+                    PowerId   = powerId,
+                    PowerName = powerName,
+                    Stacks    = stacks,
+                    Applier   = primaryApplier,
+                    Appliers  = appliers.Select(a => new { PlayerId = a.Applier, Stacks = a.Stacks }).ToList(),
                 });
             }
         }

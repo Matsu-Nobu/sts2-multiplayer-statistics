@@ -132,11 +132,18 @@ internal static class HookPatches
         }
     }
 
-    public static void AfterDeathPostfix(IRunState? runState, CombatState? combatState, Creature? creature)
+    public static void AfterDeathPostfix(
+        IRunState?    runState,
+        CombatState?  combatState,
+        Creature?     creature,
+        bool          wasRemovalPrevented,
+        float         deathAnimLength)
     {
         try
         {
             if (runState == null || creature == null) return;
+            // 蘇生・死亡無効化された場合は run_end を発行しない
+            if (wasRemovalPrevented) return;
             var playerInfo = TryFindPlayerForCreature(combatState, creature);
             if (playerInfo == null) return;
 
@@ -169,8 +176,16 @@ internal static class HookPatches
         try
         {
             if (dealer == null || results == null) return;
-            int amount = (int)results.UnblockedDamage;
-            if (amount <= 0) return;
+            // amount       = HP に通った分（既存セマンティクス維持）
+            // total        = 試行された総ダメージ（block 吸収前）
+            // blocked      = 敵 block で吸収された分
+            // overkill     = HP を超えた分（target_kill 時の残ダメ）
+            int amount   = (int)results.UnblockedDamage;
+            int total    = (int)results.TotalDamage;
+            int blocked  = (int)results.BlockedDamage;
+            int overkill = (int)results.OverkillDamage;
+            bool wasKilled = results.WasTargetKilled;
+            if (total <= 0) return;
 
             // dealer がプレイヤーか間接ダメージか判定
             var dealerPlayer = TryFindPlayerForCreature(combatState, dealer);
@@ -194,11 +209,19 @@ internal static class HookPatches
             }
 
             string? targetPlayerId = TryFindPlayerForCreature(combatState, target)?.id;
+            // 自傷ダメージ（Hemokinesis 等）や味方への誤爆は damage_dealt にカウントしない。
+            // target が player creature（targetPlayerId != null）の場合は damage_received 側で記録される。
+            if (targetPlayerId != null) return;
+
             int hitIndex = (int?)results.GetType().GetProperty("HitIndex")?.GetValue(results) ?? 0;
 
             EventBuffer.EmitTurnEvent("damage_dealt", dealerPlayerId, new
             {
                 amount               = amount,
+                total_damage         = total,
+                blocked_damage       = blocked,
+                overkill_damage      = overkill,
+                was_target_killed    = wasKilled,
                 target_creature_id   = target != null ? CreatureIdentity(target) : null,
                 target_player_id     = targetPlayerId,
                 source_card_id       = card?.CardId,
@@ -225,8 +248,10 @@ internal static class HookPatches
         try
         {
             if (target == null || result == null) return;
-            int amount = (int)result.UnblockedDamage;
-            if (amount <= 0) return;
+            int amount   = (int)result.UnblockedDamage;     // HP に通った分
+            int total    = (int)result.TotalDamage;          // 試行された総ダメ
+            int blocked  = (int)result.BlockedDamage;        // 自分の block で吸収した分（= 有効シールド）
+            if (total <= 0) return;
 
             var playerInfo = TryFindPlayerForCreature(combatState, target);
             if (playerInfo == null) return;
@@ -234,9 +259,12 @@ internal static class HookPatches
             EventBuffer.EmitTurnEvent("damage_received", playerInfo.Value.id, new
             {
                 amount             = amount,
+                total_damage       = total,
+                blocked_damage     = blocked,
                 source_creature_id = dealer != null ? CreatureIdentity(dealer) : null,
                 source_card_id     = TryGetCardInfo(cardSource)?.CardId,
                 active_on_target   = ActivePowersSnapshot.ForCreature(target),
+                active_on_dealer   = ActivePowersSnapshot.ForCreature(dealer),
             });
         }
         catch (Exception ex)
@@ -259,13 +287,16 @@ internal static class HookPatches
             var receiver = TryFindPlayerForCreature(combatState, creature);
             if (receiver == null) return;
             var giver = TryFindPlayerForCardOwner(cardSource);
-            var card = TryGetCardInfo(cardSource);
+            // cardSource が null の場合は power 由来として BlockSourceContext を fallback
+            var source = TryGetCardInfo(cardSource) ?? BlockSourceContext.Current;
 
             EventBuffer.EmitTurnEvent("block_gained", receiver.Value.id, new
             {
-                amount         = blockAmt,
-                source_card_id = card?.CardId,
-                from_player    = giver?.id ?? receiver.Value.id,    // 自己付与なら自分自身
+                amount           = blockAmt,
+                source_card_id   = source?.CardId,
+                source_card_name = source?.CardName,
+                source_card_type = source?.CardType,    // "Attack" / "Skill" / "Power" / "Orb" 等
+                from_player      = giver?.id ?? receiver.Value.id,
             });
         }
         catch (Exception ex)
@@ -292,6 +323,12 @@ internal static class HookPatches
         {
             Log.Error($"[StsStats] AfterEnergySpent error: {ex.Message}");
         }
+    }
+
+    public static void BeforeCardPlayedPostfix()
+    {
+        try { CardPlayedScope.Enter(); }
+        catch (Exception ex) { Log.Error($"[StsStats] BeforeCardPlayed scope enter error: {ex.Message}"); }
     }
 
     public static void AfterCardPlayedPostfix(CombatState? combatState, object? cardPlay)
@@ -327,6 +364,10 @@ internal static class HookPatches
         catch (Exception ex)
         {
             Log.Error($"[StsStats] AfterCardPlayed error: {ex.Message}");
+        }
+        finally
+        {
+            try { CardPlayedScope.Exit(); } catch { }
         }
     }
 
@@ -369,10 +410,15 @@ internal static class HookPatches
             var applierPlayer = TryFindPlayerForCreature(combatState, applier);
             string? applierPlayerId = applierPlayer?.id;
 
-            // PowerOriginRegistry に記録（applier が player の場合のみ、active power snapshot で逆引きするため）
-            if (applierPlayer != null && power.Owner != null && delta > 0)
+            // PowerOriginRegistry に記録:
+            //   applier が player → その applier の stacks を delta 分動かす（正負ともに反映）
+            //   applier 不明 + delta < 0 → 自然減衰として既存 applier 全員から比例減算
+            if (power.Owner != null)
             {
-                PowerOriginRegistry.Record(power.Owner, powerId, applierPlayer.Value.id);
+                if (applierPlayer != null)
+                    PowerOriginRegistry.RecordApply(power.Owner, powerId, applierPlayer.Value.id, delta);
+                else if (delta < 0)
+                    PowerOriginRegistry.RecordDecay(power.Owner, powerId, delta);
             }
 
             string? targetCreatureId = power.Owner != null ? CreatureIdentity(power.Owner) : null;
@@ -381,6 +427,7 @@ internal static class HookPatches
             EventBuffer.EmitTurnEvent("power_changed", applierPlayerId, new
             {
                 power_id           = powerId,
+                power_name         = PowerNameResolver.Resolve(power),
                 delta              = delta,
                 target_creature_id = targetCreatureId,
                 target_player_id   = targetPlayerId,

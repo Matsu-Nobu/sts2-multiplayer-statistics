@@ -44,6 +44,38 @@
 
 > 貢献スコア（rDPS 相当）は集計値ベースでは正確な算定ができないため、Phase 3.5 の API 改修後に追加する。
 
+### Phase 3.x — 間接ダメージ（オーブ・毒等）のソース帰属 ✅ 実装済み
+
+実装完了内容:
+- `DamageSourceContext` (AsyncLocal) で間接ダメ source を伝搬
+- Poison / Doom / Lightning (Evoke 手動・自動・Passive) を Harmony patch で帰属
+- Thorns / Flame Barrier の反射ダメも source 識別
+- パワー由来ブロック (Rampart / BlockNextTurn) は `BlockSourceContext` で帰属
+- 複数 applier の stacks 加重配分（rDPS / rMit）
+
+以下、当初の設計メモは履歴として残す。
+
+
+
+**現状の問題**: `AfterDamageGiven` は `cardSource: CardModel?` しか持たないため、
+- Defect の Lightning Orb の Evoke / Passive ダメージ
+- Poison Power の tick ダメージ
+- Burn の自傷ダメージ
+
+これらが全て `(indirect)` という一つのバケツに入る。WebUI のカード別テーブルで「Lightning Orb で何ダメ」「Poison で何ダメ」が見えない。
+
+**解決方針**: STS1 の DamageTracker mod 等で使われている **AsyncLocal によるソースコンテキスト伝搬**を実装する。
+
+- `OrbModel.Evoke()` / `OrbModel.Passive()` を Harmony Prefix/Postfix patch
+- `AsyncLocal<OrbModel?>` に「現在トリガ中のオーブ」を一時設定
+- `AfterDamageGiven` で `cardSource == null` のとき AsyncLocal を見て「Lightning Orb (Evoke)」等の擬似 CardInfo を作る
+- 同様に `PoisonPower.OnSideTurnStart` 等を patch して poison ソースを伝搬
+
+**注意**: 非同期 Task メソッドへの patch は `__state` での対応が必要。Burn / Doom 等の他間接ソースも同パターン。
+
+参考:
+- [BAIGUANGMEI/STS2-DamageTracker](https://github.com/BAIGUANGMEI/STS2-DamageTracker) — Poison/Doom 帰属に AsyncLocal を使うパターンが mod 設計時の参考になる
+
 ### Phase 3.5 — ターン送信のイベント列化（rDPS 対応への布石）
 
 **動機**: 「貢献度スコア（rDPS 相当）」を正確に算出するには、各ダメージイベントの発生時に「適用されていたバフ・デバフと、それぞれを誰が付与したか」のコンテキストが必要。現在の `POST /sessions/{id}/turns` は **ターン単位の集計値** しか送っておらず、ダメージ単位の attribution は不可能。

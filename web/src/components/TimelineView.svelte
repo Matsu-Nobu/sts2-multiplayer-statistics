@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { EventRecord } from '../lib/types';
+  import { formatPowerName } from '../lib/powers';
 
   interface Props {
     events: EventRecord[];          // 戦闘内 event のみ（combat_index 設定済）を想定
     playerNames: Record<string, string>;
+    powerNames?: Record<string, string>;
   }
-  let { events, playerNames }: Props = $props();
+  let { events, playerNames, powerNames = {} }: Props = $props();
 
   // turn_number ごとにグループ化
   let groups = $derived(() => {
@@ -42,7 +44,7 @@
       case 'power_changed': {
         const t = p?.target_player_id ? `→ player ${pname(p.target_player_id)}` : '→ enemy';
         const sign = (p?.delta ?? 0) >= 0 ? '+' : '';
-        return `${pname(ev.player_id)} ${p?.power_id} ${sign}${p?.delta} ${t}`;
+        return `${pname(ev.player_id)} ${formatPowerName(p?.power_id ?? '', powerNames)} ${sign}${p?.delta} ${t}`;
       }
       case 'potion_used':     return `${pname(ev.player_id)} potion ${p?.potion_id ?? '?'}`;
       default:                return ev.event_type;
@@ -65,7 +67,7 @@
   function activeOnLabel(snap: any[]): string {
     if (!snap || snap.length === 0) return '';
     return snap
-      .map((s: any) => `${s.power_id.replace('_POWER', '')}×${s.stacks}` + (s.applier ? ` by ${pname(s.applier)}` : ''))
+      .map((s: any) => `${formatPowerName(s.power_id, powerNames)}×${s.stacks}` + (s.applier ? ` by ${pname(s.applier)}` : ''))
       .join(', ');
   }
 </script>

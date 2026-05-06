@@ -1,21 +1,20 @@
 <script lang="ts">
-  import type { RdpsTable } from '../lib/rdps';
+  import type { RmitTable } from '../lib/rmit';
 
   interface Props {
-    rdps: RdpsTable;
+    rmit: RmitTable;
     playerNames: Record<string, string>;
     title?: string;
   }
-  let { rdps, playerNames, title = 'ダメージ貢献度 (rDPS)' }: Props = $props();
+  let { rmit, playerNames, title = '被ダメ軽減貢献度 (rMit)' }: Props = $props();
 
   let rows = $derived(
-    Object.entries(rdps.byPlayer)
+    Object.entries(rmit.byPlayer)
       .map(([pid, b]) => ({ pid, ...b }))
       .sort((a, b) => b.total - a.total)
   );
   let max = $derived(rows.reduce((m, r) => Math.max(m, r.total), 0) || 1);
 
-  // 「他人に貢献した分」の小計: バフ/デバフ source ごとに集計し、誰に貢献したかをまとめる
   function toBreakdown(rec: typeof rows[number]): { source: string; amount: number; recipients: string[] }[] {
     const m = new Map<string, { amount: number; recipients: Set<string> }>();
     for (const t of rec.to) {
@@ -31,7 +30,6 @@
     }));
   }
 
-  // 「他人から受けた分」の小計（表示参考用、rDPS には含まれない）
   function fromBreakdown(rec: typeof rows[number]): { source: string; amount: number; appliers: string[] }[] {
     const m = new Map<string, { amount: number; appliers: Set<string> }>();
     for (const f of rec.from) {
@@ -49,19 +47,16 @@
 
   function sourceLabel(s: string): string {
     switch (s) {
-      case 'vulnerable': return 'Vulnerable';
-      case 'poison':     return 'Poison';
-      case 'doom':       return 'Doom';
-      case 'self':       return '自力';
-      default:           return s;
+      case 'weak':           return '弱体 (Weak)';
+      case 'strength_down':  return '筋力低下';
+      case 'self':           return '自力';
+      default:               return s;
     }
   }
 
-  const help = `基準は「有効ダメージ」= 敵 HP に通った分 + 敵 block を削った分（オーバーキル分は除外）。
-各 damage_dealt について、敵に乗っているデバフの「効いた分」を撒いた人へ加算する。複数人が同じデバフを撒いている場合は各人の stacks 比で按分。
-・通常ダメージ: 敵に Vulnerable が乗っているとき、有効ダメの 1/3 を Vulnerable を撒いたプレイヤーへ加算（Vulnerable は被ダメ 1.5 倍効果なので、ダメージ全体の 1/3 が Vulnerable 由来）。
-・毒(Poison): ダメージ全量を Poison を撒いたプレイヤーへ加算。
-・ドゥーム(Doom): ダメージ全量を Doom を撒いたプレイヤーへ加算。`;
+  const help = `各 damage_received について、敵に乗っているデバフが「減らした分」を撒いた人へ加算する。
+・弱体(Weak): 敵が Weak のとき与ダメは 0.75 倍。本来 1.0 倍受けていた量との差 = 受けたダメ ÷ 3 を Weak applier に加算。
+・筋力低下(Strength<0): 敵の筋力がマイナスのとき、1 ヒットあたり |stacks| を applier に加算。`;
 </script>
 
 <section class="space-y-3">
@@ -86,9 +81,9 @@
         <thead class="bg-bg-2 text-slate-400 text-xs uppercase">
           <tr>
             <th class="text-left  py-2 px-3">プレイヤー</th>
-            <th class="text-right py-2 px-3">rDPS 合計</th>
+            <th class="text-right py-2 px-3">rMit 合計</th>
             <th class="text-right py-2 px-3">自力</th>
-            <th class="text-left  py-2 px-3">他人へ貢献（rDPS加算）</th>
+            <th class="text-left  py-2 px-3">他人へ貢献（rMit加算）</th>
             <th class="text-left  py-2 px-3">他人から（参考）</th>
             <th class="text-left  py-2 px-3 w-1/4">バー</th>
           </tr>
@@ -99,7 +94,7 @@
             {@const fromList = fromBreakdown(r)}
             <tr class="border-t border-bg-3 hover:bg-bg-2 align-top">
               <td class="py-2 px-3 font-medium">{playerNames[r.pid] ?? r.pid}</td>
-              <td class="py-2 px-3 text-right tabular text-ok">{r.total}</td>
+              <td class="py-2 px-3 text-right tabular text-accent">{r.total}</td>
               <td class="py-2 px-3 text-right tabular text-slate-300">{r.self}</td>
               <td class="py-2 px-3">
                 {#if toList.length === 0}
@@ -108,7 +103,7 @@
                   <ul class="space-y-0.5">
                     {#each toList as t}
                       <li class="text-xs">
-                        <span class="text-ok">+{t.amount}</span>
+                        <span class="text-accent">+{t.amount}</span>
                         <span class="text-slate-400">{sourceLabel(t.source)}</span>
                         <span class="text-slate-500">→ {t.recipients.join(', ')}</span>
                       </li>
@@ -131,7 +126,7 @@
               </td>
               <td class="py-2 px-3">
                 <div class="w-full bg-bg-2 rounded h-2 overflow-hidden">
-                  <div class="bg-ok h-full" style:width={`${(r.total / max) * 100}%`}></div>
+                  <div class="bg-accent h-full" style:width={`${(r.total / max) * 100}%`}></div>
                 </div>
               </td>
             </tr>

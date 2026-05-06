@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { CardStats } from '../lib/types';
+  import { formatPowerName } from '../lib/powers';
 
   interface Props {
     cards: CardStats[];
     title?: string;
+    powerNames?: Record<string, string>;
   }
-  let { cards, title }: Props = $props();
+  let { cards, title, powerNames = {} }: Props = $props();
 
   type SortKey = 'card_name' | 'play_count' | 'damage_dealt' | 'max_single_hit' | 'block_provided';
   let sortKey: SortKey = $state('damage_dealt');
@@ -26,7 +28,7 @@
   }
 
   function fmtDebuffs(d: Record<string, number>) {
-    return Object.entries(d).map(([k, v]) => `${k}: ${v}`).join(', ');
+    return Object.entries(d).map(([k, v]) => `${formatPowerName(k, powerNames)}: ${v}`).join(', ');
   }
 </script>
 
@@ -40,7 +42,7 @@
         <th class="text-left py-2 px-3 cursor-pointer" onclick={() => setSort('card_name')}>カード</th>
         <th class="text-right py-2 px-3 cursor-pointer" onclick={() => setSort('play_count')}>使用 {sortKey === 'play_count' ? (desc ? '↓' : '↑') : ''}</th>
         <th class="text-right py-2 px-3 cursor-pointer" onclick={() => setSort('damage_dealt')}>ダメージ {sortKey === 'damage_dealt' ? (desc ? '↓' : '↑') : ''}</th>
-        <th class="text-right py-2 px-3 cursor-pointer" onclick={() => setSort('max_single_hit')}>最大単発 {sortKey === 'max_single_hit' ? (desc ? '↓' : '↑') : ''}</th>
+        <th class="text-right py-2 px-3 cursor-pointer" onclick={() => setSort('max_single_hit')}>最大カードダメージ {sortKey === 'max_single_hit' ? (desc ? '↓' : '↑') : ''}</th>
         <th class="text-right py-2 px-3 cursor-pointer" onclick={() => setSort('block_provided')}>ブロック {sortKey === 'block_provided' ? (desc ? '↓' : '↑') : ''}</th>
         <th class="text-left py-2 px-3">デバフ</th>
       </tr>
