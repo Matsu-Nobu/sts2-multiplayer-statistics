@@ -221,20 +221,24 @@ function buildTurnsForCombat(
         const p = ev.payload as CardPlayedPayload;
         inProgress.set(pid, { card_id: p.card_id, card_name: p.card_name, card_type: p.card_type, damage: 0 });
       }
-      // damage_dealt は進行中カードプレイへ accumulate（無ければスタンドアロン1ヒット扱い）
+      // damage_dealt は進行中カードプレイへ accumulate（無ければスタンドアロン1ヒット扱い）。
+      // max_single_hit も「HP に通った分」基準にするため amt − overkill を使う
+      // （amt はオーバーキル込みなので、引かないとカード扱いダメが膨らむ）。
       if (ev.event_type === 'damage_dealt' && pid) {
         const p = ev.payload as DamageDealtPayload;
-        const amt = p.amount ?? 0;
+        const amt      = p.amount ?? 0;
+        const overkill = p.overkill_damage ?? 0;
+        const hpLost   = Math.max(0, amt - overkill);
         const cur = inProgress.get(pid);
         if (cur && p.source_card_id === cur.card_id) {
-          cur.damage += amt;
+          cur.damage += hpLost;
         } else {
           // poison tick / 間接ダメ等はその場で 1 ヒット = 1 プレイ扱い
           finalizeCardPlay(pid, {
             card_id:   p.source_card_id ?? '(unknown)',
             card_name: p.source_card_name ?? p.source_card_id ?? '(unknown)',
             card_type: p.source_card_type ?? '',
-            damage:    amt,
+            damage:    hpLost,
           });
         }
       }
@@ -281,18 +285,21 @@ function applyEvent(
     case 'damage_dealt': {
       if (!pid) return;
       const p = ev.payload as DamageDealtPayload;
-      const amt      = p.amount ?? 0;
-      const total    = p.total_damage ?? amt;       // 旧形式互換: total が無ければ amount
+      const amt      = p.amount ?? 0;                 // UnblockedDamage（post-block、overkill 込み）
+      const total    = p.total_damage ?? amt;          // 旧形式互換: total が無ければ amount
       const blocked  = p.blocked_damage ?? 0;
       const overkill = p.overkill_damage ?? 0;
+      // 与ダメ(HP) = 実際に敵 HP を削った分 = amt − overkill
+      // amt は UnblockedDamage で上限が HP ではないため overkill を引いて補正する。
+      // これをやらないと「与ダメ > 有効与ダメ」という矛盾が発生する。
+      const hpLost = Math.max(0, amt - overkill);
       // 有効与ダメ = HP に通った分 + 敵 block 削り = total − overkill
-      // （= (amt - overkill) + blocked。amt はオーバーキル分も含むため引いて補正する）
       const effective = (p.total_damage != null)
         ? Math.max(0, total - overkill)
-        : (amt + blocked);                          // 旧 payload フォールバック
+        : (hpLost + blocked);                          // 旧 payload フォールバック
       const { turn, cum } = ensure(pid);
-      turn.damage_dealt += amt;
-      cum.damage_dealt  += amt;
+      turn.damage_dealt += hpLost;
+      cum.damage_dealt  += hpLost;
       turn.effective_damage_dealt += effective;
       cum.effective_damage_dealt  += effective;
       turn.overkill_damage += overkill;
@@ -300,9 +307,9 @@ function applyEvent(
       // max_single_hit は呼び出し元ループで「カード1プレイあたり」に集計するためここでは触らない
       if (p.source_card_id) {
         const tCard = upsertCard(turn.cards, p.source_card_id, p.source_card_name ?? p.source_card_id, p.source_card_type ?? '');
-        tCard.damage_dealt += amt;
+        tCard.damage_dealt += hpLost;
         const cCard = upsertCard(cum.card_stats, p.source_card_id, p.source_card_name ?? p.source_card_id, p.source_card_type ?? '');
-        cCard.damage_dealt += amt;
+        cCard.damage_dealt += hpLost;
       }
       break;
     }

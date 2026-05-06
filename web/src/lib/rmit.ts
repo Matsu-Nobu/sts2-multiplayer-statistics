@@ -2,10 +2,15 @@
  * Skada 風 rMit（被ダメ軽減貢献度）算出。rDPS の鏡像。
  *
  * 各 damage_received について、敵 (dealer) に乗っている軽減系 power の
- * applier 群に「無ければ受けていたであろう追加ダメ」相当を stacks 加重で配分。
+ * applier 群に「無ければ受けていたであろう追加ダメ」相当を配分。
  *
  *   - WEAK on dealer: counterfactual = total / 0.75 → saved = total / 3
- *   - STRENGTH<0 on dealer: 1 ヒットあたり |stacks| 軽減
+ *     stacks 加重で applier 群に配分
+ *   - STRENGTH on dealer:
+ *     applier ごとに「自分が下げた量（stacks<0 の自applier貢献）」を独立に評価。
+ *     合計 stacks がプラスでも、減らした側は減らした分の貢献として加算する。
+ *     例: 元 STR +5 の敵に A が −3 撒いた場合（合計 +2 でもよい）、
+ *         A は 1 ヒットあたり 3 ダメ軽減として帰属。
  *
  * stacks 情報が無い旧 payload では `applier` 単独に全額帰属（後方互換）。
  */
@@ -54,11 +59,19 @@ export function computeRmit(events: EventRecord[]): RmitTable {
       distributeAmongAppliers(weak, recipient, 'weak', saved, credit);
     }
 
-    // STRENGTH<0: |stacks| を applier 群へ配分
+    // STRENGTH: 各 applier の負方向貢献を独立に加算。
+    // 合計 stacks がプラスでも、個別に「減らした人」は貢献ありとして扱う。
     const str = onDealer.find(s => s.power_id === 'STRENGTH_POWER');
-    if (str && str.stacks < 0) {
-      const saved = -str.stacks;
-      distributeAmongAppliers(str, recipient, 'strength_down', saved, credit);
+    if (str) {
+      const appliers = str.appliers && str.appliers.length > 0
+        ? str.appliers
+        : (str.applier && str.stacks < 0
+            ? [{ player_id: str.applier, stacks: str.stacks }]
+            : []);
+      for (const a of appliers) {
+        if (a.stacks >= 0) continue;        // プラス貢献（強化）は rMit ではなく rDPS マイナス側
+        credit(recipient, a.player_id, 'strength_down', -a.stacks);
+      }
     }
   }
 
