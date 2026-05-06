@@ -166,6 +166,25 @@ internal static class HookPatches
 
     // === 戦闘内 hook =====================================================
 
+    /// <summary>
+    /// 被弾前 HP を snapshot しておく。AfterDamageGiven で overkill を自前計算するため。
+    /// STS2 の DamageResult.OverkillDamage は実測上信頼できない（amount を超える値が
+    /// 返る等）ので、target.CurrentHealth (この時点では被弾前) を捕捉する。
+    /// </summary>
+    public static void BeforeDamageReceivedPostfix(CombatState? combatState, Creature? target)
+    {
+        try
+        {
+            if (target == null) return;
+            int hp = (int?)target.GetType().GetProperty("CurrentHealth")?.GetValue(target) ?? 0;
+            TargetHpSnapshot.Record(target, hp);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] BeforeDamageReceived error: {ex.Message}");
+        }
+    }
+
     public static void AfterDamageGivenPostfix(
         CombatState? combatState,
         Creature?    dealer,
@@ -176,16 +195,24 @@ internal static class HookPatches
         try
         {
             if (dealer == null || results == null) return;
-            // amount       = HP に通った分（既存セマンティクス維持）
-            // total        = 試行された総ダメージ（block 吸収前）
-            // blocked      = 敵 block で吸収された分
-            // overkill     = HP を超えた分（target_kill 時の残ダメ）
-            int amount   = (int)results.UnblockedDamage;
+            int amount   = (int)results.UnblockedDamage;     // post-block の試行ダメ（uncapped）
             int total    = (int)results.TotalDamage;
             int blocked  = (int)results.BlockedDamage;
-            int overkill = (int)results.OverkillDamage;
             bool wasKilled = results.WasTargetKilled;
             if (total <= 0) return;
+
+            // overkill は DamageResult.OverkillDamage を信用せず BeforeDamageReceived で
+            // 取った被弾前 HP から自前計算する: overkill = max(0, amount - hp_before)
+            int overkill = 0;
+            if (target != null)
+            {
+                int? hpBefore = TargetHpSnapshot.Lookup(target);
+                if (hpBefore.HasValue)
+                {
+                    overkill = System.Math.Max(0, amount - hpBefore.Value);
+                    TargetHpSnapshot.Clear(target);
+                }
+            }
 
             // dealer がプレイヤーか間接ダメージか判定
             var dealerPlayer = TryFindPlayerForCreature(combatState, dealer);
