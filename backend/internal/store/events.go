@@ -47,6 +47,25 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 	return n > 0, nil
 }
 
+// DeleteCombatEventsAtFloorExcept deletes all combat-scoped events in a session
+// that share the given floor but have a different combat_index. Used to clean up
+// abandoned save-mid-combat data when the player saves and resumes (the resumed
+// combat starts fresh with a new combat_index, and the previous attempt at the
+// same floor should be overwritten).
+func (s *Store) DeleteCombatEventsAtFloorExcept(ctx context.Context, sessionID string, floor int, exceptCombatIndex int) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM events
+		WHERE session_id = ?
+		  AND floor = ?
+		  AND combat_index IS NOT NULL
+		  AND combat_index != ?
+	`, sessionID, floor, exceptCombatIndex)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ListEvents returns all events for a session ordered by combat context first
 // (NULL combat_index sorts last), then turn_number / sequence / id for total
 // ordering. Each element is a JSON object containing the request shape plus

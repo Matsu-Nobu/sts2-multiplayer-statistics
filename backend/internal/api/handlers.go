@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -113,6 +114,17 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		if len(payload) == 0 {
 			payload = json.RawMessage("{}")
 		}
+		// Side effect: combat_start → 同じ floor で別 combat_index を持つ既存 events を削除。
+		// セーブ＆中断で戦闘最初からやり直すと combat_index が新規で振られるため、
+		// 階数が同じ古い戦闘記録は上書きする（mod がそういう仕様で再 emit してくる）。
+		// InsertEvent より前に走らせて、新 combat_start 自体を消さないようにする。
+		if ev.EventType == "combat_start" && ev.Floor != nil && ev.CombatIndex != nil {
+			if _, derr := s.Store.DeleteCombatEventsAtFloorExcept(r.Context(), id, *ev.Floor, *ev.CombatIndex); derr != nil {
+				// 失敗してもこの event 自体の挿入は継続（ベストエフォート）
+				log.Printf("[postEvents] dedup at floor=%d failed: %v", *ev.Floor, derr)
+			}
+		}
+
 		_, err := s.Store.InsertEvent(r.Context(), store.EventInput{
 			EventUUID:   ev.EventUUID,
 			SessionID:   id,
