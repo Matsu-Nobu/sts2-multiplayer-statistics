@@ -176,7 +176,8 @@ internal static class HookPatches
         try
         {
             if (target == null) return;
-            int hp = (int?)target.GetType().GetProperty("CurrentHealth")?.GetValue(target) ?? 0;
+            // STS2 の Creature は HP を CurrentHp プロパティで持つ (CurrentHealth ではない)
+            int hp = (int?)target.GetType().GetProperty("CurrentHp")?.GetValue(target) ?? 0;
             TargetHpSnapshot.Record(target, hp);
         }
         catch (Exception ex)
