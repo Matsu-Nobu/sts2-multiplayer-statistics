@@ -196,24 +196,27 @@ internal static class HookPatches
         try
         {
             if (dealer == null || results == null) return;
-            int amount   = (int)results.UnblockedDamage;     // post-block の試行ダメ（uncapped）
+            // STS2 の DamageResult のセマンティクス（実測ベース）:
+            //   TotalDamage     = block 適用前の試行ダメージ（uncapped）
+            //   BlockedDamage   = 敵 block で吸収された分
+            //   UnblockedDamage = 実際に HP に通った分（= HP loss、HP でキャップ済）
+            //   OverkillDamage  = 信用できない（amount より大きい値が返る等あり）
+            //   WasTargetKilled = target が死亡したか
+            //
+            // よって overkill は (total - blocked) - amount で導出できる。
+            // amount は既に HP loss なので web 側の hpLost = amount - overkill 補正は不要だが、
+            // 互換のためそのまま渡す。
+            int amount   = (int)results.UnblockedDamage;
             int total    = (int)results.TotalDamage;
             int blocked  = (int)results.BlockedDamage;
             bool wasKilled = results.WasTargetKilled;
             if (total <= 0) return;
 
-            // overkill は DamageResult.OverkillDamage を信用せず BeforeDamageReceived で
-            // 取った被弾前 HP から自前計算する: overkill = max(0, amount - hp_before)
-            int overkill = 0;
-            if (target != null)
-            {
-                int? hpBefore = TargetHpSnapshot.Lookup(target);
-                if (hpBefore.HasValue)
-                {
-                    overkill = System.Math.Max(0, amount - hpBefore.Value);
-                    TargetHpSnapshot.Clear(target);
-                }
-            }
+            int overkill = System.Math.Max(0, total - blocked - amount);
+
+            // (BeforeDamageReceived snapshot は将来「特定 power の発動前 HP が必要な解析」用に
+            //  残してあるが、現状の overkill 計算には使わない)
+            if (target != null) TargetHpSnapshot.Clear(target);
 
             // dealer がプレイヤーか間接ダメージか判定
             var dealerPlayer = TryFindPlayerForCreature(combatState, dealer);

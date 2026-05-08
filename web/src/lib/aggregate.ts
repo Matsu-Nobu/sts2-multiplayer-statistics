@@ -223,9 +223,7 @@ function buildTurnsForCombat(
 
       if (ev.event_type === 'damage_dealt' && pid) {
         const p = ev.payload as DamageDealtPayload;
-        const amt      = p.amount ?? 0;
-        const overkill = p.overkill_damage ?? 0;
-        const hpLost   = Math.max(0, amt - overkill);
+        const hpLost = p.amount ?? 0;          // mod 保証で amount = HP loss
         const sid = p.source_card_id ?? '(unknown)';
         const isSynthetic = sid.startsWith('(');
 
@@ -315,18 +313,14 @@ function applyEvent(
     case 'damage_dealt': {
       if (!pid) return;
       const p = ev.payload as DamageDealtPayload;
-      const amt      = p.amount ?? 0;                 // UnblockedDamage（post-block、overkill 込み）
-      const total    = p.total_damage ?? amt;          // 旧形式互換: total が無ければ amount
+      const amt      = p.amount ?? 0;                 // UnblockedDamage = 実際の HP loss（HP でキャップ済）
+      const total    = p.total_damage ?? amt;
       const blocked  = p.blocked_damage ?? 0;
       const overkill = p.overkill_damage ?? 0;
-      // 与ダメ(HP) = 実際に敵 HP を削った分 = amt − overkill
-      // amt は UnblockedDamage で上限が HP ではないため overkill を引いて補正する。
-      // これをやらないと「与ダメ > 有効与ダメ」という矛盾が発生する。
-      const hpLost = Math.max(0, amt - overkill);
-      // 有効与ダメ = HP に通った分 + 敵 block 削り = total − overkill
-      const effective = (p.total_damage != null)
-        ? Math.max(0, total - overkill)
-        : (hpLost + blocked);                          // 旧 payload フォールバック
+      // mod 側で amount = HP loss を保証しているため hpLost = amt そのまま
+      const hpLost = amt;
+      // 有効与ダメ = HP に通った分 + 敵 block 削り
+      const effective = hpLost + blocked;
       const { turn, cum } = ensure(pid);
       turn.damage_dealt += hpLost;
       cum.damage_dealt  += hpLost;
