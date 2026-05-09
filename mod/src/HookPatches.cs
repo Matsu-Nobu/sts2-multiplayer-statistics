@@ -668,6 +668,16 @@ internal static class HookPatches
 
     // === セッション初期化 ================================================
 
+    /// <summary>
+    /// AfterRoomEntered 等の他フックからも呼べるよう object 受け wrapper。
+    /// セッション既確立なら即 return（ラン開始直後の最初の room でだけ実行する想定）。
+    /// </summary>
+    internal static void EnsureSessionFromAnyRoom(object? runState)
+    {
+        if (SessionManager.IsReady) return;
+        if (runState is IRunState r) EnsureSessionForRun(r);
+    }
+
     private static void EnsureSessionForRun(IRunState runState)
     {
         var api   = ModEntry.ApiClient;

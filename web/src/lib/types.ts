@@ -97,6 +97,79 @@ export interface EventRecord<P = unknown> {
   payload: P;
 }
 
+// === ラン全体ビュー用 events =================================
+
+export type RoomTypeName = 'Monster' | 'Elite' | 'Boss' | 'Event' | 'Shop' | 'RestSite' | 'Treasure' | string;
+
+export interface RoomEnteredPayload {
+  floor: number;
+  act_index: number;
+  room_type: RoomTypeName;
+  room_class: string;
+  hp: number;
+  max_hp: number;
+  gold: number;
+}
+
+export interface HpChangedPayload {
+  delta: number;
+  current_hp: number;
+  max_hp: number;
+}
+
+export interface GoldChangedPayload {
+  current_gold: number;
+}
+
+export interface RestActionPayload {
+  option: 'heal' | 'smith' | string;
+  is_mimicked?: boolean;
+}
+
+export interface ItemPurchasedPayload {
+  item_kind: string;
+  card_id?: string;
+  relic_id?: string;
+  potion_id?: string;
+  gold_spent: number;
+}
+
+export interface RewardTakenPayload {
+  reward_kind: string;
+  gold_amount?: number;
+  card_id?: string;
+  potion_id?: string;
+  relic_id?: string;
+}
+
+export interface PotionObtainedPayload { potion_id: string; }
+export interface PotionDiscardedPayload { potion_id: string; }
+
+export interface CardUpgradedPayload {
+  card_id: string;
+  card_name: string;
+}
+
+export interface CardRemovedPayload {
+  card_id: string;
+  card_name: string;
+}
+
+export interface CardEnchantedPayload {
+  card_id: string;
+  card_name: string;
+  enchantment_id: string;
+  amount: number;
+}
+
+export interface EventChoicePayload {
+  text_key: string;
+  title: string;
+  history_name: string;
+}
+
+// =============================================================
+
 export interface CombatStartPayload {
   combat_index: number;
   encounter_id?: string;

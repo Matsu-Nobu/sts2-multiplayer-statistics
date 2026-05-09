@@ -6,6 +6,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Orbs;
 using MegaCrit.Sts2.Core.Models.Powers;
 
@@ -51,6 +52,43 @@ public static class ModEntry
             PatchHook(nameof(Hook.AfterPotionUsed),          nameof(HookPatches.AfterPotionUsedPostfix));
             PatchHook(nameof(Hook.AfterCombatVictory),       nameof(HookPatches.AfterCombatVictoryPostfix));
             PatchHook(nameof(Hook.AfterDeath),               nameof(HookPatches.AfterDeathPostfix));
+
+            // === ラン全体ビュー用 events =================================
+            PatchHookGeneric(nameof(Hook.AfterRoomEntered),       nameof(RunOverviewPatches.AfterRoomEnteredPostfix));
+            PatchHookGeneric(nameof(Hook.AfterCurrentHpChanged),  nameof(RunOverviewPatches.AfterCurrentHpChangedPostfix));
+            PatchHookGeneric(nameof(Hook.AfterGoldGained),        nameof(RunOverviewPatches.AfterGoldGainedPostfix));
+            PatchHookGeneric(nameof(Hook.AfterActEntered),        nameof(RunOverviewPatches.AfterActEnteredPostfix));
+            PatchHookGeneric(nameof(Hook.AfterRestSiteHeal),      nameof(RunOverviewPatches.AfterRestSiteHealPostfix));
+            PatchHookGeneric(nameof(Hook.AfterRestSiteSmith),     nameof(RunOverviewPatches.AfterRestSiteSmithPostfix));
+            // Hook.AfterItemPurchased は ClearAfterPurchase 後に fire するため使えない。
+            // 各 MerchantEntry サブクラスの OnTryPurchase に直接 patch する（下記）。
+            PatchHookGeneric(nameof(Hook.AfterRewardTaken),       nameof(RunOverviewPatches.AfterRewardTakenPostfix));
+            PatchHookGeneric(nameof(Hook.AfterPotionProcured),    nameof(RunOverviewPatches.AfterPotionProcuredPostfix));
+            PatchHookGeneric(nameof(Hook.AfterPotionDiscarded),   nameof(RunOverviewPatches.AfterPotionDiscardedPostfix));
+            PatchHookGeneric(nameof(Hook.BeforeCardRemoved),      nameof(RunOverviewPatches.BeforeCardRemovedPostfix));
+
+            // CardModel.OnUpgrade を patch してカードアップグレードを補足
+            PatchInstanceMethod(typeof(CardModel), "OnUpgrade", nameof(RunOverviewPatches.OnUpgradePostfix));
+
+            // Merchant***Entry.OnTryPurchase に直接 patch（Hook.AfterItemPurchased では遅すぎるため）
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardEntry",         "OnTryPurchase", nameof(RunOverviewPatches.MerchantCardEntryOnTryPurchasePostfix));
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantPotionEntry",       "OnTryPurchase", nameof(RunOverviewPatches.MerchantPotionEntryOnTryPurchasePostfix));
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantRelicEntry",        "OnTryPurchase", nameof(RunOverviewPatches.MerchantRelicEntryOnTryPurchasePostfix));
+            // MerchantCardRemovalEntry には 2 つの OnTryPurchase オーバーロードがある（cancelable 引数あり/なし）。
+            // 親クラスシグネチャ (MerchantInventory?, bool) を指定して disambiguate
+            PatchInstanceMethodByName(
+                "MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardRemovalEntry",
+                "OnTryPurchase",
+                nameof(RunOverviewPatches.MerchantCardRemovalEntryOnTryPurchasePostfix),
+                new Type[] {
+                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory")!,
+                    typeof(bool),
+                });
+
+            // CardModel.EnchantInternal で「カードにエンチャ付与」を補足
+            PatchInstanceMethod(typeof(CardModel), "EnchantInternal", nameof(RunOverviewPatches.EnchantInternalPostfix));
+            // EventOption.Chosen でランダムイベントの選択肢を補足
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Events.EventOption", "Chosen", nameof(RunOverviewPatches.EventOptionChosenPostfix));
 
             // 間接ダメージのソース帰属（Hook では識別できないため、ゲーム本体メソッドを直接 patch）
             PatchPower<PoisonPower>(nameof(PoisonPower.AfterSideTurnStart),
@@ -116,6 +154,77 @@ public static class ModEntry
             ?? throw new MissingMethodException(nameof(HookPatches), postfixName);
         _harmony!.Patch(original, postfix: new HarmonyMethod(postfix));
         Log.Info($"[StsStats] Patched: {hookName}");
+    }
+
+    /// <summary>名前空間付き型名で型を特定して instance method を patch する。</summary>
+    private static void PatchInstanceMethodByName(string fullTypeName, string methodName, string postfixName, Type[]? paramTypes = null)
+    {
+        try
+        {
+            var type = AccessTools.TypeByName(fullTypeName);
+            if (type == null)
+            {
+                Log.Error($"[StsStats] Type not found: {fullTypeName}");
+                return;
+            }
+            // overload 解決のためのパラメータ型指定対応
+            MethodInfo? method = paramTypes != null
+                ? AccessTools.Method(type, methodName, paramTypes)
+                : AccessTools.Method(type, methodName);
+            if (method == null)
+            {
+                Log.Error($"[StsStats] Method not found: {type.Name}.{methodName}");
+                return;
+            }
+            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
+                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
+            _harmony!.Patch(method, postfix: new HarmonyMethod(postfix));
+            Log.Info($"[StsStats] Patched: {type.Name}.{methodName}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] PatchInstanceMethodByName({fullTypeName}.{methodName}) failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>任意の type の instance method を patch する（public/non-public 両対応）。</summary>
+    private static void PatchInstanceMethod(Type ownerType, string methodName, string postfixName)
+    {
+        try
+        {
+            var method = AccessTools.Method(ownerType, methodName);
+            if (method == null)
+            {
+                Log.Error($"[StsStats] Method not found: {ownerType.Name}.{methodName}");
+                return;
+            }
+            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
+                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
+            _harmony!.Patch(method, postfix: new HarmonyMethod(postfix));
+            Log.Info($"[StsStats] Patched: {ownerType.Name}.{methodName}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] PatchInstanceMethod({ownerType.Name}.{methodName}) failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>RunOverviewPatches 等、HookPatches 以外の class からの patch を登録する用。</summary>
+    private static void PatchHookGeneric(string hookName, string postfixName)
+    {
+        try
+        {
+            MethodInfo original = AccessTools.Method(typeof(Hook), hookName)
+                ?? throw new MissingMethodException(nameof(Hook), hookName);
+            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
+                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
+            _harmony!.Patch(original, postfix: new HarmonyMethod(postfix));
+            Log.Info($"[StsStats] Patched: {hookName}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] PatchHookGeneric({hookName}) failed: {ex.Message}");
+        }
     }
 
     /// <summary>PoisonPower / DoomPower 等の Power メソッドを patch。Prefix/Postfix を IndirectDamagePatches から取る。</summary>

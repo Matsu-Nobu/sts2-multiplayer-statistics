@@ -4,6 +4,7 @@
   import Header from './Header.svelte';
   import CombatView from './CombatView.svelte';
   import AllCombatsView from './AllCombatsView.svelte';
+  import RunOverview from './RunOverview.svelte';
 
   interface Props {
     doc: SessionDoc;
@@ -19,7 +20,6 @@
   let powerNames = $derived(buildPowerNames(doc.events));
   let cardNames = $derived(buildCardNames(doc.events));
 
-  // events を combat_index でバケット化（CombatView / AllCombatsView へ渡す）
   let eventsByCombat = $derived.by(() => {
     const m = new Map<number, typeof doc.events>();
     for (const ev of doc.events) {
@@ -31,21 +31,20 @@
   });
   let allCombatEvents = $derived(doc.events.filter(e => e.combat_index != null));
 
-  // 'all' or combat_index (number)
-  let activeTab: 'all' | number = $state('all');
+  // 上位タブ: 'combats' (戦闘統計) or 'run' (ラン全体)
+  let topTab: 'combats' | 'run' = $state('combats');
 
+  // 戦闘タブ内の選択（既存ロジック）
+  let activeTab: 'all' | number = $state('all');
   $effect(() => {
     if (typeof activeTab === 'number' && !combats.find(c => c.combat_index === activeTab)) {
       activeTab = 'all';
     }
   });
-
   let activeCombat = $derived(
     typeof activeTab === 'number' ? combats.find(c => c.combat_index === activeTab) ?? null : null
   );
 
-  // 表示用の通し番号（1 始まり）。中断＆再開で combat_index に飛びがあっても
-  // ユーザーには「N 戦目」として連番で見せる。combat_index は内部キー。
   function combatLabel(c: typeof combats[number], ordinal: number): string {
     const name = c.encounter_name ? `${ordinal}. ${c.encounter_name}` : `戦闘 ${ordinal}`;
     const room = (c.room_type === 'Elite' || c.room_type === 'Boss') ? ` [${c.room_type}]` : '';
@@ -62,37 +61,62 @@
 
 <main class="max-w-7xl mx-auto px-4 py-6 space-y-4">
 
-  <!-- 戦闘セレクタ -->
-  <div class="flex items-center gap-3">
-    <label for="combat-select" class="text-xs uppercase tracking-wide text-slate-400">表示対象</label>
-    <select
-      id="combat-select"
-      class="bg-bg-1 border border-bg-3 rounded px-3 py-2 text-sm text-slate-200 hover:bg-bg-2 focus:outline-none focus:ring-1 focus:ring-accent min-w-[280px]"
-      value={activeTab === 'all' ? 'all' : String(activeTab)}
-      onchange={onSelect}
-    >
-      <option value="all">全体（{combats.length}戦闘）</option>
-      {#each combats as c, i (c.combat_index)}
-        <option value={String(c.combat_index)}>{combatLabel(c, i + 1)}</option>
-      {/each}
-    </select>
+  <!-- トップタブ -->
+  <div class="flex gap-1 bg-bg-2 border border-bg-3 rounded p-0.5 text-sm w-fit">
+    <button
+      type="button"
+      class="px-4 py-1.5 rounded {topTab === 'combats' ? 'bg-accent text-bg-0' : 'text-slate-300 hover:text-slate-100'}"
+      onclick={() => { topTab = 'combats'; }}
+    >戦闘統計</button>
+    <button
+      type="button"
+      class="px-4 py-1.5 rounded {topTab === 'run' ? 'bg-accent text-bg-0' : 'text-slate-300 hover:text-slate-100'}"
+      onclick={() => { topTab = 'run'; }}
+    >ラン全体</button>
   </div>
 
-  {#if activeTab === 'all'}
-    <AllCombatsView {combats} {totals} {playerIds} {playerNames} {powerNames} allCombatEvents={allCombatEvents} />
-  {:else if activeCombat}
-    {#key activeCombat.combat_index}
-      <CombatView
-        combat={activeCombat}
-        {playerIds}
-        {playerNames}
-        {powerNames}
-        {cardNames}
-        combatEvents={eventsByCombat.get(activeCombat.combat_index) ?? []}
-      />
-    {/key}
+  {#if topTab === 'combats'}
+    <!-- 戦闘セレクタ -->
+    <div class="flex items-center gap-3">
+      <label for="combat-select" class="text-xs uppercase tracking-wide text-slate-400">表示対象</label>
+      <select
+        id="combat-select"
+        class="bg-bg-1 border border-bg-3 rounded px-3 py-2 text-sm text-slate-200 hover:bg-bg-2 focus:outline-none focus:ring-1 focus:ring-accent min-w-[280px]"
+        value={activeTab === 'all' ? 'all' : String(activeTab)}
+        onchange={onSelect}
+      >
+        <option value="all">全体（{combats.length}戦闘）</option>
+        {#each combats as c, i (c.combat_index)}
+          <option value={String(c.combat_index)}>{combatLabel(c, i + 1)}</option>
+        {/each}
+      </select>
+    </div>
+
+    {#if activeTab === 'all'}
+      <AllCombatsView {combats} {totals} {playerIds} {playerNames} {powerNames} allCombatEvents={allCombatEvents} />
+    {:else if activeCombat}
+      {#key activeCombat.combat_index}
+        <CombatView
+          combat={activeCombat}
+          {playerIds}
+          {playerNames}
+          {powerNames}
+          {cardNames}
+          combatEvents={eventsByCombat.get(activeCombat.combat_index) ?? []}
+        />
+      {/key}
+    {:else}
+      <div class="text-slate-500">データなし</div>
+    {/if}
   {:else}
-    <div class="text-slate-500">データなし</div>
+    <RunOverview
+      events={doc.events}
+      {combats}
+      {playerIds}
+      {playerNames}
+      {powerNames}
+      {cardNames}
+    />
   {/if}
 
 </main>
