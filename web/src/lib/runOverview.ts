@@ -130,7 +130,7 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
         const p = ev.payload as RewardTakenPayload;
         if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
         if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
-        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
+        // potion は AfterPotionProcured 経由で別途記録されるためここでは追加しない
         break;
       }
       case 'item_purchased': {
@@ -138,7 +138,7 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
         sum.shop_purchases.push(p);
         if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
         if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
-        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
+        // potion は AfterPotionProcured 経由で別途記録されるためここでは追加しない
         break;
       }
       case 'potion_obtained': {
