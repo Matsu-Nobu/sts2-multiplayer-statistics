@@ -1,7 +1,7 @@
 # 統計情報設計ドキュメント
 
-ゲームDLL（`sts2.dll`）のリフレクションによる実調査に基づく。
-設計は **「何を表示するか」→「何を収集するか」** の順で行う。
+「何を表示するか」→「何を収集するか」の順に定義する。
+収集データの shape と API は `API.md` が正、本ドキュメントは表示要件と指標定義を扱う。
 
 ---
 
@@ -25,254 +25,129 @@
 | **カードドロー枚数** | ○ | ○ | ○ |
 | **状態異常付与（種別ごと）** | — | ◎ テーブル | ◎ テーブル |
 | **味方へのシールド付与** | — | ○ | ○ |
-| **貢献スコア** | — | ◎ 棒グラフ | ◎ 棒グラフ |
+| **貢献スコア（rDPS / rMit）** | — | ◎ 棒グラフ | ◎ 棒グラフ |
+| **オーバーキル** | — | ○ | ○ |
 
 ### ランキング（累計のみ）
 
 | ランキング項目 | 内容 |
 |--------------|------|
-| 最大単発ダメージ | その1ヒットで出した最大ダメージと使用カード名 |
-| カード別総ダメージ | 戦闘全体を通じて最もダメージを稼いだカード上位N枚 |
-| カード別平均ダメージ | 1プレイあたり平均ダメージが高いカード上位N枚 |
-| 最多使用カード | プレイ回数が多いカード上位N枚 |
-| 最多ポイズン付与カード | 付与スタック数が多いカード上位N枚（毒キャラ限定） |
+| 最大単発ダメージ | その 1 ヒットで出した最大ダメージと使用カード名 |
+| カード別総ダメージ | 戦闘全体を通じて最もダメージを稼いだカード上位 N 枚 |
+| カード別平均ダメージ | 1 プレイあたり平均ダメージが高いカード上位 N 枚 |
+| 最多使用カード | プレイ回数が多いカード上位 N 枚 |
+| 最多デバフ付与カード | 付与スタック数が多いカード上位 N 枚 |
 
 ---
 
-## 2. 貢献スコアの定義
+## 2. 貢献スコア（rDPS / rMit）
 
-「ダメージを出さないサポート役」もフェアに評価するための合算指標。
+「ダメージを直接出さないサポート役」もフェアに評価するため、デバフ・バフの寄与を加味した貢献度スコアを WebUI 側で算定する。
 
-**現状（Phase 2）**: 実装しない。集計値ベースでは正確な算定ができないため、固定係数の概算値を出してもユーザーに誤解を与えるだけと判断。
+### 設計
 
-**将来（Phase 3.5 以降）**: ターン送信 API を「ターン中に発生したイベント列」を送る形に変更したあと、`damage_dealt` イベントごとに発火時の active power と applier を埋め込んで、Skada 系 mod や FFXIV FFLogs と同様の二段階（additive + multiplicative）で算出する rDPS 相当を実装する。詳細は `ROADMAP.md` の Phase 3.5 を参照。
+- 各 `damage_dealt` / `damage_received` イベントは、発火時の active power と applier を埋め込んで送られる（`active_on_target` / `active_on_dealer`、各 power に `appliers[]`）。
+- 複数人が同じデバフ（Vulnerable / Poison 等）を撒いている場合、stacks 比で按分する。
+- 計算ロジックは `web/src/lib/rdps.ts` 等にあり、観測ベース（係数を仮定せず、実際の damage event を辿って按分）で算出する。
+- whitelist された power: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` / `WEAK_POWER` / `STRENGTH_POWER`。
 
-参考調査:
-- [Skada Damage Meter (STS2 Nexus)](https://www.nexusmods.com/slaythespire2/mods/33) — rDPS 二段階アルゴリズムを採用（closed-source）
+### 参考
+
+- [Skada Damage Meter (STS2 Nexus)](https://www.nexusmods.com/slaythespire2/mods/33) — closed-source、rDPS 二段階アルゴリズム
 - [STS2-DamageTracker (GitHub)](https://github.com/BAIGUANGMEI/STS2-DamageTracker) — 貢献度なし、生ダメージのみ
 - [FFLogs rDPS Guide](https://www.fflogs.com/help/rdps) — 元ネタの定式化
 
-### 味方エナジー付与について
-STS2に専用hookが確認できなかったため、今フェーズでは追跡しない。  
-`EnergyNextTurnPower` 等の特定Powerを通じて間接的に追跡できる可能性あり（Phase 4候補）。
+### 味方エナジー付与
+STS2 に専用 hook が確認できないため未追跡。`EnergyNextTurnPower` 等の特定 Power 経由で間接追跡できる可能性は残る（ROADMAP 候補）。
 
 ---
 
-## 3. 収集するraw data
+## 3. 収集データの形
 
-### 3-1. ターン単位で収集するデータ
+ターン集計値ではなく**生イベント列**で収集する（Phase 3.5 でこの形に移行）。各 event の shape は `API.md` の event_type カタログを正とし、ここでは「表示要件→必要な event」の対応のみ示す。
 
-```
-TurnData {
-    player_id:              string
-    player_name:            string
-    combat_index:           int
-    turn_number:            int
-    timestamp:              ISO8601
+### 表示要件 → 必要な event_type
 
-    // 直接計測
-    damage_dealt:           int     // 敵への与ダメージ合計
-    damage_received:        int     // 受けたダメージ（ブロック貫通分）
-    block_gained_self:      int     // 自分が獲得したブロック
-    block_given_to_allies:  int     // 他プレイヤーに付与したブロック
-    energy_used:            int     // 消費エナジー
-    cards_played:           int     // プレイしたカード枚数
-    cards_drawn:            int     // ドローした枚数
-}
-```
+| 表示 | 元になる event_type |
+|------|---------------------|
+| ターン毎 与ダメージ折れ線 | `damage_dealt` を `(combat_index, turn_number, player_id)` で集計 |
+| 戦闘毎 与ダメ／被ダメ／シールド棒 | `damage_dealt` / `damage_received` / `block_gained` を `(combat_index, player_id)` で集計 |
+| カード別ダメージテーブル | `damage_dealt` の `source_card_id` 別集計 |
+| カード使用枚数・ドロー枚数 | `card_played` / `card_drawn` |
+| エナジー使用量 | `energy_spent` |
+| 状態異常付与テーブル | `power_changed` を `power_id` × `applier (player_id)` で集計 |
+| 味方シールド付与 | `block_gained` の `from_player` |
+| ポーション使用 | `potion_used` |
+| 貢献スコア (rDPS / rMit) | `damage_dealt` / `damage_received` の `active_on_target` / `active_on_dealer` |
+| オーバーキル | `damage_dealt.payload.overkill_damage` |
+| 最大単発ダメージ | `damage_dealt.payload.amount` の max（`source_card_id` 付き） |
 
-### 3-2. 戦闘単位で収集するデータ
-
-ターンデータの累計に加えて:
-
-```
-CombatSummaryData {
-    ...（TurnDataの全フィールドの累計）
-
-    potions_used:           int
-
-    // 状態異常付与（種別ごと）
-    debuffs_applied:        { power_id: stacks_total }
-    // 例: { "Poison": 18, "Vulnerable": 4, "Weak": 6 }
-
-    // カード別集計
-    card_stats: [
-        {
-            card_id:        string   // ModelId.Entry
-            card_name:      string
-            card_type:      string   // "Attack" / "Skill" / "Power" / "Status" / "Curse"
-            play_count:     int
-            damage_dealt:   int      // このカードが起因の総ダメージ
-            block_provided: int      // このカードが生成したブロック（自分+味方）
-            debuffs_applied: { power_id: stacks }
-            max_single_hit: int      // このカードの1回あたり最大ダメージ
-        }
-    ]
-}
-```
-
-### 3-3. ランキング用データ（累計・run全体）
-
-```
-RunRankings {
-    player_id:      string
-    player_name:    string
-
-    max_single_hit: {
-        amount:       int
-        card_id:      string
-        card_name:    string
-        combat_index: int
-        turn_number:  int
-    }
-
-    top_cards_by_total_damage:   CardStat[]  // damage_dealt降順
-    top_cards_by_avg_damage:     CardStat[]  // damage_dealt/play_count降順
-    top_cards_by_play_count:     CardStat[]  // play_count降順
-    top_cards_by_debuff_stacks:  CardStat[]  // 特定power_idのstacks降順
-}
-```
+戦闘・run のメタは `combat_start` / `combat_end` / `run_start` / `run_end` で運ぶ。
 
 ---
 
-## 4. 使用するHook一覧
+## 4. 使用するゲーム Hook
 
-### 新規追加
+mod 側で patch している hook と、生成する event_type の対応:
 
-| Hook | 用途 |
-|------|------|
-| `AfterCardPlayed(combatState, choiceContext, CardPlay)` | cards_played++、カード別play_count++、カード別block/debuff初期化 |
-| `AfterCardDrawn(combatState, choiceContext, CardModel, fromHandDraw)` | cards_drawn++ |
-| `AfterBlockGained(combatState, Creature, amount, props, CardModel)` | creature が自分 → block_gained_self / 他プレイヤー → block_given_to_allies |
-| `AfterEnergySpent(combatState, CardModel, Int32 amount)` | energy_used += amount |
-| `AfterDamageReceived(choiceContext, runState, combatState, Creature target, DamageResult, props, Creature dealer, CardModel)` | target がプレイヤーのみ damage_received += amount |
-| `AfterPowerAmountChanged(combatState, choiceContext, PowerModel, Decimal amount, Creature applier, CardModel)` | applier がプレイヤー かつ power.Owner が敵 かつ amount > 0 → debuffs_applied[power.Id.Entry] += amount |
-| `AfterPotionUsed(runState, combatState, PotionModel, Creature target)` | potions_used++ |
+| Hook | 生成 event |
+|------|-----------|
+| `BeforeCombatStart` | `combat_start` |
+| `AfterCombatEnd` | `combat_end` |
+| `AfterTurnEnd(side=Player)` | （ターン確定点。バッファ flush） |
+| `AfterDamageGiven` + `ModifyDamage` (post) | `damage_dealt`（overkill / blocked_damage は ModifyDamage post の HP snapshot で確定） |
+| `BeforeDamageReceived` / `AfterDamageReceived` | `damage_received` |
+| `AfterBlockGained` | `block_gained` |
+| `AfterEnergySpent` | `energy_spent` |
+| `BeforeCardPlayed` / `AfterCardPlayed` | `card_played`（`CardPlayedScope` の出入り） |
+| `AfterCardDrawn` | `card_drawn` |
+| `AfterPowerAmountChanged` | `power_changed` |
+| `AfterPotionUsed` | `potion_used` |
 
-### 既存（変更あり）
+加えて、間接ダメージ・パワー由来ブロックの帰属のため以下を Harmony patch している（詳細は `DESIGN.md`「間接ダメージ・パワー由来ブロックの帰属」と `API.md`「予約 source_card_id」）:
 
-| Hook | 変更内容 |
-|------|---------|
-| `AfterDamageGiven` | カードソース帰属ロジック追加（card_stats.damage_dealt更新）、max_single_hit更新 |
-
-### 既存（変更なし）
-
-| Hook | 用途 |
-|------|------|
-| `BeforeCombatStart` | 状態リセット |
-| `AfterPlayerTurnStart` | ターン確定・送信 |
-| `AfterCombatEnd` | 戦闘サマリー確定・送信 |
+- `PoisonPower` / `DoomPower`
+- `LightningOrb` の Evoke（手動 / 自動）/ Passive
+- `ThornsPower` / `FlameBarrierPower`
+- `RampartPower` / `BlockNextTurnPower`
 
 ---
 
-## 5. APIのJSONスキーマ（バックエンド向け）
+## 5. API スキーマ
 
-### `POST /sessions/{id}/turns`（ターン終了ごと）
-
-```json
-{
-  "combat_index": 2,
-  "turn_number": 3,
-  "timestamp": "2026-05-05T00:00:00Z",
-  "players": {
-    "76561199204788207": {
-      "player_name": "Ironclad",
-      "damage_dealt": 45,
-      "damage_received": 12,
-      "block_gained_self": 20,
-      "block_given_to_allies": 5,
-      "energy_used": 3,
-      "cards_played": 5,
-      "cards_drawn": 5
-    }
-  }
-}
-```
-
-### `POST /sessions/{id}/combat_end`（戦闘終了ごと）
-
-```json
-{
-  "combat_index": 2,
-  "total_turns": 5,
-  "timestamp": "2026-05-05T00:00:00Z",
-  "players": {
-    "76561199204788207": {
-      "player_name": "Ironclad",
-      "damage_dealt": 180,
-      "damage_received": 45,
-      "block_gained_self": 110,
-      "block_given_to_allies": 15,
-      "energy_used": 15,
-      "cards_played": 24,
-      "cards_drawn": 38,
-      "potions_used": 1,
-      "debuffs_applied": {
-        "Poison": 18,
-        "Vulnerable": 4
-      },
-      "card_stats": [
-        {
-          "card_id": "Strike_R+1",
-          "card_name": "Strike+",
-          "card_type": "Attack",
-          "play_count": 4,
-          "damage_dealt": 80,
-          "block_provided": 0,
-          "debuffs_applied": {},
-          "max_single_hit": 24
-        },
-        {
-          "card_id": "(indirect)",
-          "card_name": "(間接ダメージ: Poison等)",
-          "card_type": "(indirect)",
-          "play_count": 0,
-          "damage_dealt": 18,
-          "block_provided": 0,
-          "debuffs_applied": {},
-          "max_single_hit": 3
-        }
-      ]
-    }
-  }
-}
-```
+`POST /sessions/{id}/events` の bulk 投稿に一本化済み（旧 `POST /sessions/{id}/turns` は 410 Gone）。
+event 別の payload shape は `API.md` を参照。
 
 ---
 
 ## 6. 実装スコープ
 
-### Phase 1.5（mod拡充・次フェーズ）
+### 実装済み
 
-- [x] damage_dealt（実装済み）
-- [ ] damage_received — `AfterDamageReceived`
-- [ ] block_gained_self / block_given_to_allies — `AfterBlockGained`
-- [ ] energy_used — `AfterEnergySpent`
-- [ ] cards_played — `AfterCardPlayed`
-- [ ] cards_drawn — `AfterCardDrawn`
-- [ ] card_stats（play_count・damage_dealt・max_single_hit）
-- [ ] debuffs_applied — `AfterPowerAmountChanged`
+- damage_dealt（overkill / blocked / total / was_target_killed 含む）
+- damage_received
+- block_gained（自分 / 味方付与の判別、Power 由来ブロックの帰属）
+- energy_spent
+- card_played / card_drawn
+- power_changed（applier 解決、複数 applier の stacks 内訳）
+- potion_used
+- combat_start / combat_end / run_start / run_end
+- 間接ダメージの source 帰属（Poison / Doom / Lightning 3 種 / Thorns / Flame Barrier / Rampart / BlockNextTurn）
+- カード別集計（WebUI 側、`source_card_id` ベース）
+- デバフ付与テーブル（WebUI 側）
+- ランキング（最大単発ダメ・カード別累計）
+- 貢献スコア rDPS / rMit（WebUI 側、観測ベース）
 
-### Phase 2（バックエンド + HTTP送信）
+### 未着手 / ROADMAP 側
 
-- [ ] potions_used — `AfterPotionUsed`
-- [ ] HTTP送信実装
-- [ ] APIエンドポイント実装（turns / combat_end）
-- [ ] ランキング集計（サーバー側）
+- 味方へのエナジー付与の追跡（hook 未確認）
+- スター消費 / シャッフル回数等の補助統計
+- クロスセッション統計（プレイヤー単位・カード単位の集計エンドポイント） — `ROADMAP.md` Phase 4
 
-### Phase 3（WebUI）
+---
 
-- [ ] ターン毎折れ線グラフ（与ダメ）
-- [ ] 戦闘毎棒グラフ（与ダメ・被ダメ・シールド）
-- [ ] カード別ダメージテーブル
-- [ ] 状態異常付与テーブル
-- [ ] 貢献スコア棒グラフ（換算係数はUI側で設定可）
-- [ ] ランキングセクション
+## 関連ドキュメント
 
-### Phase 4（後回し）
-
-- 味方エナジー付与量
-- オーバーキルダメージ
-- スター消費（`AfterStarsSpent`）
-- シャッフル回数
-- 換算係数のUI調整機能
+- `API.md` — event_type カタログと payload shape の正
+- `DESIGN.md` — アーキテクチャ・mod 内部実装
+- `ROADMAP.md` — 将来拡張

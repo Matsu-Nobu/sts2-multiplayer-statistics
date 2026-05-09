@@ -133,8 +133,8 @@
           <button type="button" class="text-xs text-slate-400 hover:text-slate-200" onclick={() => selectedFloor = null}>閉じる ✕</button>
         </header>
 
-        <!-- 共通サマリ -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <!-- 共通サマリ (HP / Gold のみ) -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
           <div class="bg-bg-2 border border-bg-3 rounded px-3 py-2">
             <div class="text-slate-500 uppercase tracking-wide">HP</div>
             <div class="text-slate-200 tabular">{selected.hp_in}/{selected.max_hp_in} → {selected.hp_out}/{selected.max_hp_out}</div>
@@ -143,38 +143,74 @@
             <div class="text-slate-500 uppercase tracking-wide">ゴールド</div>
             <div class="text-slate-200 tabular">{selected.gold_in} → {selected.gold_out} ({selected.gold_out - selected.gold_in >= 0 ? '+' : ''}{selected.gold_out - selected.gold_in})</div>
           </div>
-          <div class="bg-bg-2 border border-bg-3 rounded px-3 py-2">
-            <div class="text-slate-500 uppercase tracking-wide">与ダメ / 被ダメ</div>
-            <div class="text-slate-200 tabular">{selected.damage_dealt} / {selected.damage_taken}</div>
-          </div>
-          <div class="bg-bg-2 border border-bg-3 rounded px-3 py-2">
-            <div class="text-slate-500 uppercase tracking-wide">入手</div>
-            <div class="text-slate-200">
-              {#if selected.cards_obtained.length === 0 && selected.relics_obtained.length === 0 && selected.potions_obtained.length === 0}
-                —
-              {:else}
-                {selected.cards_obtained.length} card / {selected.relics_obtained.length} relic / {selected.potions_obtained.length} potion
-              {/if}
-            </div>
-          </div>
         </div>
 
-        <!-- room_type ごとの詳細 -->
-        {#if selectedCombat}
-          <CombatView
-            combat={selectedCombat}
-            {playerIds}
-            {playerNames}
-            {powerNames}
-            {cardNames}
-            combatEvents={selectedCombatEvents}
-          />
-        {:else if selected.room_type === 'Shop'}
-          <div class="space-y-2">
-            <h4 class="text-xs uppercase text-slate-400 tracking-wide">購入履歴</h4>
-            {#if selected.shop_purchases.length === 0}
-              <div class="text-slate-500 text-sm">購入なし</div>
-            {:else}
+        <!-- 階の詳細: 入手物 / イベント / 戦闘結果 (戦闘統計は出さない) -->
+        <div class="space-y-2">
+          {#if selected.cards_obtained.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">カード入手</h4>
+              <ul class="text-sm">
+                {#each selected.cards_obtained as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
+              </ul>
+            </div>
+          {/if}
+          {#if selected.card_choices.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">提示されたカード選択肢</h4>
+              {#each selected.card_choices as group, gi}
+                <div class="text-sm flex flex-wrap gap-2 mt-1">
+                  {#if selected.card_choices.length > 1}<span class="text-slate-500 text-xs">#{gi + 1}</span>{/if}
+                  {#each group.choices as c}
+                    <span class="px-2 py-0.5 rounded {c.was_picked ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-2 text-slate-400 border border-bg-3'}">
+                      {c.was_picked ? '✓ ' : ''}{c.card_name || cardLabel(c.card_id)}
+                    </span>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          {/if}
+          {#if selected.relics_obtained.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">レリック入手</h4>
+              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_name ?? r.relic_id}</li>{/each}</ul>
+            </div>
+          {/if}
+          {#if selected.potions_obtained.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">ポーション入手</h4>
+              <ul class="text-sm">{#each selected.potions_obtained as p}<li>{p.potion_name ?? p.potion_id}</li>{/each}</ul>
+            </div>
+          {/if}
+          {#if selected.cards_upgraded.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">カードアップグレード</h4>
+              <ul class="text-sm">
+                {#each selected.cards_upgraded as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
+              </ul>
+            </div>
+          {/if}
+          {#if selected.cards_enchanted.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">エンチャント付与</h4>
+              <ul class="text-sm">
+                {#each selected.cards_enchanted as e}
+                  <li>{e.card_name ?? cardLabel(e.card_id)} ← {e.enchantment_id}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if selected.cards_removed.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">カード除去</h4>
+              <ul class="text-sm">
+                {#each selected.cards_removed as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
+              </ul>
+            </div>
+          {/if}
+          {#if selected.shop_purchases.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">購入履歴</h4>
               <ul class="text-sm space-y-1">
                 {#each selected.shop_purchases as p}
                   <li class="flex items-center gap-2">
@@ -189,81 +225,25 @@
                   </li>
                 {/each}
               </ul>
-            {/if}
-            {#if selected.cards_removed.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">カード除去</h4>
+            </div>
+          {/if}
+          {#if selected.rest_options.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">休憩所</h4>
+              <div class="text-sm">{selected.rest_options.join(', ')}</div>
+            </div>
+          {/if}
+          {#if selected.event_choices.length > 0}
+            <div>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">イベント選択</h4>
               <ul class="text-sm">
-                {#each selected.cards_removed as c}
-                  <li>{c.card_name ?? cardLabel(c.card_id)}</li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        {:else if selected.room_type === 'RestSite'}
-          <div class="space-y-2">
-            <h4 class="text-xs uppercase text-slate-400 tracking-wide">休憩所</h4>
-            <div class="text-sm">選択: {selected.rest_options.join(', ') || '—'}</div>
-            {#if selected.cards_upgraded.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">アップグレード</h4>
-              <ul class="text-sm">
-                {#each selected.cards_upgraded as c}
-                  <li>{c.card_name ?? cardLabel(c.card_id)}</li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        {:else if selected.room_type === 'Treasure'}
-          <div class="space-y-2">
-            <h4 class="text-xs uppercase text-slate-400 tracking-wide">宝箱</h4>
-            {#if selected.relics_obtained.length === 0}
-              <div class="text-slate-500 text-sm">入手なし</div>
-            {:else}
-              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_name ?? r.relic_id}</li>{/each}</ul>
-            {/if}
-          </div>
-        {:else if selected.room_type === 'Event'}
-          <div class="space-y-2">
-            <h4 class="text-xs uppercase text-slate-400 tracking-wide">イベント</h4>
-            {#if selected.event_choices.length === 0}
-              <div class="text-sm text-slate-500">選択ログなし</div>
-            {:else}
-              <ul class="text-sm space-y-1">
                 {#each selected.event_choices as c}
-                  <li>
-                    <span class="text-slate-200">選択:</span>
-                    <span class="text-slate-300">{c.title || c.history_name || c.text_key}</span>
-                  </li>
+                  <li>{c.title || c.history_name || c.text_key}</li>
                 {/each}
               </ul>
-            {/if}
-            {#if selected.cards_enchanted.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">エンチャント付与</h4>
-              <ul class="text-sm">
-                {#each selected.cards_enchanted as e}
-                  <li>{e.card_name ?? cardLabel(e.card_id)} ← {e.enchantment_id} (×{e.amount})</li>
-                {/each}
-              </ul>
-            {/if}
-            {#if selected.cards_obtained.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">カード入手</h4>
-              <ul class="text-sm">
-                {#each selected.cards_obtained as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
-              </ul>
-            {/if}
-            {#if selected.relics_obtained.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">レリック入手</h4>
-              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_name ?? r.relic_id}</li>{/each}</ul>
-            {/if}
-            {#if selected.potions_obtained.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">ポーション入手</h4>
-              <ul class="text-sm">{#each selected.potions_obtained as p}<li>{p.potion_name ?? p.potion_id}</li>{/each}</ul>
-            {/if}
-            {#if selected.cards_removed.length > 0}
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">カード除去</h4>
-              <ul class="text-sm">{#each selected.cards_removed as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}</ul>
-            {/if}
-          </div>
-        {/if}
+            </div>
+          {/if}
+        </div>
       </section>
     {/if}
 

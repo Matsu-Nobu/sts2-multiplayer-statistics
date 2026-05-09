@@ -231,6 +231,8 @@ internal static class RunOverviewPatches
             string potionName = "";
             string relicId = "";
             string relicName = "";
+            // CardReward の場合、提示された全選択肢 (picked/skipped 両方) を一緒に送る。
+            List<object>? cardChoices = null;
 
             switch (rewardKind)
             {
@@ -259,7 +261,10 @@ internal static class RunOverviewPatches
                     }
                     break;
                 case "CardReward":
-                    cardId = TryFindRecentlyPickedCardId(runState, pid);
+                    {
+                        var picked = TryFindRecentCardChoices(runState, pid, out cardChoices);
+                        cardId = picked;
+                    }
                     break;
             }
 
@@ -273,6 +278,7 @@ internal static class RunOverviewPatches
                 potion_name  = potionName,
                 relic_id     = relicId,
                 relic_name   = relicName,
+                card_choices = cardChoices,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterRewardTaken error: {ex.Message}"); }
@@ -285,8 +291,14 @@ internal static class RunOverviewPatches
     ///         → List&lt;CardChoiceHistoryEntry&gt; （CardChoiceHistoryEntry { Card, WasPicked }）
     /// 末尾から WasPicked=true のものを 1 件取る。
     /// </summary>
-    private static string TryFindRecentlyPickedCardId(object? runState, string playerId)
+    /// <summary>
+    /// 直近の CardReward について「提示された全カード」(picked/skipped 両方) を choices に詰めて返し、
+    /// 戻り値として picked card_id を返す。
+    /// 構造: runState.CurrentMapPointHistoryEntry.GetEntry(playerId).CardChoices
+    /// </summary>
+    private static string TryFindRecentCardChoices(object? runState, string playerId, out List<object>? choices)
     {
+        choices = null;
         try
         {
             var entry = GetPropValue(runState, "CurrentMapPointHistoryEntry");
@@ -298,15 +310,24 @@ internal static class RunOverviewPatches
             var choicesObj = perPlayer.GetType().GetProperty("CardChoices")?.GetValue(perPlayer)
                           as System.Collections.IEnumerable;
             if (choicesObj == null) return "";
-            object? lastPicked = null;
+            string pickedId = "";
+            var list = new List<object>();
             foreach (var c in choicesObj)
             {
                 bool picked = (bool?)c.GetType().GetProperty("WasPicked")?.GetValue(c) ?? false;
-                if (picked) lastPicked = c;
+                var card = c.GetType().GetProperty("Card")?.GetValue(c);
+                string cId = GetIdEntry(card);
+                string cName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
+                list.Add(new
+                {
+                    card_id    = cId,
+                    card_name  = cName,
+                    was_picked = picked,
+                });
+                if (picked) pickedId = cId;
             }
-            if (lastPicked == null) return "";
-            var card = lastPicked.GetType().GetProperty("Card")?.GetValue(lastPicked);
-            return GetIdEntry(card);
+            choices = list;
+            return pickedId;
         }
         catch { return ""; }
     }

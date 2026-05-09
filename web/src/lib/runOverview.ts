@@ -45,6 +45,8 @@ export interface FloorSummary {
   rest_options:    string[];          // "heal" / "smith" 等
   shop_purchases:  ItemPurchasedPayload[];
   event_choices:   { title: string; history_name: string; text_key: string }[];
+  // 階で提示された CardReward の選択肢（pick した / skip した両方）。1 階に複数 reward あり得る。
+  card_choices:    { picked_card_id: string; choices: { card_id: string; card_name: string; was_picked: boolean }[] }[];
 }
 
 /**
@@ -89,6 +91,7 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       rest_options: [],
       shop_purchases: [],
       event_choices: [],
+      card_choices: [],
     });
   }
   orderedFloors.sort((a, b) => a - b);
@@ -130,6 +133,13 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
         const p = ev.payload as RewardTakenPayload;
         if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
         if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
+        // CardReward の場合、提示された全選択肢（picked + skipped）も記録
+        if (p.card_choices && p.card_choices.length > 0) {
+          sum.card_choices.push({
+            picked_card_id: p.card_id ?? '',
+            choices: p.card_choices,
+          });
+        }
         // potion は AfterPotionProcured 経由で別途記録されるためここでは追加しない
         break;
       }

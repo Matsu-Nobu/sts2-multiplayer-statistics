@@ -146,6 +146,8 @@ export interface RewardTakenPayload {
   potion_name?: string;
   relic_id?: string;
   relic_name?: string;
+  // CardReward の場合、提示された全カード（picked + skipped）
+  card_choices?: { card_id: string; card_name: string; was_picked: boolean }[];
 }
 
 export interface PotionObtainedPayload { potion_id: string; potion_name?: string; }
