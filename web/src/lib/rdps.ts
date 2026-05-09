@@ -94,10 +94,13 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
  * total 値（modifications.post の最終値）と effective の比でスケールしてから配分する。
  * オーバーキルや block 削りで効きが減衰している分も effective 側で吸収される。
  *
- * 各 modification:
- *   delta = post - pre
- *   この delta を modifier_ids に含まれる power_id 群へ stacks 加重で配分。
- *   PowerSnapshot に該当 power が無いもの (= relic / card / Enchant) は dealer の self に積む。
+ * 不変条件: Σ(全 credit) ≈ effective を保つ。各 delta は以下のように扱う:
+ *   - delta > 0 + 該当 power（target / dealer どちら側でも） + applier あり
+ *       → stacks 加重で applier に配分
+ *   - delta > 0 + applier 不明 (relic / Enchant / passive)
+ *       → dealer の self に積む
+ *   - delta < 0 (Intangible cap、WEAK on dealer 等のダメ減算)
+ *       → applier に credit はしない（rDPS は正値のみ）。dealer self から減算して invariant を保つ
  */
 function attributeViaModifications(
   p: import('./types').DamageDealtPayload,
@@ -106,35 +109,54 @@ function attributeViaModifications(
   credit: (recipient: string, applier: string, source: string, amt: number) => void,
 ): void {
   const mods = p.modifications ?? [];
-  // 観測の最終 post = 厳密な「修飾後・block 適用前 damage」。effective とは別空間なので
-  // 比でスケールする。total が取れていればそれを基準に。
   const finalPost = mods.length > 0 ? mods[mods.length - 1].post : (p.total_damage ?? effective);
   const scale = finalPost > 0 ? effective / finalPost : 1;
 
+  // target / dealer どちらにも修飾源が居うる (VULN は target、STR/WEAK は dealer)
+  const findInBoth = (id: string): PowerSnapshot | null =>
+    findPower(p.active_on_target, id) ?? findPower(p.active_on_dealer, id);
+
   // 起点（カードの基礎ダメ）= 最初の modification の pre
   const basePre = mods.length > 0 ? mods[0].pre : 0;
-  let dealerShare = basePre;
+  let dealerShare = basePre;     // total-damage 空間で蓄積
 
   for (const m of mods) {
     const delta = m.post - m.pre;
     if (delta === 0) continue;
 
-    const matchedSnaps = m.modifier_ids
-      .map(id => findPower(p.active_on_target, id))
-      .filter((s): s is PowerSnapshot => s != null);
-
-    if (matchedSnaps.length === 0) {
-      // 該当 power 無し → dealer 自身の relic/card 由来として self に積む
+    // 負方向修飾 (Intangible cap、WEAK on dealer 等) は applier に正の credit を出せない。
+    // 不変条件 (Σ credit ≈ effective) を保つため dealer self から減算して終わり。
+    if (delta < 0) {
       dealerShare += delta;
       continue;
     }
 
-    // 複数 power が同フェーズに居る場合は均等分割。scale で effective 空間へ。
-    const scaledDelta = delta * scale;
-    const perSnap = scaledDelta / matchedSnaps.length;
+    const matchedSnaps = m.modifier_ids
+      .map(id => findInBoth(id))
+      .filter((s): s is PowerSnapshot => s != null);
+
+    if (matchedSnaps.length === 0) {
+      // 該当 power 無し (relic / card Enchant 等) → dealer self に積む
+      dealerShare += delta;
+      continue;
+    }
+
+    // 同フェーズに複数 power が居る場合は均等分割（近似）
+    const perSnap = delta / matchedSnaps.length;
     for (const snap of matchedSnaps) {
+      const appliers = snap.appliers && snap.appliers.length > 0
+        ? snap.appliers
+        : (snap.applier ? [{ player_id: snap.applier, stacks: snap.stacks }] : []);
+
+      if (appliers.length === 0) {
+        // applier 不明 (passive enemy buff 等) → dealer self に積んで invariant 維持
+        dealerShare += perSnap;
+        continue;
+      }
+
       const label = snap.power_id.replace(/_POWER$/i, '').toLowerCase();
-      distributeAmongAppliers(snap, Math.round(perSnap), dealer, label, credit);
+      // applier への配分は effective 空間へ scale してから
+      distributeAmongAppliers(snap, Math.round(perSnap * scale), dealer, label, credit);
     }
   }
 
