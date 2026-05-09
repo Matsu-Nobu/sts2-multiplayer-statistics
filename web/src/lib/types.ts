@@ -129,8 +129,11 @@ export interface RestActionPayload {
 export interface ItemPurchasedPayload {
   item_kind: string;
   card_id?: string;
+  card_name?: string;
   relic_id?: string;
+  relic_name?: string;
   potion_id?: string;
+  potion_name?: string;
   gold_spent: number;
 }
 
@@ -138,11 +141,14 @@ export interface RewardTakenPayload {
   reward_kind: string;
   gold_amount?: number;
   card_id?: string;
+  card_name?: string;
   potion_id?: string;
+  potion_name?: string;
   relic_id?: string;
+  relic_name?: string;
 }
 
-export interface PotionObtainedPayload { potion_id: string; }
+export interface PotionObtainedPayload { potion_id: string; potion_name?: string; }
 export interface PotionDiscardedPayload { potion_id: string; }
 
 export interface CardUpgradedPayload {

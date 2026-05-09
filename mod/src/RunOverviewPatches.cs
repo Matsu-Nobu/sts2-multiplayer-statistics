@@ -156,15 +156,16 @@ internal static class RunOverviewPatches
     {
         try
         {
-            // 価格は MerchantEntry.Cost プロパティから読む
             int cost = GetIntProp(entry, "Cost");
-            // player は _player (private field)
             object? player = GetField(entry, "_player");
             string pid = GetStringProp(player, "NetId");
 
             string cardId = "";
+            string cardName = "";
             string relicId = "";
+            string relicName = "";
             string potionId = "";
+            string potionName = "";
 
             switch (kind)
             {
@@ -173,23 +174,35 @@ internal static class RunOverviewPatches
                         var creationResult = GetPropValue(entry, "CreationResult");
                         var card = GetPropValue(creationResult, "Card");
                         cardId = GetIdEntry(card);
+                        cardName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
                     }
                     break;
                 case "MerchantPotionEntry":
-                    potionId = GetIdEntry(GetPropValue(entry, "Model"));
+                    {
+                        var potion = GetPropValue(entry, "Model");
+                        potionId = GetIdEntry(potion);
+                        potionName = ResolveLocString(GetPropValue(potion, "Title"));
+                    }
                     break;
                 case "MerchantRelicEntry":
-                    relicId = GetIdEntry(GetPropValue(entry, "Model"));
+                    {
+                        var relic = GetPropValue(entry, "Model");
+                        relicId = GetIdEntry(relic);
+                        relicName = ResolveLocString(GetPropValue(relic, "Title"));
+                    }
                     break;
             }
 
             EventBuffer.EmitGlobalEvent("item_purchased", string.IsNullOrEmpty(pid) ? null : pid, new
             {
-                item_kind  = kind,
-                card_id    = cardId,
-                relic_id   = relicId,
-                potion_id  = potionId,
-                gold_spent = cost,
+                item_kind   = kind,
+                card_id     = cardId,
+                card_name   = cardName,
+                relic_id    = relicId,
+                relic_name  = relicName,
+                potion_id   = potionId,
+                potion_name = potionName,
+                gold_spent  = cost,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] {kind}.OnTryPurchase Postfix error: {ex.Message}"); }
@@ -213,8 +226,11 @@ internal static class RunOverviewPatches
 
             int goldAmount = 0;
             string cardId = "";
+            string cardName = "";
             string potionId = "";
+            string potionName = "";
             string relicId = "";
+            string relicName = "";
 
             switch (rewardKind)
             {
@@ -222,17 +238,27 @@ internal static class RunOverviewPatches
                     goldAmount = GetIntProp(reward, "Amount");
                     break;
                 case "PotionReward":
-                    potionId = GetIdEntry(GetPropValue(reward, "Potion"));
+                    {
+                        var potion = GetPropValue(reward, "Potion");
+                        potionId = GetIdEntry(potion);
+                        potionName = ResolveLocString(GetPropValue(potion, "Title"));
+                    }
                     break;
                 case "RelicReward":
-                    relicId = GetIdEntry(GetPropValue(reward, "Relic"));
+                    {
+                        var relic = GetPropValue(reward, "Relic");
+                        relicId = GetIdEntry(relic);
+                        relicName = ResolveLocString(GetPropValue(relic, "Title"));
+                    }
                     break;
                 case "SpecialCardReward":
-                    // private field _card
-                    cardId = GetIdEntry(GetField(reward, "_card"));
+                    {
+                        var card = GetField(reward, "_card");
+                        cardId = GetIdEntry(card);
+                        cardName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
+                    }
                     break;
                 case "CardReward":
-                    // 選んだカードは RunState の history に wasPicked=true で残る
                     cardId = TryFindRecentlyPickedCardId(runState, pid);
                     break;
             }
@@ -242,8 +268,11 @@ internal static class RunOverviewPatches
                 reward_kind  = rewardKind,
                 gold_amount  = goldAmount,
                 card_id      = cardId,
+                card_name    = cardName,
                 potion_id    = potionId,
+                potion_name  = potionName,
                 relic_id     = relicId,
+                relic_name   = relicName,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterRewardTaken error: {ex.Message}"); }
@@ -304,9 +333,11 @@ internal static class RunOverviewPatches
         try
         {
             string id = GetIdEntry(potion);
+            string name = ResolveLocString(GetPropValue(potion, "Title"));
             EventBuffer.EmitGlobalEvent("potion_obtained", null, new
             {
-                potion_id = id,
+                potion_id   = id,
+                potion_name = name,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterPotionProcured error: {ex.Message}"); }

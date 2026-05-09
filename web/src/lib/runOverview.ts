@@ -37,8 +37,8 @@ export interface FloorSummary {
   damage_taken: number;
   damage_dealt: number;
   cards_obtained: { card_id: string; card_name?: string }[];
-  relics_obtained: { relic_id: string }[];
-  potions_obtained: { potion_id: string }[];
+  relics_obtained: { relic_id: string; relic_name?: string }[];
+  potions_obtained: { potion_id: string; potion_name?: string }[];
   cards_removed:   { card_id: string; card_name?: string }[];
   cards_upgraded:  { card_id: string; card_name?: string }[];
   cards_enchanted: { card_id: string; card_name?: string; enchantment_id: string; amount: number }[];
@@ -128,22 +128,22 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       }
       case 'reward_taken': {
         const p = ev.payload as RewardTakenPayload;
-        if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id });
-        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id });
-        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id });
+        if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
+        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
+        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
         break;
       }
       case 'item_purchased': {
         const p = ev.payload as ItemPurchasedPayload;
         sum.shop_purchases.push(p);
-        if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id });
-        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id });
-        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id });
+        if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
+        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
+        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
         break;
       }
       case 'potion_obtained': {
         const p = ev.payload as PotionObtainedPayload;
-        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id });
+        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
         break;
       }
       case 'card_upgraded': {

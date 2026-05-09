@@ -84,9 +84,9 @@
                 if (f.cards_upgraded.length > 0)
                   lines.push(`アップグレード: ${f.cards_upgraded.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
                 if (f.relics_obtained.length > 0)
-                  lines.push(`レリック入手: ${f.relics_obtained.map(r => r.relic_id).join(', ')}`);
+                  lines.push(`レリック入手: ${f.relics_obtained.map(r => r.relic_name ?? r.relic_id).join(', ')}`);
                 if (f.potions_obtained.length > 0)
-                  lines.push(`ポーション入手: ${f.potions_obtained.map(p => p.potion_id).join(', ')}`);
+                  lines.push(`ポーション入手: ${f.potions_obtained.map(p => p.potion_name ?? p.potion_id).join(', ')}`);
                 if (f.cards_removed.length > 0)
                   lines.push(`カード除去: ${f.cards_removed.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
                 if (f.cards_enchanted && f.cards_enchanted.length > 0)
@@ -99,8 +99,17 @@
           },
         },
         scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#252a33' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#252a33' }, beginAtZero: true },
+          x: {
+            ticks: { color: '#94a3b8' },
+            grid: { color: '#252a33' },
+            title: { display: true, text: '階', color: '#94a3b8' },
+          },
+          y: {
+            ticks: { color: '#94a3b8' },
+            grid: { color: '#252a33' },
+            beginAtZero: true,
+            title: { display: true, text: 'HP', color: '#94a3b8' },
+          },
         },
       },
     };

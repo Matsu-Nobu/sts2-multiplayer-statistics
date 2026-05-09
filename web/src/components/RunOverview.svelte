@@ -173,9 +173,9 @@
                   <li class="flex items-center gap-2">
                     <span class="text-slate-500 w-24 truncate">{itemKindLabel(p.item_kind)}</span>
                     <span class="flex-1 text-slate-200">
-                      {#if p.card_id}{cardLabel(p.card_id)}
-                      {:else if p.relic_id}{p.relic_id}
-                      {:else if p.potion_id}{p.potion_id}
+                      {#if p.card_id}{p.card_name ?? cardLabel(p.card_id)}
+                      {:else if p.relic_id}{p.relic_name ?? p.relic_id}
+                      {:else if p.potion_id}{p.potion_name ?? p.potion_id}
                       {:else}—{/if}
                     </span>
                     <span class="tabular text-yellow-400">-{p.gold_spent}g</span>
@@ -211,7 +211,7 @@
             {#if selected.relics_obtained.length === 0}
               <div class="text-slate-500 text-sm">入手なし</div>
             {:else}
-              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_id}</li>{/each}</ul>
+              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_name ?? r.relic_id}</li>{/each}</ul>
             {/if}
           </div>
         {:else if selected.room_type === 'Event'}
@@ -245,11 +245,11 @@
             {/if}
             {#if selected.relics_obtained.length > 0}
               <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">レリック入手</h4>
-              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_id}</li>{/each}</ul>
+              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_name ?? r.relic_id}</li>{/each}</ul>
             {/if}
             {#if selected.potions_obtained.length > 0}
               <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">ポーション入手</h4>
-              <ul class="text-sm">{#each selected.potions_obtained as p}<li>{p.potion_id}</li>{/each}</ul>
+              <ul class="text-sm">{#each selected.potions_obtained as p}<li>{p.potion_name ?? p.potion_id}</li>{/each}</ul>
             {/if}
             {#if selected.cards_removed.length > 0}
               <h4 class="text-xs uppercase text-slate-400 tracking-wide pt-2">カード除去</h4>
