@@ -344,9 +344,6 @@ internal static class RunOverviewPatches
     }
 
     // === CardModel.OnUpgrade Postfix ===
-    // 焚き火 Smith / Forge / Armaments 等で OnUpgrade() が呼ばれる。
-    // セーブからの再ロード中に CardModel が再構築されて呼ばれるケースを除外するため
-    // SessionManager.IsReady で「ラン開始済み」を guard にする。
     public static void OnUpgradePostfix(object __instance)
     {
         try
@@ -355,13 +352,26 @@ internal static class RunOverviewPatches
             string cardId = GetIdEntry(__instance);
             string cardName = __instance?.GetType().GetProperty("Title")?.GetValue(__instance)?.ToString() ?? "";
             if (string.IsNullOrEmpty(cardId)) return;
-            EventBuffer.EmitGlobalEvent("card_upgraded", null, new
+            string? ownerId = TryGetCardOwnerId(__instance);
+            EventBuffer.EmitGlobalEvent("card_upgraded", ownerId, new
             {
                 card_id   = cardId,
                 card_name = cardName,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] OnUpgrade Postfix error: {ex.Message}"); }
+    }
+
+    private static string? TryGetCardOwnerId(object? card)
+    {
+        if (card == null) return null;
+        try
+        {
+            var owner = card.GetType().GetProperty("Owner")?.GetValue(card);
+            var netId = owner?.GetType().GetProperty("NetId")?.GetValue(owner);
+            return netId?.ToString();
+        }
+        catch { return null; }
     }
 
     // === CardModel.EnchantInternal(EnchantmentModel, decimal) Postfix ===
@@ -385,7 +395,8 @@ internal static class RunOverviewPatches
             long key = ((long)cardHash << 32) ^ enchantmentId.GetHashCode();
             lock (_seenEnchants) { if (!_seenEnchants.Add(key)) return; }
 
-            EventBuffer.EmitGlobalEvent("card_enchanted", null, new
+            string? ownerId = TryGetCardOwnerId(__instance);
+            EventBuffer.EmitGlobalEvent("card_enchanted", ownerId, new
             {
                 card_id        = cardId,
                 card_name      = cardName,
@@ -403,17 +414,26 @@ internal static class RunOverviewPatches
     }
 
     // === EventOption.Chosen() Postfix ===
-    // ランダムイベントの選択肢が選ばれたタイミングで、選んだ option の名前を記録。
+    // ランダムイベントの選択肢が選ばれたタイミング。Chosen() を呼ぶのは
+    // 「自クライアント上で選択操作した player」なので LocalContext.NetId を採用。
     public static void EventOptionChosenPostfix(object __instance)
     {
         try
         {
             if (!SessionManager.IsReady) return;
             string textKey = GetStringProp(__instance, "TextKey");
-            // Title / HistoryName は LocString。可能なら文字列化して取り出す
             string title       = ResolveLocString(GetPropValue(__instance, "Title"));
             string historyName = ResolveLocString(GetPropValue(__instance, "HistoryName"));
-            EventBuffer.EmitGlobalEvent("event_choice", null, new
+
+            string? playerId = null;
+            try
+            {
+                ulong? localId = MegaCrit.Sts2.Core.Context.LocalContext.NetId;
+                if (localId.HasValue && localId.Value != 0UL) playerId = localId.Value.ToString();
+            }
+            catch { }
+
+            EventBuffer.EmitGlobalEvent("event_choice", playerId, new
             {
                 text_key      = textKey,
                 title         = title,

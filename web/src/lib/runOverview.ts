@@ -224,40 +224,30 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     }
   }
 
-  // 各階の hp_out / max_hp_out / gold_out を「次階の hp_in」で確定
-  // 最後の階は hp_changed の最後の current_hp を使う
-  for (let i = 0; i < orderedFloors.length - 1; i++) {
-    const cur = byFloor.get(orderedFloors[i])!;
-    const next = byFloor.get(orderedFloors[i + 1])!;
-    cur.hp_out = next.hp_in;
-    cur.max_hp_out = next.max_hp_in;
-    cur.gold_out = next.gold_in;
+  // 各階の hp_out / max_hp_out / gold_out は **その階内で発生した最後の値**
+  // (hp_changed / gold_changed) を使う。次階の hp_in は使わない:
+  //   - 階間の遷移ヒール / 階開始時 relic 効果等が次階へ寄ってしまうため
+  //   - 階内で hp_changed が無ければ hp_out = hp_in (変化なし) として扱う
+  // 全 events を occurred_at 順に並び替えて 1 度だけ走査する。
+  const sortedAll = events.slice().sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
+  for (const f of orderedFloors) {
+    const sum = byFloor.get(f)!;
+    sum.hp_out = sum.hp_in;
+    sum.max_hp_out = sum.max_hp_in;
+    sum.gold_out = sum.gold_in;
   }
-  // 最終階: 直近の hp_changed / gold_changed から推定。
-  // events は配列順序が必ずしも時系列保証されないので occurred_at で並び替えてから走査。
-  if (orderedFloors.length > 0) {
-    const lastFloor = orderedFloors[orderedFloors.length - 1];
-    const lastSum = byFloor.get(lastFloor)!;
-    let lastHp = lastSum.hp_in;
-    let lastMaxHp = lastSum.max_hp_in;
-    let lastGold = lastSum.gold_in;
-    const lastFloorEvents = events
-      .filter(e => e.floor === lastFloor)
-      .slice()
-      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
-    for (const ev of lastFloorEvents) {
-      if (ev.event_type === 'hp_changed') {
-        const p = ev.payload as HpChangedPayload;
-        lastHp = p.current_hp;
-        lastMaxHp = p.max_hp;
-      } else if (ev.event_type === 'gold_changed') {
-        const p = ev.payload as { current_gold: number };
-        lastGold = p.current_gold;
-      }
+  for (const ev of sortedAll) {
+    if (ev.floor == null) continue;
+    const sum = byFloor.get(ev.floor);
+    if (!sum) continue;
+    if (ev.event_type === 'hp_changed' && (filterPlayerId == null || ev.player_id === filterPlayerId)) {
+      const p = ev.payload as HpChangedPayload;
+      sum.hp_out = p.current_hp;
+      sum.max_hp_out = p.max_hp;
+    } else if (ev.event_type === 'gold_changed' && (filterPlayerId == null || ev.player_id === filterPlayerId)) {
+      const p = ev.payload as { current_gold: number };
+      sum.gold_out = p.current_gold;
     }
-    lastSum.hp_out = lastHp;
-    lastSum.max_hp_out = lastMaxHp;
-    lastSum.gold_out = lastGold;
   }
 
   return orderedFloors.map(f => byFloor.get(f)!);
