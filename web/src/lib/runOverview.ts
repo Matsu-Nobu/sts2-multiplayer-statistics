@@ -47,7 +47,18 @@ export interface FloorSummary {
   event_choices:   { title: string; history_name: string; text_key: string }[];
 }
 
-export function buildFloorSummaries(events: EventRecord[]): FloorSummary[] {
+/**
+ * 特定プレイヤーの視点で集計する場合は filterPlayerId を指定。
+ * - player_id 付き event はその player のものだけ通す（global は常に通す）
+ * - hp_in / max_hp_in / gold_in は (a) そのプレイヤーの hp_changed / gold_changed が
+ *   一定数あればそれから推定、(b) なければ room_entered.payload の値（= local プレイヤー値）を使う
+ */
+export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: string): FloorSummary[] {
+  // 全イベント（per-player HP 推定に使うため filter 前のものを保持）
+  const allEvents = events;
+  if (filterPlayerId) {
+    events = events.filter(e => !e.player_id || e.player_id === filterPlayerId);
+  }
   // room_entered で各階のスケルトンを作る
   const byFloor = new Map<number, FloorSummary>();
   const orderedFloors: number[] = [];
@@ -159,6 +170,56 @@ export function buildFloorSummaries(events: EventRecord[]): FloorSummary[] {
         const p = ev.payload as { text_key: string; title: string; history_name: string };
         sum.event_choices.push(p);
         break;
+      }
+    }
+  }
+
+  // 選択プレイヤーの hp/gold を hp_changed / gold_changed から推定（room_entered.hp は local 値なので
+  // MP 他プレイヤー視点では正しくない）。各階の room_entered の occurred_at 直前の最新値を採用。
+  if (filterPlayerId) {
+    const hpChanges = allEvents
+      .filter(e => e.event_type === 'hp_changed' && e.player_id === filterPlayerId)
+      .slice()
+      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
+    const goldChanges = allEvents
+      .filter(e => e.event_type === 'gold_changed' && e.player_id === filterPlayerId)
+      .slice()
+      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
+    const roomEvents = allEvents
+      .filter(e => e.event_type === 'room_entered')
+      .slice()
+      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
+
+    if (hpChanges.length > 0) {
+      // 階ごとに room_entered の occurred_at 以前の最新 hp_changed を採用
+      let hpIdx = 0; let lastHp = -1; let lastMax = -1;
+      for (const re of roomEvents) {
+        const reTs = re.occurred_at ?? '';
+        // re より前の hp_changed を消化
+        while (hpIdx < hpChanges.length && (hpChanges[hpIdx].occurred_at ?? '') <= reTs) {
+          const p = hpChanges[hpIdx].payload as HpChangedPayload;
+          lastHp = p.current_hp; lastMax = p.max_hp;
+          hpIdx++;
+        }
+        const floor = (re.payload as RoomEnteredPayload).floor;
+        const sum = byFloor.get(floor);
+        if (sum && lastHp >= 0) {
+          sum.hp_in = lastHp;
+          sum.max_hp_in = lastMax;
+        }
+      }
+    }
+    if (goldChanges.length > 0) {
+      let gIdx = 0; let lastG = -1;
+      for (const re of roomEvents) {
+        const reTs = re.occurred_at ?? '';
+        while (gIdx < goldChanges.length && (goldChanges[gIdx].occurred_at ?? '') <= reTs) {
+          const p = goldChanges[gIdx].payload as { current_gold: number };
+          lastG = p.current_gold; gIdx++;
+        }
+        const floor = (re.payload as RoomEnteredPayload).floor;
+        const sum = byFloor.get(floor);
+        if (sum && lastG >= 0) sum.gold_in = lastG;
       }
     }
   }

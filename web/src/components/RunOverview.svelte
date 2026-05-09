@@ -16,16 +16,27 @@
   }
   let { events, combats, playerIds, playerNames, powerNames, cardNames }: Props = $props();
 
-  let floors = $derived(buildFloorSummaries(events));
+  // プレイヤー別タブ。最初は最初のプレイヤー
+  let activePlayer: string = $state('');
+  $effect.pre(() => {
+    if (!playerIds.includes(activePlayer)) {
+      activePlayer = playerIds[0] ?? '';
+    }
+  });
+
+  let floors = $derived(buildFloorSummaries(events, activePlayer || undefined));
   let selectedFloor: number | null = $state(null);
   let selected = $derived(
     selectedFloor != null ? floors.find(f => f.floor === selectedFloor) ?? null : null
   );
 
-  // グラフからのクリックは「選択」(toggle なし、何度押しても同じ階のまま)
+  // グラフからのクリックは「選択」(toggle なし)
   function selectFloor(f: number) { selectedFloor = f; }
-  // 階一覧ボタンは toggle 動作（同階を再クリックで閉じる）
-  function toggleFloor(f: number) { selectedFloor = (selectedFloor === f) ? null : f; }
+
+  function onFloorSelect(e: Event) {
+    const v = (e.target as HTMLSelectElement).value;
+    selectedFloor = v === '' ? null : Number(v);
+  }
 
   // 該当階の戦闘 (CombatView を流用)
   let selectedCombat = $derived(
@@ -62,23 +73,41 @@
     </div>
   {:else}
 
-    <!-- HP / Max HP / Gold 推移グラフ -->
+    <!-- プレイヤータブ (複数人いる場合のみ) -->
+    {#if playerIds.length > 1}
+      <div class="flex gap-2">
+        {#each playerIds as pid (pid)}
+          <button
+            type="button"
+            class="px-3 py-1 rounded text-sm border {activePlayer === pid ? 'bg-accent text-bg-0 border-accent' : 'bg-bg-2 border-bg-3 text-slate-300 hover:bg-bg-3'}"
+            onclick={() => { activePlayer = pid; selectedFloor = null; }}
+          >
+            {playerNames[pid] ?? pid}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- HP 推移グラフ -->
     <HpChart {floors} {selectedFloor} onSelect={selectFloor} {cardNames} />
 
-    <!-- 階一覧（コンパクト） -->
-    <div class="flex flex-wrap gap-1 text-xs">
-      {#each floors as f (f.floor)}
-        {@const v = roomVisual(f.room_type)}
-        <button
-          type="button"
-          onclick={() => toggleFloor(f.floor)}
-          class="px-2 py-1 rounded border {selectedFloor === f.floor ? 'bg-accent text-bg-0 border-accent' : 'bg-bg-2 border-bg-3 text-slate-300 hover:bg-bg-3'}"
-          title="{v.label}"
-        >
-          <span>{v.emoji}</span>
-          <span class="font-mono">{f.floor}</span>
-        </button>
-      {/each}
+    <!-- 階セレクタ（プルダウン） -->
+    <div class="flex items-center gap-3">
+      <label for="floor-select" class="text-xs uppercase tracking-wide text-slate-400">階詳細</label>
+      <select
+        id="floor-select"
+        class="bg-bg-1 border border-bg-3 rounded px-3 py-2 text-sm text-slate-200 hover:bg-bg-2 focus:outline-none focus:ring-1 focus:ring-accent min-w-[280px]"
+        value={selectedFloor == null ? '' : String(selectedFloor)}
+        onchange={onFloorSelect}
+      >
+        <option value="">— 階を選んでください —</option>
+        {#each floors as f (f.floor)}
+          {@const v = roomVisual(f.room_type)}
+          <option value={String(f.floor)}>
+            {v.emoji} 階 {f.floor} — {v.label}{f.encounter_name ? ` (${f.encounter_name})` : ''}
+          </option>
+        {/each}
+      </select>
     </div>
 
     <!-- インライン階詳細 -->

@@ -522,8 +522,24 @@ internal static class HookPatches
     {
         try
         {
-            var playerInfo = _currentTurnPlayer;
-            if (playerInfo == null) return;
+            // PotionModel.Owner（Player）から netId を取って正しい使用者を特定する。
+            // 旧: _currentTurnPlayer を使ってたが、MP では両プレイヤーが順次ターンを進めるため
+            //    最後に AfterPlayerTurnStart が発火したプレイヤーに全部寄せられてしまっていた。
+            string? userId = null;
+            try
+            {
+                var owner = potion?.GetType().GetProperty("Owner")?.GetValue(potion);
+                var netId = owner?.GetType().GetProperty("NetId")?.GetValue(owner);
+                if (netId != null) userId = netId.ToString();
+            }
+            catch { }
+            if (string.IsNullOrEmpty(userId))
+            {
+                // フォールバック: 旧ロジック
+                var fallback = _currentTurnPlayer;
+                if (fallback == null) return;
+                userId = fallback.Value.id;
+            }
 
             string? potionId = null;
             try
@@ -533,7 +549,7 @@ internal static class HookPatches
             }
             catch { }
 
-            EventBuffer.EmitTurnEvent("potion_used", playerInfo.Value.id, new
+            EventBuffer.EmitTurnEvent("potion_used", userId, new
             {
                 potion_id          = potionId,
                 target_creature_id = target != null ? CreatureIdentity(target) : null,
