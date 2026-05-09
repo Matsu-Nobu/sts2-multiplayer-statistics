@@ -65,15 +65,20 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
       continue;
     }
 
-    // 2. 通常ダメ: dealer に self、Vulnerable があれば 1/3 を applier 群に配分
-    const vulnContrib = Math.round(effective / 3);     // VULN は 1.5 倍効果 → 1/3 が VULN 由来
-    let dealerShare = effective;
-    const vulnSnap = findPower(p.active_on_target, 'VULNERABLE_POWER');
-    if (vulnSnap) {
-      const distributed = distributeAmongAppliers(vulnSnap, vulnContrib, dealer, 'vulnerable', credit);
-      dealerShare -= distributed;
+    // 2. modifications が記録されていれば「観測した delta」で attribution（新モデル）
+    //    無ければ旧モデル（VULN 1/3 ハードコード）にフォールバック
+    if (p.modifications && p.modifications.length > 0) {
+      attributeViaModifications(p, dealer, effective, credit);
+    } else {
+      const vulnContrib = Math.round(effective / 3);
+      let dealerShare = effective;
+      const vulnSnap = findPower(p.active_on_target, 'VULNERABLE_POWER');
+      if (vulnSnap) {
+        const distributed = distributeAmongAppliers(vulnSnap, vulnContrib, dealer, 'vulnerable', credit);
+        dealerShare -= distributed;
+      }
+      credit(dealer, dealer, 'self', dealerShare);
     }
-    credit(dealer, dealer, 'self', dealerShare);
   }
 
   for (const pid of Object.keys(byPlayer)) {
@@ -81,6 +86,59 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
     b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
   }
   return { byPlayer };
+}
+
+/**
+ * Hook.ModifyDamage で観測した (pre, post, modifier_ids[]) ログを使って attribution する。
+ *
+ * total 値（modifications.post の最終値）と effective の比でスケールしてから配分する。
+ * オーバーキルや block 削りで効きが減衰している分も effective 側で吸収される。
+ *
+ * 各 modification:
+ *   delta = post - pre
+ *   この delta を modifier_ids に含まれる power_id 群へ stacks 加重で配分。
+ *   PowerSnapshot に該当 power が無いもの (= relic / card / Enchant) は dealer の self に積む。
+ */
+function attributeViaModifications(
+  p: import('./types').DamageDealtPayload,
+  dealer: string,
+  effective: number,
+  credit: (recipient: string, applier: string, source: string, amt: number) => void,
+): void {
+  const mods = p.modifications ?? [];
+  // 観測の最終 post = 厳密な「修飾後・block 適用前 damage」。effective とは別空間なので
+  // 比でスケールする。total が取れていればそれを基準に。
+  const finalPost = mods.length > 0 ? mods[mods.length - 1].post : (p.total_damage ?? effective);
+  const scale = finalPost > 0 ? effective / finalPost : 1;
+
+  // 起点（カードの基礎ダメ）= 最初の modification の pre
+  const basePre = mods.length > 0 ? mods[0].pre : 0;
+  let dealerShare = basePre;
+
+  for (const m of mods) {
+    const delta = m.post - m.pre;
+    if (delta === 0) continue;
+
+    const matchedSnaps = m.modifier_ids
+      .map(id => findPower(p.active_on_target, id))
+      .filter((s): s is PowerSnapshot => s != null);
+
+    if (matchedSnaps.length === 0) {
+      // 該当 power 無し → dealer 自身の relic/card 由来として self に積む
+      dealerShare += delta;
+      continue;
+    }
+
+    // 複数 power が同フェーズに居る場合は均等分割。scale で effective 空間へ。
+    const scaledDelta = delta * scale;
+    const perSnap = scaledDelta / matchedSnaps.length;
+    for (const snap of matchedSnaps) {
+      const label = snap.power_id.replace(/_POWER$/i, '').toLowerCase();
+      distributeAmongAppliers(snap, Math.round(perSnap), dealer, label, credit);
+    }
+  }
+
+  credit(dealer, dealer, 'self', Math.round(dealerShare * scale));
 }
 
 function findPower(snap: PowerSnapshot[] | undefined, powerId: string): PowerSnapshot | null {

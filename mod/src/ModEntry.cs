@@ -38,6 +38,7 @@ public static class ModEntry
             PatchHook(nameof(Hook.AfterPlayerTurnStart),     nameof(HookPatches.AfterPlayerTurnStartPostfix));
             PatchHook(nameof(Hook.AfterTurnEnd),             nameof(HookPatches.AfterTurnEndPostfix));
             PatchHook(nameof(Hook.AfterCombatEnd),           nameof(HookPatches.AfterCombatEndPostfix));
+            PatchHook(nameof(Hook.ModifyDamage),             nameof(HookPatches.ModifyDamagePostfix));
             PatchHook(nameof(Hook.BeforeDamageReceived),     nameof(HookPatches.BeforeDamageReceivedPostfix));
             PatchHook(nameof(Hook.AfterDamageGiven),         nameof(HookPatches.AfterDamageGivenPostfix));
             PatchHook(nameof(Hook.AfterDamageReceived),      nameof(HookPatches.AfterDamageReceivedPostfix));

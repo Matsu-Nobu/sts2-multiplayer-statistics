@@ -128,6 +128,13 @@ export interface PowerSnapshot {
   appliers?: { player_id: string; stacks: number }[];      // stacks 加重帰属用
 }
 
+export interface DamageModification {
+  pre: number;
+  post: number;
+  modifier_types: string[];           // 例: "VulnerablePower" / "WeakPower" / "PenNibRelic"
+  modifier_ids: string[];             // 例: "VULNERABLE_POWER" or relic id（取れない場合は ""）
+}
+
 export interface DamageDealtPayload {
   amount: number;                     // 敵 HP に通った分
   total_damage?: number;              // 試行された総ダメ（block 吸収前）
@@ -142,6 +149,7 @@ export interface DamageDealtPayload {
   hit_index: number;
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
+  modifications?: DamageModification[];  // Hook.ModifyDamage で観測した (pre,post,modifier) ログ
 }
 
 export interface DamageReceivedPayload {

@@ -171,6 +171,36 @@ internal static class HookPatches
     /// STS2 の DamageResult.OverkillDamage は実測上信頼できない（amount を超える値が
     /// 返る等）ので、target.CurrentHealth (この時点では被弾前) を捕捉する。
     /// </summary>
+    /// <summary>
+    /// Hook.ModifyDamage Postfix: damage 計算の (pre, post, modifiers) を記録する。
+    /// AfterDamageGiven の発火時にまとめて drain して payload に乗せる。
+    ///
+    /// シグネチャ (Hook.cs より):
+    ///   public static decimal ModifyDamage(
+    ///     IRunState runState, ICombatState? combatState,
+    ///     Creature? target, Creature? dealer,
+    ///     decimal damage,                                    ← pre
+    ///     ValueProp props, CardModel? cardSource,
+    ///     ModifyDamageHookType modifyDamageHookType,
+    ///     CardPreviewMode previewMode,
+    ///     out IEnumerable&lt;AbstractModel&gt; modifiers)
+    ///   → 戻り値が post
+    /// </summary>
+    public static void ModifyDamagePostfix(
+        decimal damage,
+        ref System.Collections.Generic.IEnumerable<MegaCrit.Sts2.Core.Models.AbstractModel> modifiers,
+        decimal __result)
+    {
+        try
+        {
+            DamageModificationLog.Record(damage, __result, modifiers);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] ModifyDamage Postfix error: {ex.Message}");
+        }
+    }
+
     public static void BeforeDamageReceivedPostfix(CombatState? combatState, Creature? target)
     {
         try
@@ -246,6 +276,21 @@ internal static class HookPatches
 
             int hitIndex = (int?)results.GetType().GetProperty("HitIndex")?.GetValue(results) ?? 0;
 
+            // ModifyDamage で観測した (pre, post, modifiers) を drain。
+            // 直近 ModifyDamage 群の中で post が total と一致するエントリを「実ヒット由来」として優先採用。
+            // それ以外（preview UI 由来や別経路）はノイズとして捨てる。
+            var allMods = DamageModificationLog.Drain();
+            var modList = allMods
+                .Where(m => (int)m.Post == total)
+                .Select(m => new
+                {
+                    pre  = (int)m.Pre,
+                    post = (int)m.Post,
+                    modifier_types = m.ModifierTypes,
+                    modifier_ids   = m.ModifierIds,
+                })
+                .ToList();
+
             EventBuffer.EmitTurnEvent("damage_dealt", dealerPlayerId, new
             {
                 amount               = amount,
@@ -261,6 +306,7 @@ internal static class HookPatches
                 hit_index            = hitIndex,
                 active_on_target     = ActivePowersSnapshot.ForCreature(target),
                 active_on_dealer     = ActivePowersSnapshot.ForCreature(dealer),
+                modifications        = modList,
             });
         }
         catch (Exception ex)
