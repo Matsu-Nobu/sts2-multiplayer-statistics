@@ -64,13 +64,36 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
   // room_entered で各階のスケルトンを作る
   const byFloor = new Map<number, FloorSummary>();
   const orderedFloors: number[] = [];
+  const makeEmpty = (floor: number, partial: Partial<FloorSummary> = {}): FloorSummary => ({
+    floor,
+    act_index: partial.act_index ?? 0,
+    room_type: partial.room_type ?? '',
+    room_class: partial.room_class ?? '',
+    hp_in: partial.hp_in ?? 0,
+    hp_out: partial.hp_out ?? 0,
+    max_hp_in: partial.max_hp_in ?? 0,
+    max_hp_out: partial.max_hp_out ?? 0,
+    gold_in: partial.gold_in ?? 0,
+    gold_out: partial.gold_out ?? 0,
+    damage_taken: 0,
+    damage_dealt: 0,
+    cards_obtained: [],
+    relics_obtained: [],
+    potions_obtained: [],
+    cards_removed: [],
+    cards_upgraded: [],
+    cards_enchanted: [],
+    rest_options: [],
+    shop_purchases: [],
+    event_choices: [],
+    card_choices: [],
+  });
   for (const ev of events) {
     if (ev.event_type !== 'room_entered') continue;
     const p = ev.payload as RoomEnteredPayload;
     if (byFloor.has(p.floor)) continue;
     orderedFloors.push(p.floor);
-    byFloor.set(p.floor, {
-      floor: p.floor,
+    byFloor.set(p.floor, makeEmpty(p.floor, {
       act_index: p.act_index,
       room_type: p.room_type,
       room_class: p.room_class,
@@ -80,19 +103,16 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       max_hp_out: p.max_hp,
       gold_in: p.gold,
       gold_out: p.gold,
-      damage_taken: 0,
-      damage_dealt: 0,
-      cards_obtained: [],
-      relics_obtained: [],
-      potions_obtained: [],
-      cards_removed: [],
-      cards_upgraded: [],
-      cards_enchanted: [],
-      rest_options: [],
-      shop_purchases: [],
-      event_choices: [],
-      card_choices: [],
-    });
+    }));
+  }
+  // room_entered が無い floor (= STS2 の Neow/初期フロアは Hook.AfterRoomEntered が
+  // 発火しない) を、他 event から floor 番号だけ拾って補完。room_type は空のままだが
+  // reward_taken / event_choice 等が紐付いて表示されるようになる。
+  for (const ev of events) {
+    if (ev.floor == null) continue;
+    if (byFloor.has(ev.floor)) continue;
+    orderedFloors.push(ev.floor);
+    byFloor.set(ev.floor, makeEmpty(ev.floor));
   }
   orderedFloors.sort((a, b) => a - b);
 

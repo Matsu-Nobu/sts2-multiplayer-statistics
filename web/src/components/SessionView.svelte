@@ -11,7 +11,23 @@
     live: 'live' | 'final' | 'offline';
     lastUpdated: Date | null;
   }
-  let { doc, live, lastUpdated }: Props = $props();
+  let { doc: rawDoc, live, lastUpdated }: Props = $props();
+
+  // mod 側で MP の local player 自身の event は LocalContext.NetId / Player.NetId が
+  // "1" (local-player pseudo) として記録されることがある。host_steam_id が実 Steam ID
+  // のときは "1" を host_steam_id にエイリアスして同一人物として扱う。
+  let doc = $derived.by(() => {
+    const hostId = rawDoc.session?.host_steam_id;
+    if (!hostId || hostId === '1') return rawDoc;
+    const remap = (pid: string | null | undefined) => (pid === '1' ? hostId : pid);
+    return {
+      ...rawDoc,
+      players: rawDoc.players
+        .map(p => ({ ...p, steam_id: p.steam_id === '1' ? hostId : p.steam_id }))
+        .filter((p, i, arr) => arr.findIndex(q => q.steam_id === p.steam_id) === i),
+      events: rawDoc.events.map(e => ({ ...e, player_id: remap(e.player_id) ?? null })),
+    };
+  });
 
   let combats = $derived(buildCombatInfos(doc));
   let totals = $derived(buildRunTotals(combats));
