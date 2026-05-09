@@ -58,10 +58,11 @@
   }
 
   const help = `基準は「有効ダメージ」= 敵 HP に通った分 + 敵 block を削った分（オーバーキル分は除外）。
-各 damage_dealt について、敵に乗っているデバフの「効いた分」を撒いた人へ加算する。複数人が同じデバフを撒いている場合は各人の stacks 比で按分。
-・通常ダメージ: 敵に Vulnerable が乗っているとき、有効ダメの 1/3 を Vulnerable を撒いたプレイヤーへ加算（Vulnerable は被ダメ 1.5 倍効果なので、ダメージ全体の 1/3 が Vulnerable 由来）。
-・毒(Poison): ダメージ全量を Poison を撒いたプレイヤーへ加算。
-・ドゥーム(Doom): ダメージ全量を Doom を撒いたプレイヤーへ加算。`;
+各 damage_dealt について、ゲーム内のダメージ修飾（power / relic / カード Enchant）の前後値を観測して、修飾で増えた分を加算者へ帰属させる。複数人が同じデバフを撒いている場合は各人の stacks 比で按分。
+・通常ダメージ: ModifyDamage の (pre, post, modifier) を直接観測する方式。Vulnerable / Strength / 倍率変更レリック等が動的に変わっても自動追従。同フェーズに複数 modifier が居る場合は均等分割の近似。
+・毒(Poison): ダメージ全量を Poison applier へ stacks 加重で加算。
+・ドゥーム(Doom): ダメージ全量を Doom applier へ stacks 加重で加算。
+・観測データの無い旧セッション: 「Vulnerable=1.5x 固定」で 1/3 を applier へ加算するフォールバック。`;
 </script>
 
 <section class="space-y-3">
