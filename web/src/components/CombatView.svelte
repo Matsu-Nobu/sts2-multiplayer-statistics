@@ -18,9 +18,10 @@
     playerIds: string[];
     playerNames: Record<string, string>;
     powerNames: Record<string, string>;
+    cardNames?: Record<string, string>;
     combatEvents: EventRecord[];   // この戦闘の生 events（rDPS/タイムライン用）
   }
-  let { combat, playerIds, playerNames, powerNames, combatEvents }: Props = $props();
+  let { combat, playerIds, playerNames, powerNames, cardNames = {}, combatEvents }: Props = $props();
   let view: 'summary' | 'timeline' = $state('summary');
   let rdps = $derived(computeRdps(combatEvents));
   let rmit = $derived(computeRmit(combatEvents));
@@ -84,7 +85,7 @@
   </div>
 
   {#if view === 'timeline'}
-    <TimelineView events={combatEvents} {playerNames} {powerNames} />
+    <TimelineView events={combatEvents} {playerNames} {powerNames} {cardNames} />
   {:else}
 
   <!-- プレイヤー切替 -->

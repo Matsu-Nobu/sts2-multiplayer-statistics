@@ -6,8 +6,14 @@
     events: EventRecord[];          // 戦闘内 event のみ（combat_index 設定済）を想定
     playerNames: Record<string, string>;
     powerNames?: Record<string, string>;
+    cardNames?: Record<string, string>;
   }
-  let { events, playerNames, powerNames = {} }: Props = $props();
+  let { events, playerNames, powerNames = {}, cardNames = {} }: Props = $props();
+
+  function cardName(id: string | undefined | null): string {
+    if (!id) return '?';
+    return cardNames[id] ?? id;
+  }
 
   // turn_number ごとにグループ化
   let groups = $derived(() => {
@@ -35,12 +41,12 @@
   function eventLabel(ev: EventRecord): string {
     const p = ev.payload as any;
     switch (ev.event_type) {
-      case 'card_played':     return `${pname(ev.player_id)} → ${p?.card_name ?? p?.card_id ?? 'card'}`;
-      case 'card_drawn':      return `${pname(ev.player_id)} drew ${p?.card_id ?? '?'}`;
-      case 'damage_dealt':    return `${pname(ev.player_id)} dmg ${p?.amount} (${p?.source_card_id ?? '?'})`;
+      case 'card_played':     return `${pname(ev.player_id)} → ${p?.card_name ?? cardName(p?.card_id)}`;
+      case 'card_drawn':      return `${pname(ev.player_id)} drew ${p?.card_name ?? cardName(p?.card_id)}`;
+      case 'damage_dealt':    return `${pname(ev.player_id)} dmg ${p?.amount} (${p?.source_card_name ?? cardName(p?.source_card_id)})`;
       case 'damage_received': return `${pname(ev.player_id)} took ${p?.amount}`;
-      case 'block_gained':    return `${pname(ev.player_id)} block +${p?.amount}`;
-      case 'energy_spent':    return `${pname(ev.player_id)} energy -${p?.amount}`;
+      case 'block_gained':    return `${pname(ev.player_id)} block +${p?.amount}` + (p?.source_card_id ? ` (${p?.source_card_name ?? cardName(p?.source_card_id)})` : '');
+      case 'energy_spent':    return `${pname(ev.player_id)} energy -${p?.amount}` + (p?.source_card_id ? ` (${cardName(p?.source_card_id)})` : '');
       case 'power_changed': {
         const t = p?.target_player_id ? `→ player ${pname(p.target_player_id)}` : '→ enemy';
         const sign = (p?.delta ?? 0) >= 0 ? '+' : '';

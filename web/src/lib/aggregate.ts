@@ -151,6 +151,26 @@ export function buildPowerNames(events: EventRecord[]): Record<string, string> {
   return out;
 }
 
+/**
+ * events から card_id → ローカライズ済み card_name の lookup を作る。
+ * card_played / card_drawn / damage_dealt(source_card_*) / block_gained(source_card_*)
+ * を走査。timeline 表示等で raw ID 文字列 (例: "STRIKE_IRONCLAD") の代わりに
+ * 日本語名 ("ストライク") を出すために使う。
+ */
+export function buildCardNames(events: EventRecord[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const visit = (id: unknown, name: unknown): void => {
+    if (typeof id === 'string' && typeof name === 'string' && name.length > 0) out[id] = name;
+  };
+  for (const ev of events) {
+    const p = ev.payload as Record<string, unknown> | undefined;
+    if (!p) continue;
+    visit(p.card_id, p.card_name);
+    visit(p.source_card_id, p.source_card_name);
+  }
+  return out;
+}
+
 export function playerName(doc: SessionDoc, pid: string): string {
   const p = doc.players.find(p => p.steam_id === pid);
   return p?.display_name ?? pid;
