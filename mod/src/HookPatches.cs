@@ -27,6 +27,12 @@ internal static class HookPatches
     // 現在の戦闘で AfterCombatVictory が発火したか（combat_end の victory 判定に使う）
     private static bool _currentCombatWasVictory = false;
 
+    // 現在の戦闘で combat_end を発行済みか（AfterCombatEnd と AfterDeath の二重発行を防止）
+    private static bool _currentCombatEndEmitted = false;
+
+    // run_end を発行済みか（victory / death の二重発行・上書き防止）
+    private static bool _runEndEmitted = false;
+
     // === ライフサイクル hook ============================================
 
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
@@ -41,6 +47,8 @@ internal static class HookPatches
 
                 if (!SessionManager.RunStartAlreadyEmitted)
                 {
+                    // 新ラン開始: 前ランの run_end フラグをクリア
+                    _runEndEmitted = false;
                     EmitRunStartForAllPlayers(runState);
                     if (ModEntry.SessionStore != null)
                         SessionManager.MarkRunStartEmitted(ModEntry.SessionStore);
@@ -51,6 +59,7 @@ internal static class HookPatches
             PowerOriginRegistry.ClearForCombat();
             _currentTurnPlayer = null;
             _currentCombatWasVictory = false;
+            _currentCombatEndEmitted = false;
 
             EmitCombatStart(runState, combatState);
 
@@ -144,6 +153,10 @@ internal static class HookPatches
             if (runState == null || creature == null) return;
             // 蘇生・死亡無効化された場合は run_end を発行しない
             if (wasRemovalPrevented) return;
+            // 既に victory が確定している戦闘での「死亡」は誤検知（boss 撃破直後の演出等）として無視
+            if (_currentCombatWasVictory) return;
+            // 既に run_end が出てる場合も無視
+            if (_runEndEmitted) return;
             var playerInfo = TryFindPlayerForCreature(combatState, creature);
             if (playerInfo == null) return;
 
@@ -522,8 +535,24 @@ internal static class HookPatches
     {
         try
         {
-            var playerInfo = _currentTurnPlayer;
-            if (playerInfo == null) return;
+            // PotionModel.Owner（Player）から netId を取って正しい使用者を特定する。
+            // 旧: _currentTurnPlayer を使ってたが、MP では両プレイヤーが順次ターンを進めるため
+            //    最後に AfterPlayerTurnStart が発火したプレイヤーに全部寄せられてしまっていた。
+            string? userId = null;
+            try
+            {
+                var owner = potion?.GetType().GetProperty("Owner")?.GetValue(potion);
+                var netId = owner?.GetType().GetProperty("NetId")?.GetValue(owner);
+                if (netId != null) userId = netId.ToString();
+            }
+            catch { }
+            if (string.IsNullOrEmpty(userId))
+            {
+                // フォールバック: 旧ロジック
+                var fallback = _currentTurnPlayer;
+                if (fallback == null) return;
+                userId = fallback.Value.id;
+            }
 
             string? potionId = null;
             try
@@ -533,7 +562,7 @@ internal static class HookPatches
             }
             catch { }
 
-            EventBuffer.EmitTurnEvent("potion_used", playerInfo.Value.id, new
+            EventBuffer.EmitTurnEvent("potion_used", userId, new
             {
                 potion_id          = potionId,
                 target_creature_id = target != null ? CreatureIdentity(target) : null,
@@ -599,6 +628,14 @@ internal static class HookPatches
     {
         try
         {
+            // 二重発行（victory の後の死亡誤検知 等）を防止
+            if (_runEndEmitted)
+            {
+                Log.Info($"[StsStats] EmitRunEnd skipped (already emitted, attempted={outcome})");
+                return;
+            }
+            _runEndEmitted = true;
+
             int finalFloor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
             EventBuffer.EmitGlobalEvent("run_end", playerId, new
             {
@@ -650,6 +687,10 @@ internal static class HookPatches
     {
         try
         {
+            // AfterCombatEnd と AfterDeath の両方から呼ばれうる。1 戦闘につき 1 回だけ。
+            if (_currentCombatEndEmitted) return;
+            _currentCombatEndEmitted = true;
+
             int combatIndex = EventBuffer.CurrentCombatIndex;
             bool victory = _currentCombatWasVictory;
             Log.Info($"[StsStats] EmitCombatEnd combat_index={combatIndex} victory={victory}");
@@ -667,6 +708,16 @@ internal static class HookPatches
     }
 
     // === セッション初期化 ================================================
+
+    /// <summary>
+    /// AfterRoomEntered 等の他フックからも呼べるよう object 受け wrapper。
+    /// セッション既確立なら即 return（ラン開始直後の最初の room でだけ実行する想定）。
+    /// </summary>
+    internal static void EnsureSessionFromAnyRoom(object? runState)
+    {
+        if (SessionManager.IsReady) return;
+        if (runState is IRunState r) EnsureSessionForRun(r);
+    }
 
     private static void EnsureSessionForRun(IRunState runState)
     {
