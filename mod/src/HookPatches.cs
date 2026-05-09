@@ -27,6 +27,12 @@ internal static class HookPatches
     // 現在の戦闘で AfterCombatVictory が発火したか（combat_end の victory 判定に使う）
     private static bool _currentCombatWasVictory = false;
 
+    // 現在の戦闘で combat_end を発行済みか（AfterCombatEnd と AfterDeath の二重発行を防止）
+    private static bool _currentCombatEndEmitted = false;
+
+    // run_end を発行済みか（victory / death の二重発行・上書き防止）
+    private static bool _runEndEmitted = false;
+
     // === ライフサイクル hook ============================================
 
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
@@ -41,6 +47,8 @@ internal static class HookPatches
 
                 if (!SessionManager.RunStartAlreadyEmitted)
                 {
+                    // 新ラン開始: 前ランの run_end フラグをクリア
+                    _runEndEmitted = false;
                     EmitRunStartForAllPlayers(runState);
                     if (ModEntry.SessionStore != null)
                         SessionManager.MarkRunStartEmitted(ModEntry.SessionStore);
@@ -51,6 +59,7 @@ internal static class HookPatches
             PowerOriginRegistry.ClearForCombat();
             _currentTurnPlayer = null;
             _currentCombatWasVictory = false;
+            _currentCombatEndEmitted = false;
 
             EmitCombatStart(runState, combatState);
 
@@ -144,6 +153,10 @@ internal static class HookPatches
             if (runState == null || creature == null) return;
             // 蘇生・死亡無効化された場合は run_end を発行しない
             if (wasRemovalPrevented) return;
+            // 既に victory が確定している戦闘での「死亡」は誤検知（boss 撃破直後の演出等）として無視
+            if (_currentCombatWasVictory) return;
+            // 既に run_end が出てる場合も無視
+            if (_runEndEmitted) return;
             var playerInfo = TryFindPlayerForCreature(combatState, creature);
             if (playerInfo == null) return;
 
@@ -615,6 +628,14 @@ internal static class HookPatches
     {
         try
         {
+            // 二重発行（victory の後の死亡誤検知 等）を防止
+            if (_runEndEmitted)
+            {
+                Log.Info($"[StsStats] EmitRunEnd skipped (already emitted, attempted={outcome})");
+                return;
+            }
+            _runEndEmitted = true;
+
             int finalFloor = (int?)runState.GetType().GetProperty("TotalFloor")?.GetValue(runState) ?? 0;
             EventBuffer.EmitGlobalEvent("run_end", playerId, new
             {
@@ -666,6 +687,10 @@ internal static class HookPatches
     {
         try
         {
+            // AfterCombatEnd と AfterDeath の両方から呼ばれうる。1 戦闘につき 1 回だけ。
+            if (_currentCombatEndEmitted) return;
+            _currentCombatEndEmitted = true;
+
             int combatIndex = EventBuffer.CurrentCombatIndex;
             bool victory = _currentCombatWasVictory;
             Log.Info($"[StsStats] EmitCombatEnd combat_index={combatIndex} victory={victory}");
