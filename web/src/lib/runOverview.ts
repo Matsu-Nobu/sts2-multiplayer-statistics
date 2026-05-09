@@ -163,7 +163,13 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       }
       case 'card_enchanted': {
         const p = ev.payload as { card_id: string; card_name: string; enchantment_id: string; amount: number };
-        sum.cards_enchanted.push(p);
+        // mod 側の dedup は CardModel instance hashcode 単位なので、同じ logical card に対する
+        // 複数 instance (ハンド/master deck/clone 等) が個別に EnchantInternal を呼ぶと素通りする。
+        // floor 単位で (card_id, enchantment_id) が同一なら 1 回扱いにする。
+        const dup = sum.cards_enchanted.some(
+          e => e.card_id === p.card_id && e.enchantment_id === p.enchantment_id,
+        );
+        if (!dup) sum.cards_enchanted.push(p);
         break;
       }
       case 'event_choice': {

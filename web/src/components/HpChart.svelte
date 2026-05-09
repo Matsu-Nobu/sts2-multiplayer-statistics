@@ -19,7 +19,7 @@
 
   function buildConfig(): ChartConfiguration {
     const labels = floors.map(f => f.floor);
-    const hp = floors.map(f => f.hp_in);
+    const hp = floors.map(f => f.hp_out);
     const colors = floors.map(f => roomVisual(f.room_type).color);
     const radii = floors.map(f => selectedFloor === f.floor ? 7 : 4);
 
@@ -121,7 +121,7 @@
   // floors / selectedFloor の変化を確実に検知するため、長さ・最終 hp・選択を依存に明示する
   $effect(() => {
     void floors.length;
-    void floors.map(f => f.hp_in).join(',');
+    void floors.map(f => f.hp_out).join(',');
     void selectedFloor;
     if (!chart) return;
     const cfg = buildConfig();
