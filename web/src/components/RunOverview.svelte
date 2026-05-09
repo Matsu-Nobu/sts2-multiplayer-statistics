@@ -193,9 +193,9 @@
               <ul class="text-sm">{#each selected.potions_obtained as p}<li>{p.potion_name ?? p.potion_id}</li>{/each}</ul>
             </div>
           {/if}
-          {#if selected.cards_upgraded.length > 0}
+          {#if selected.rest_options.includes('smith') && selected.cards_upgraded.length > 0}
             <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">カードアップグレード</h4>
+              <h4 class="text-xs uppercase text-slate-400 tracking-wide">鍛治でアップグレード</h4>
               <ul class="text-sm">
                 {#each selected.cards_upgraded as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
               </ul>

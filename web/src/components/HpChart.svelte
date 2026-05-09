@@ -37,7 +37,7 @@
             pointBorderColor: colors,
             pointRadius: radii,
             pointHoverRadius: 9,
-            tension: 0.2,
+            tension: 0,
           },
         ],
       },
@@ -81,8 +81,8 @@
                 lines.push(`ゴールド ${f.gold_in} → ${f.gold_out} (${goldDelta >= 0 ? '+' : ''}${goldDelta})`);
                 if (f.cards_obtained.length > 0)
                   lines.push(`カード入手: ${f.cards_obtained.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
-                if (f.cards_upgraded.length > 0)
-                  lines.push(`アップグレード: ${f.cards_upgraded.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
+                if (f.rest_options.includes('smith') && f.cards_upgraded.length > 0)
+                  lines.push(`鍛治: ${f.cards_upgraded.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
                 if (f.relics_obtained.length > 0)
                   lines.push(`レリック入手: ${f.relics_obtained.map(r => r.relic_name ?? r.relic_id).join(', ')}`);
                 if (f.potions_obtained.length > 0)
