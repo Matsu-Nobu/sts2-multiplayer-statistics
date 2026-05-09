@@ -221,26 +221,30 @@ internal static class HookPatches
         try
         {
             if (dealer == null || results == null) return;
-            // STS2 の DamageResult のセマンティクス（実測ベース）:
-            //   TotalDamage     = block 適用前の試行ダメージ（uncapped）
+            // STS2 の DamageResult は HP cap が既にかかった値を返す:
+            //   TotalDamage     = HP loss + 敵 block で吸収された分（= UnblockedDamage + BlockedDamage、cap 込み）
             //   BlockedDamage   = 敵 block で吸収された分
-            //   UnblockedDamage = 実際に HP に通った分（= HP loss、HP でキャップ済）
-            //   OverkillDamage  = 信用できない（amount より大きい値が返る等あり）
-            //   WasTargetKilled = target が死亡したか
+            //   UnblockedDamage = 実際に HP を削った量（HP cap 済）
+            //   OverkillDamage  = 信用できない
             //
-            // よって overkill は (total - blocked) - amount で導出できる。
-            // amount は既に HP loss なので web 側の hpLost = amount - overkill 補正は不要だが、
-            // 互換のためそのまま渡す。
+            // overkill を出すには「pre-block・pre-cap の試行 damage」と「被弾前 HP」が要る:
+            //   attempted = Hook.ModifyDamage の最終 post 値（DamageModificationLog.TakeLastPost）
+            //   hpBefore  = BeforeDamageReceived で取った target.CurrentHp
+            //   overkill  = max(0, attempted − blocked − hpBefore)
             int amount   = (int)results.UnblockedDamage;
             int total    = (int)results.TotalDamage;
             int blocked  = (int)results.BlockedDamage;
             bool wasKilled = results.WasTargetKilled;
             if (total <= 0) return;
 
-            int overkill = System.Math.Max(0, total - blocked - amount);
-
-            // (BeforeDamageReceived snapshot は将来「特定 power の発動前 HP が必要な解析」用に
-            //  残してあるが、現状の overkill 計算には使わない)
+            int overkill = 0;
+            decimal? lastPost = DamageModificationLog.TakeLastPost();
+            int? hpBefore = target != null ? TargetHpSnapshot.Lookup(target) : null;
+            if (lastPost.HasValue && hpBefore.HasValue)
+            {
+                int attempted = (int)lastPost.Value;
+                overkill = System.Math.Max(0, attempted - blocked - hpBefore.Value);
+            }
             if (target != null) TargetHpSnapshot.Clear(target);
 
             // dealer がプレイヤーか間接ダメージか判定

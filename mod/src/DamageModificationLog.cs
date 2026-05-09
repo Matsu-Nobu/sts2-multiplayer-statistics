@@ -27,12 +27,33 @@ internal static class DamageModificationLog
     [System.ThreadStatic]
     private static List<Entry>? _log;
 
+    // 「直近 ModifyDamage の最終 post 値」を保持。pre==post で diff 記録を
+    // スキップするケースでも常に更新する。AfterDamageGiven で
+    // 「pre-block・pre-HP-cap の試行 damage」として使い、overkill 計算に流す。
+    [System.ThreadStatic]
+    private static decimal _lastPost;
+    [System.ThreadStatic]
+    private static bool _hasLastPost;
+
     public static void Record(decimal pre, decimal post, IEnumerable<AbstractModel>? modifiers)
     {
+        // 最終 post を必ず更新
+        _lastPost = post;
+        _hasLastPost = true;
+
         if (pre == post) return;
         var (types, ids) = ExtractIdentities(modifiers);
         _log ??= new List<Entry>();
         _log.Add(new Entry(pre, post, types, ids));
+    }
+
+    /// <summary>直近 ModifyDamage の post を取得し、状態をクリア。</summary>
+    public static decimal? TakeLastPost()
+    {
+        if (!_hasLastPost) return null;
+        var v = _lastPost;
+        _hasLastPost = false;
+        return v;
     }
 
     public static List<Entry> Drain()
@@ -43,7 +64,7 @@ internal static class DamageModificationLog
         return snapshot;
     }
 
-    public static void Clear() { _log = null; }
+    public static void Clear() { _log = null; _hasLastPost = false; }
 
     private static (List<string> types, List<string> ids) ExtractIdentities(IEnumerable<AbstractModel>? modifiers)
     {
