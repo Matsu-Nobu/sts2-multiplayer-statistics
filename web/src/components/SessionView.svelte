@@ -43,8 +43,10 @@
     typeof activeTab === 'number' ? combats.find(c => c.combat_index === activeTab) ?? null : null
   );
 
-  function combatLabel(c: typeof combats[number]): string {
-    const name = c.encounter_name ? `${c.combat_index}. ${c.encounter_name}` : `戦闘 ${c.combat_index}`;
+  // 表示用の通し番号（1 始まり）。中断＆再開で combat_index に飛びがあっても
+  // ユーザーには「N 戦目」として連番で見せる。combat_index は内部キー。
+  function combatLabel(c: typeof combats[number], ordinal: number): string {
+    const name = c.encounter_name ? `${ordinal}. ${c.encounter_name}` : `戦闘 ${ordinal}`;
     const room = (c.room_type === 'Elite' || c.room_type === 'Boss') ? ` [${c.room_type}]` : '';
     return name + room;
   }
@@ -69,8 +71,8 @@
       onchange={onSelect}
     >
       <option value="all">全体（{combats.length}戦闘）</option>
-      {#each combats as c (c.combat_index)}
-        <option value={String(c.combat_index)}>{combatLabel(c)}</option>
+      {#each combats as c, i (c.combat_index)}
+        <option value={String(c.combat_index)}>{combatLabel(c, i + 1)}</option>
       {/each}
     </select>
   </div>
