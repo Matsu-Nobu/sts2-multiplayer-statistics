@@ -25,17 +25,27 @@ func (s *Store) UpsertPlayer(ctx context.Context, steamID, displayName string) e
 }
 
 // ListPlayersForSession returns the players who have produced any event for the
-// given session, plus the session host. display_name は players テーブルから
-// 取れれば取り、無ければ空文字。LEFT JOIN にすることで、UpsertPlayer されて
-// いない player_id (= MP の host 以外) も拾える。
+// given session.
+//
+// 優先順:
+//  1. events.player_id の DISTINCT (実際にゲーム内行動を記録した player)
+//  2. (events に player_id 付き event が一切無い場合のみ) host_steam_id
+//
+// host_steam_id と events.player_id を UNION すると、SP で両者が異なる format
+// (例: host_steam_id="76561...", events.player_id="1") のとき phantom player が
+// 2 つ出てしまうため、events 側を信用する。
 func (s *Store) ListPlayersForSession(ctx context.Context, sessionID string) ([]Player, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		WITH ids AS (
+		WITH ev_ids AS (
 			SELECT DISTINCT player_id AS steam_id FROM events
 			WHERE session_id = ? AND player_id IS NOT NULL AND player_id != ''
+		),
+		ids AS (
+			SELECT steam_id FROM ev_ids
 			UNION
-			SELECT host_steam_id AS steam_id FROM sessions
+			SELECT host_steam_id FROM sessions
 			WHERE id = ? AND host_steam_id IS NOT NULL AND host_steam_id != ''
+			  AND NOT EXISTS (SELECT 1 FROM ev_ids)
 		)
 		SELECT i.steam_id, COALESCE(p.display_name, '') AS display_name
 		FROM ids i
