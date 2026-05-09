@@ -116,6 +116,7 @@
       {playerNames}
       {powerNames}
       {cardNames}
+      onJumpToCombat={(ci) => { topTab = 'combats'; activeTab = ci; }}
     />
   {/if}
 

@@ -13,8 +13,9 @@
     playerNames: Record<string, string>;
     powerNames: Record<string, string>;
     cardNames: Record<string, string>;
+    onJumpToCombat?: (combatIndex: number) => void;
   }
-  let { events, combats, playerIds, playerNames, powerNames, cardNames }: Props = $props();
+  let { events, combats, playerIds, playerNames, powerNames, cardNames, onJumpToCombat }: Props = $props();
 
   // プレイヤー別タブ。最初は最初のプレイヤー
   let activePlayer: string = $state('');
@@ -130,7 +131,16 @@
               <span class="ml-2 text-slate-500">— {selected.encounter_name}</span>
             {/if}
           </h3>
-          <button type="button" class="text-xs text-slate-400 hover:text-slate-200" onclick={() => selectedFloor = null}>閉じる ✕</button>
+          <div class="flex items-center gap-2">
+            {#if selected.combat_index != null && onJumpToCombat}
+              <button
+                type="button"
+                class="text-xs px-3 py-1 rounded bg-accent text-bg-0 hover:opacity-90"
+                onclick={() => onJumpToCombat!(selected!.combat_index!)}
+              >この戦闘の統計を見る →</button>
+            {/if}
+            <button type="button" class="text-xs text-slate-400 hover:text-slate-200" onclick={() => selectedFloor = null}>閉じる ✕</button>
+          </div>
         </header>
 
         <!-- 共通サマリ (HP / Gold のみ) -->
