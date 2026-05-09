@@ -104,7 +104,7 @@
         {#each floors as f (f.floor)}
           {@const v = roomVisual(f.room_type)}
           <option value={String(f.floor)}>
-            {v.emoji} 階 {f.floor} — {v.label}{f.encounter_name ? ` (${f.encounter_name})` : ''}
+            {f.floor} - {f.encounter_name ?? v.label}
           </option>
         {/each}
       </select>

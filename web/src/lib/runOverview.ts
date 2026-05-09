@@ -230,6 +230,42 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
   //   - 階内で hp_changed が無ければ hp_out = hp_in (変化なし) として扱う
   // 全 events を occurred_at 順に並び替えて 1 度だけ走査する。
   const sortedAll = events.slice().sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
+
+  // 焚き火 Heal の HP 増加は AfterCurrentHpChanged が「次階入場後」に発火するため、
+  // 通常の event.floor は次階を指してしまう。これを補正するため、各 rest_action(heal) に
+  // 続く同プレイヤーの「次の正方向 hp_changed」を rest 階に reassign する。
+  const reassignedFloor = new Map<string, number>(); // event_uuid → 補正後 floor
+  const restHealsByPlayer = new Map<string, EventRecord[]>();
+  for (const ev of sortedAll) {
+    if (ev.event_type !== 'rest_action') continue;
+    if ((ev.payload as RestActionPayload).option !== 'heal') continue;
+    const pid = ev.player_id ?? '';
+    if (!restHealsByPlayer.has(pid)) restHealsByPlayer.set(pid, []);
+    restHealsByPlayer.get(pid)!.push(ev);
+  }
+  if (restHealsByPlayer.size > 0) {
+    const usedHpUuids = new Set<string>();
+    for (const [pid, heals] of restHealsByPlayer) {
+      for (const heal of heals) {
+        const healTime = heal.occurred_at ?? '';
+        const restFloor = heal.floor ?? null;
+        if (restFloor == null) continue;
+        // heal 直後の最初の正 delta hp_changed を rest 階に紐付ける
+        const next = sortedAll.find(e =>
+          e.event_type === 'hp_changed' &&
+          e.player_id === pid &&
+          (e.occurred_at ?? '') > healTime &&
+          ((e.payload as HpChangedPayload).delta ?? 0) > 0 &&
+          !usedHpUuids.has(e.event_uuid)
+        );
+        if (next) {
+          reassignedFloor.set(next.event_uuid, restFloor);
+          usedHpUuids.add(next.event_uuid);
+        }
+      }
+    }
+  }
+  const floorOf = (ev: EventRecord) => reassignedFloor.get(ev.event_uuid) ?? ev.floor;
   for (const f of orderedFloors) {
     const sum = byFloor.get(f)!;
     sum.hp_out = sum.hp_in;
@@ -237,8 +273,9 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     sum.gold_out = sum.gold_in;
   }
   for (const ev of sortedAll) {
-    if (ev.floor == null) continue;
-    const sum = byFloor.get(ev.floor);
+    const fl = floorOf(ev);
+    if (fl == null) continue;
+    const sum = byFloor.get(fl);
     if (!sum) continue;
     if (ev.event_type === 'hp_changed' && (filterPlayerId == null || ev.player_id === filterPlayerId)) {
       const p = ev.payload as HpChangedPayload;
