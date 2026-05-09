@@ -173,26 +173,21 @@ internal static class HookPatches
     /// </summary>
     /// <summary>
     /// Hook.ModifyDamage Postfix: damage 計算の (pre, post, modifiers) を記録する。
-    /// AfterDamageGiven の発火時にまとめて drain して payload に乗せる。
+    /// preview / UI 起源の呼び出しは target / dealer が null になる傾向があるので除外。
     ///
-    /// シグネチャ (Hook.cs より):
-    ///   public static decimal ModifyDamage(
-    ///     IRunState runState, ICombatState? combatState,
-    ///     Creature? target, Creature? dealer,
-    ///     decimal damage,                                    ← pre
-    ///     ValueProp props, CardModel? cardSource,
-    ///     ModifyDamageHookType modifyDamageHookType,
-    ///     CardPreviewMode previewMode,
-    ///     out IEnumerable&lt;AbstractModel&gt; modifiers)
-    ///   → 戻り値が post
+    /// 注: previewMode (CardPreviewMode 列挙) は Harmony で受け取れない（型情報を mod 側に
+    /// 持たないため）。引数省略すれば名前マッチで問題なくスキップされる。
     /// </summary>
     public static void ModifyDamagePostfix(
+        Creature? target,
+        Creature? dealer,
         decimal damage,
         ref System.Collections.Generic.IEnumerable<MegaCrit.Sts2.Core.Models.AbstractModel> modifiers,
         decimal __result)
     {
         try
         {
+            if (target == null || dealer == null) return;
             DamageModificationLog.Record(damage, __result, modifiers);
         }
         catch (Exception ex)
@@ -278,10 +273,12 @@ internal static class HookPatches
 
             // ModifyDamage で観測した (pre, post, modifiers) を drain。
             // 直近 ModifyDamage 群の中で post が total と一致するエントリを「実ヒット由来」として優先採用。
-            // それ以外（preview UI 由来や別経路）はノイズとして捨てる。
+            // 同一内容のエントリは重複除去（cleave 計算等で同じ呼び出しが複数回起きるため）。
             var allMods = DamageModificationLog.Drain();
+            var seen = new System.Collections.Generic.HashSet<string>();
             var modList = allMods
                 .Where(m => (int)m.Post == total)
+                .Where(m => seen.Add($"{(int)m.Pre}->{(int)m.Post}|{string.Join(',', m.ModifierIds)}"))
                 .Select(m => new
                 {
                     pre  = (int)m.Pre,
