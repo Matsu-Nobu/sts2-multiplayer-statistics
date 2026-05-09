@@ -24,7 +24,14 @@
     }
   });
 
-  let floors = $derived(buildFloorSummaries(events, activePlayer || undefined));
+  // 単一プレイヤーセッションでは player_id でフィルタしない:
+  // mod が emit する player_id (Player.NetId) は SP で "1" のような値になり、
+  // session.players の steam_id とフォーマットが異なるため、一致しない event が
+  // 全部除外されて報酬等が tooltip に出ない問題が発生する。
+  let floors = $derived(buildFloorSummaries(
+    events,
+    playerIds.length > 1 ? (activePlayer || undefined) : undefined,
+  ));
   let selectedFloor: number | null = $state(null);
   let selected = $derived(
     selectedFloor != null ? floors.find(f => f.floor === selectedFloor) ?? null : null
