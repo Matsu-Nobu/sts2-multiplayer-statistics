@@ -69,7 +69,10 @@ export async function loadCatalog(lang: string = 'ja'): Promise<CatalogLookup> {
 
   _inflight = (async () => {
     try {
-      const res = await fetch(`/catalog.${lang}.json`, { cache: 'force-cache' });
+      // 注: cache: 'force-cache' は使わない。一度 404 を食らうとブラウザがその応答を
+      //     キャッシュし、ハードリロードしても force-cache のせいで永遠に古い 404 を
+      //     返してくる嵌めになる (実体験)。HTTP の通常 cache (Cache-Control 依存) に任せる。
+      const res = await fetch(`/catalog.${lang}.json`);
       if (!res.ok) throw new Error(`catalog fetch failed: ${res.status}`);
       const catalog = (await res.json()) as ItemCatalog;
       const lookup = buildLookup(catalog);
