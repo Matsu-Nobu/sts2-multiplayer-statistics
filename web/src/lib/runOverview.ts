@@ -267,59 +267,48 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
   // 全 events を occurred_at 順に並び替えて 1 度だけ走査する。
   const sortedAll = events.slice().sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
 
-  // 焚き火 Heal の HP 増加は AfterCurrentHpChanged が「次階入場後」に発火するため、
-  // 通常の event.floor は次階を指してしまう。これを補正するため、各 rest_action(heal) に
-  // 続く同プレイヤーの「次の正方向 hp_changed」を rest 階に reassign する。
-  const reassignedFloor = new Map<string, number>(); // event_uuid → 補正後 floor
-  const restHealsByPlayer = new Map<string, EventRecord[]>();
-  for (const ev of sortedAll) {
-    if (ev.event_type !== 'rest_action') continue;
-    if ((ev.payload as RestActionPayload).option !== 'heal') continue;
-    const pid = ev.player_id ?? '';
-    if (!restHealsByPlayer.has(pid)) restHealsByPlayer.set(pid, []);
-    restHealsByPlayer.get(pid)!.push(ev);
-  }
-  if (restHealsByPlayer.size > 0) {
-    const usedHpUuids = new Set<string>();
-    for (const [pid, heals] of restHealsByPlayer) {
-      for (const heal of heals) {
-        const healTime = heal.occurred_at ?? '';
-        const restFloor = heal.floor ?? null;
-        if (restFloor == null) continue;
-        // heal 直後の最初の正 delta hp_changed を rest 階に紐付ける
-        const next = sortedAll.find(e =>
-          e.event_type === 'hp_changed' &&
-          e.player_id === pid &&
-          (e.occurred_at ?? '') > healTime &&
-          ((e.payload as HpChangedPayload).delta ?? 0) > 0 &&
-          !usedHpUuids.has(e.event_uuid)
-        );
-        if (next) {
-          reassignedFloor.set(next.event_uuid, restFloor);
-          usedHpUuids.add(next.event_uuid);
-        }
-      }
-    }
-  }
-  const floorOf = (ev: EventRecord) => reassignedFloor.get(ev.event_uuid) ?? ev.floor;
   for (const f of orderedFloors) {
     const sum = byFloor.get(f)!;
     sum.hp_out = sum.hp_in;
     sum.max_hp_out = sum.max_hp_in;
     sum.gold_out = sum.gold_in;
   }
+  // hp_changed event は creature 全般 (敵含む) に対して発火する。playerId=null の
+  // hp_changed は敵の HP 変動 (敵の cur=262 等) なので player の hp_out には使えない。
+  // playerId 付きの hp_changed のみ採用する。
   for (const ev of sortedAll) {
-    const fl = floorOf(ev);
-    if (fl == null) continue;
-    const sum = byFloor.get(fl);
+    if (ev.floor == null) continue;
+    const sum = byFloor.get(ev.floor);
     if (!sum) continue;
-    if (ev.event_type === 'hp_changed' && (filterPlayerId == null || ev.player_id === filterPlayerId)) {
+    if (ev.event_type === 'hp_changed' && ev.player_id) {
+      if (filterPlayerId != null && ev.player_id !== filterPlayerId) continue;
       const p = ev.payload as HpChangedPayload;
       sum.hp_out = p.current_hp;
       sum.max_hp_out = p.max_hp;
     } else if (ev.event_type === 'gold_changed' && (filterPlayerId == null || ev.player_id === filterPlayerId)) {
       const p = ev.payload as { current_gold: number };
       sum.gold_out = p.current_gold;
+    }
+  }
+  // 休憩所(heal): silent heal で hp_changed が発火しないため、次階 room_entered.hp との
+  // 差分から hp_out を導出する。
+  const roomByFloor = new Map<number, RoomEnteredPayload>();
+  for (const ev of sortedAll) {
+    if (ev.event_type !== 'room_entered') continue;
+    const p = ev.payload as RoomEnteredPayload;
+    if (!roomByFloor.has(p.floor)) roomByFloor.set(p.floor, p);
+  }
+  for (const ev of sortedAll) {
+    if (ev.event_type !== 'rest_action') continue;
+    if ((ev.payload as RestActionPayload).option !== 'heal') continue;
+    const restFloor = ev.floor;
+    if (restFloor == null) continue;
+    const sum = byFloor.get(restFloor);
+    if (!sum) continue;
+    const next = roomByFloor.get(restFloor + 1);
+    if (next) {
+      sum.hp_out = next.hp;
+      sum.max_hp_out = next.max_hp;
     }
   }
 
