@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Logging;
 
@@ -411,20 +412,40 @@ internal static class RunOverviewPatches
             var list = new List<object>();
             foreach (var c in choicesObj)
             {
-                bool picked = (bool?)c.GetType().GetProperty("WasPicked")?.GetValue(c) ?? false;
-                var card = c.GetType().GetProperty("Card")?.GetValue(c);
-                string cId = GetIdEntry(card);
-                // CardModel.Title は LocString ではなく string (内部で TitleLocString.GetFormattedText
-                // を呼び済み)。ToString() でそのまま日本語名が取れる。
-                // 過去 ResolveLocString を呼ぶように変えて "" が返ってしまい、未 play の skip カード
-                // が card_id 表示になるリグレッションを起こしていた。
-                string cName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
+                // CardChoiceHistoryEntry の構造 (デコンパイル確認済):
+                //   public bool wasPicked;            ← FIELD (lowercase, not property)
+                //   public SerializableCard Card;     ← NOT CardModel
+                // SerializableCard には Title / Rarity が無く、Id (ModelId) と
+                // CurrentUpgradeLevel しかない。Title / Rarity を取るには
+                // ModelDb.GetByIdOrNull<CardModel>(id) で canonical CardModel を引く必要がある。
+                bool picked = (bool?)c.GetType().GetField("wasPicked")?.GetValue(c) ?? false;
+                var serCard = c.GetType().GetProperty("Card")?.GetValue(c);
+                if (serCard == null) continue;
+
+                var modelId = serCard.GetType().GetProperty("Id")?.GetValue(serCard);
+                string cId = modelId?.GetType().GetProperty("Entry")?.GetValue(modelId)?.ToString() ?? "";
+                int upgradeLevel = (int?)serCard.GetType().GetProperty("CurrentUpgradeLevel")?.GetValue(serCard) ?? 0;
+                bool isUpgraded = upgradeLevel > 0;
+
+                // canonical CardModel を ModelDb.GetByIdOrNull<CardModel>(modelId) で引いて Title / Rarity を取る
+                string cName = "";
+                string cRarity = "";
+                if (modelId != null)
+                {
+                    var canonical = LookupCanonicalCard(modelId);
+                    if (canonical != null)
+                    {
+                        cName = canonical.GetType().GetProperty("Title")?.GetValue(canonical)?.ToString() ?? "";
+                        cRarity = GetCardRarity(canonical);
+                    }
+                }
+
                 list.Add(new
                 {
                     card_id     = cId,
                     card_name   = cName,
-                    card_rarity = GetCardRarity(card),
-                    is_upgraded = GetCardIsUpgraded(card),
+                    card_rarity = cRarity,
+                    is_upgraded = isUpgraded,
                     was_picked  = picked,
                 });
                 if (picked) pickedId = cId;
@@ -432,7 +453,34 @@ internal static class RunOverviewPatches
             choices = list;
             return pickedId;
         }
-        catch { return ""; }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] TryFindRecentCardChoices error: {ex.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>ModelDb.GetByIdOrNull&lt;CardModel&gt;(modelId) を reflection で呼んで canonical CardModel を取得。</summary>
+    private static object? LookupCanonicalCard(object modelId)
+    {
+        try
+        {
+            var modelDbType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.ModelDb")
+                           ?? AccessTools.TypeByName("ModelDb");
+            if (modelDbType == null) return null;
+            var cardModelType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardModel")
+                             ?? AccessTools.TypeByName("CardModel");
+            if (cardModelType == null) return null;
+            var generic = modelDbType.GetMethod("GetByIdOrNull", new[] { modelId.GetType() });
+            if (generic == null) return null;
+            var concrete = generic.MakeGenericMethod(cardModelType);
+            return concrete.Invoke(null, new object?[] { modelId });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] LookupCanonicalCard error: {ex.Message}");
+            return null;
+        }
     }
 
     private static object? GetPropValue(object? o, string name)
