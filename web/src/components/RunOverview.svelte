@@ -224,15 +224,13 @@
               <h4 class="text-xs uppercase text-slate-400 tracking-wide">購入履歴</h4>
               <ul class="text-sm space-y-1">
                 {#each selected.shop_purchases as p}
-                  <li class="flex items-center gap-2">
-                    <span class="text-slate-500 w-24 truncate">{itemKindLabel(p.item_kind)}</span>
-                    <span class="flex-1 text-slate-200">
-                      {#if p.card_id}{p.card_name ?? cardLabel(p.card_id)}
-                      {:else if p.relic_id}{p.relic_name ?? p.relic_id}
-                      {:else if p.potion_id}{p.potion_name ?? p.potion_id}
-                      {:else}—{/if}
-                    </span>
-                    <span class="tabular text-yellow-400">-{p.gold_spent}g</span>
+                  <li class="text-slate-200">
+                    <span class="text-slate-500">{itemKindLabel(p.item_kind)}:</span>
+                    {#if p.card_id}{p.card_name ?? cardLabel(p.card_id)}
+                    {:else if p.relic_id}{p.relic_name ?? p.relic_id}
+                    {:else if p.potion_id}{p.potion_name ?? p.potion_id}
+                    {:else}—{/if}
+                    <span class="text-yellow-400">（{p.gold_spent} ゴールド消費）</span>
                   </li>
                 {/each}
               </ul>
