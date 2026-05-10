@@ -167,6 +167,8 @@ interface FloorSummary {
 - `hp_out`: その階内で発生した最後の **playerId 付き** `hp_changed.current_hp`
   - playerId=null の hp_changed は **敵の HP 変動** なので除外（混入すると敵が死んだ瞬間の `cur=0` を player の hp_out として表示してしまう）
   - 階内に対象 hp_changed なしなら `hp_out = hp_in`
+  - **`run_end` 以降の hp_changed は除外**: ラン終了後の cleanup / 状態リセットで HP=0 が emit されることがある (特に Act 3 ラスボス勝利後、player の死亡アニメーションが走る等)。これを拾うと「クリアしたのに HP=0」という不自然な表示になる。run_end 時点の HP を「ラン終了時 HP」として固定する。
+  - 戦闘終了直後の Burning Blood (+6 等) のような戦闘終了 trigger 効果は **保持する** (combat_end の直後、run_end より前に発生する正規の HP 変化)。
 - 休憩所 (`rest_action: heal`) は silent heal で `hp_changed` を発火しないため、`room_entered[restFloor+1].hp` を直接 `hp_out` として採用
 - `gold_out`: その階内で発生した最後の `gold_changed.current_gold` (なければ `gold_in`)
 

@@ -293,6 +293,11 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     sum.max_hp_out = sum.max_hp_in;
     sum.gold_out = sum.gold_in;
   }
+  // run_end のタイムスタンプを取る。これ以降の hp_changed は post-run cleanup
+  // (ラスボス勝利後の HP=0 reset 等) として除外する。Burning Blood の +6 等
+  // combat_end 直後の正規 HP 変化は run_end より前にあるので保持される。
+  const runEndTs = sortedAll.find(e => e.event_type === 'run_end')?.occurred_at ?? '';
+
   // hp_changed event は creature 全般 (敵含む) に対して発火する。playerId=null の
   // hp_changed は敵の HP 変動 (敵の cur=262 等) なので player の hp_out には使えない。
   // playerId 付きの hp_changed のみ採用する。
@@ -302,6 +307,8 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     if (!sum) continue;
     if (ev.event_type === 'hp_changed' && ev.player_id) {
       if (filterPlayerId != null && ev.player_id !== filterPlayerId) continue;
+      // ラン終了後の post-run cleanup hp_changed は除外
+      if (runEndTs && (ev.occurred_at ?? '') > runEndTs) continue;
       const p = ev.payload as HpChangedPayload;
       sum.hp_out = p.current_hp;
       sum.max_hp_out = p.max_hp;
