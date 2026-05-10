@@ -427,7 +427,11 @@ internal static class RunOverviewPatches
                 int upgradeLevel = (int?)serCard.GetType().GetProperty("CurrentUpgradeLevel")?.GetValue(serCard) ?? 0;
                 bool isUpgraded = upgradeLevel > 0;
 
-                // canonical CardModel を ModelDb.GetByIdOrNull<CardModel>(modelId) で引いて Title / Rarity を取る
+                // canonical CardModel を ModelDb.GetByIdOrNull<CardModel>(modelId) で引いて Title / Rarity を取る。
+                // canonical は base (未 upgrade) の雛形なので Title.get の "+" 付与ロジックは効かない。
+                // SerializableCard.CurrentUpgradeLevel と canonical.MaxUpgradeLevel から手動で "+" を付与する:
+                //   MaxUpgradeLevel == 1 → "+"
+                //   MaxUpgradeLevel >  1 → "+N"
                 string cName = "";
                 string cRarity = "";
                 if (modelId != null)
@@ -437,6 +441,11 @@ internal static class RunOverviewPatches
                     {
                         cName = canonical.GetType().GetProperty("Title")?.GetValue(canonical)?.ToString() ?? "";
                         cRarity = GetCardRarity(canonical);
+                        if (isUpgraded && !string.IsNullOrEmpty(cName))
+                        {
+                            int maxLevel = (int?)canonical.GetType().GetProperty("MaxUpgradeLevel")?.GetValue(canonical) ?? 1;
+                            cName = maxLevel > 1 ? $"{cName}+{upgradeLevel}" : $"{cName}+";
+                        }
                     }
                 }
 
