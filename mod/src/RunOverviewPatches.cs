@@ -121,42 +121,9 @@ internal static class RunOverviewPatches
             {
                 option = "smith",
             });
-
-            // 鍛治した card は CurrentMapPointHistoryEntry.GetEntry(playerId).UpgradedCards に
-            // 既に追加されている (Hook 発火直前の CardCmd.Upgrade 内で push 済)。
-            // これを正規の出処として読んで card_upgraded を emit する。
-            // Hook.OnUpgrade は +1 カード報酬の生成時にも発火するため信頼できない。
-            ulong netId = GetUlong(player, "NetId");
-            foreach (var modelId in EnumerateUpgradedCardIds(runState, netId))
-            {
-                EventBuffer.EmitGlobalEvent("card_upgraded", string.IsNullOrEmpty(pid) ? null : pid, new
-                {
-                    card_id   = modelId,
-                    card_name = "",
-                    source    = "smith",
-                });
-            }
+            // smith したカード本体は CardCmd.Upgrade Postfix が emit する (canonical path)
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterRestSiteSmith error: {ex.Message}"); }
-    }
-
-    /// <summary>CurrentMapPointHistoryEntry.GetEntry(ulong).UpgradedCards (List&lt;ModelId&gt;) を文字列で列挙。</summary>
-    private static IEnumerable<string> EnumerateUpgradedCardIds(object? runState, ulong playerId)
-    {
-        var entry = GetPropValue(runState, "CurrentMapPointHistoryEntry");
-        if (entry == null) yield break;
-        var getEntry = entry.GetType().GetMethod("GetEntry", new[] { typeof(ulong) });
-        if (getEntry == null) yield break;
-        var perPlayer = getEntry.Invoke(entry, new object?[] { playerId });
-        if (perPlayer == null) yield break;
-        var list = perPlayer.GetType().GetProperty("UpgradedCards")?.GetValue(perPlayer)
-                    as System.Collections.IEnumerable;
-        if (list == null) yield break;
-        foreach (var modelId in list)
-        {
-            string entryStr = modelId?.GetType().GetProperty("Entry")?.GetValue(modelId)?.ToString() ?? "";
-            if (!string.IsNullOrEmpty(entryStr)) yield return entryStr;
-        }
     }
 
     private static ulong GetUlong(object? o, string prop)
@@ -168,6 +135,62 @@ internal static class RunOverviewPatches
             return v is ulong u ? u : 0UL;
         }
         catch { return 0UL; }
+    }
+
+    // === CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle) Postfix ===
+    // STS2 のカードアップグレードは全部この経路 (smith / Apotheosis / Falling event /
+    // EnchantedKnowledge 等)。内部で deck pile のカードだけ UpgradedCards.Add される
+    // 仕組みなので、ここで pile.Type==Deck のカードに限って emit する。
+    // +1 報酬カードの生成は pile が Hand / その他になるため自動で除外される。
+    public static void CardCmdUpgradePostfix(System.Collections.IEnumerable cards)
+    {
+        try
+        {
+            if (!SessionManager.IsReady) return;
+            foreach (var card in cards)
+            {
+                if (card == null) continue;
+                var pile = card.GetType().GetProperty("Pile")?.GetValue(card);
+                var pileTypeObj = pile?.GetType().GetProperty("Type")?.GetValue(pile);
+                if (pile == null || pileTypeObj?.ToString() != "Deck") continue;
+                string cardId = GetIdEntry(card);
+                string cardName = ResolveLocString(GetPropValue(card, "Title"));
+                if (string.IsNullOrEmpty(cardName)) cardName = GetPropValue(card, "Title")?.ToString() ?? "";
+                string? ownerId = TryGetCardOwnerId(card);
+                EventBuffer.EmitGlobalEvent("card_upgraded", ownerId, new
+                {
+                    card_id   = cardId,
+                    card_name = cardName,
+                });
+            }
+        }
+        catch (Exception ex) { Log.Error($"[StsStats] CardCmd.Upgrade Postfix error: {ex.Message}"); }
+    }
+
+    // CardCmd.Add は async Task で Postfix のタイミングが state-machine 開始時に
+    // なってしまうため、deck 追加完了前に走る。代わりに CardModel.FloorAddedToDeck
+    // setter を patch する: CardCmd.Add 内で deck 追加成功時に同期的に setter が
+    // 呼ばれる (`result.cardAdded.FloorAddedToDeck = runState.TotalFloor;`)。
+    // この瞬間 = カードが master deck に確実に入った瞬間 + sync。
+    public static void FloorAddedToDeckSetterPostfix(object __instance, int value)
+    {
+        try
+        {
+            if (!SessionManager.IsReady) return;
+            if (value < 0) return;            // 初期化時の -1 は無視
+            string cardId = GetIdEntry(__instance);
+            if (string.IsNullOrEmpty(cardId)) return;
+            string cardName = ResolveLocString(GetPropValue(__instance, "Title"));
+            if (string.IsNullOrEmpty(cardName)) cardName = GetPropValue(__instance, "Title")?.ToString() ?? "";
+            string? ownerId = TryGetCardOwnerId(__instance);
+            EventBuffer.EmitGlobalEvent("card_obtained", ownerId, new
+            {
+                card_id   = cardId,
+                card_name = cardName,
+                floor     = value,
+            });
+        }
+        catch (Exception ex) { Log.Error($"[StsStats] FloorAddedToDeck setter Postfix error: {ex.Message}"); }
     }
 
     // === Merchant***Entry.OnTryPurchase Postfix ===

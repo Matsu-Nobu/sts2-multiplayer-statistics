@@ -176,9 +176,7 @@
           {@render section('カード入手', selected.cards_obtained.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
           {@render section('レリック入手', selected.relics_obtained.map(r => ({ label: r.relic_name ?? r.relic_id })))}
           {@render section('ポーション入手', selected.potions_obtained.map(p => ({ label: p.potion_name ?? p.potion_id })))}
-          {#if selected.rest_options.includes('smith') && selected.cards_upgraded.length > 0}
-            {@render section('鍛治アップグレード', selected.cards_upgraded.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
-          {/if}
+          {@render section('カードアップグレード', selected.cards_upgraded.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
           {@render section('エンチャント付与', selected.cards_enchanted.map(e => ({ label: e.card_name ?? cardLabel(e.card_id), sub: `← ${e.enchantment_id}` })))}
           {@render section('カード除去', selected.cards_removed.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
           {@render section('ショップ購入', selected.shop_purchases.map(p => ({

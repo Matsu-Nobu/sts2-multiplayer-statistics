@@ -151,8 +151,8 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       }
       case 'reward_taken': {
         const p = ev.payload as RewardTakenPayload;
-        if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
-        // CardReward の場合、提示された全選択肢（picked + skipped）も記録
+        // card は CardModel.FloorAddedToDeck setter (card_obtained) が単一の正規経路。
+        // ここでは「提示された card 選択肢」だけ記録 (CardReward の付帯情報)。
         if (p.card_choices && p.card_choices.length > 0) {
           sum.card_choices.push({
             picked_card_id: p.card_id ?? '',
@@ -161,6 +161,12 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
         }
         // relic は RelicCmd.Obtain (relic_obtained) が単一の正規経路。
         // potion は AfterPotionProcured (potion_obtained) が単一の正規経路。
+        break;
+      }
+      case 'card_obtained': {
+        const p = ev.payload as { card_id: string; card_name?: string };
+        if (p.card_id) sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
+        // shop / event 由来 card との二重表示は最終 pass で dedup する (event 順序に依存しないため)
         break;
       }
       case 'item_purchased': {
@@ -316,6 +322,13 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     }
   }
 
+  // 最終 pass: shop で買ったカードと cards_obtained の重複を除去 (event 順序に依存しない)。
+  // 同じ card_id が両方に乗ると「ショップ購入」と「カード入手」両方に同じカードが出てしまう。
+  for (const sum of byFloor.values()) {
+    if (sum.shop_purchases.length === 0 || sum.cards_obtained.length === 0) continue;
+    const shopCardIds = new Set(sum.shop_purchases.map(s => s.card_id).filter(Boolean));
+    sum.cards_obtained = sum.cards_obtained.filter(c => !shopCardIds.has(c.card_id));
+  }
   return orderedFloors.map(f => byFloor.get(f)!);
 }
 

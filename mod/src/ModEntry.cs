@@ -67,12 +67,21 @@ public static class ModEntry
             PatchHookGeneric(nameof(Hook.AfterPotionDiscarded),   nameof(RunOverviewPatches.AfterPotionDiscardedPostfix));
             PatchHookGeneric(nameof(Hook.BeforeCardRemoved),      nameof(RunOverviewPatches.BeforeCardRemovedPostfix));
 
-            // 注: CardModel.OnUpgrade の patch は廃止 — +1 カード報酬の生成時にも発火するため
-            // 信頼できなかった。鍛治アップグレードは AfterRestSiteSmithPostfix が
-            // CurrentMapPointHistoryEntry.UpgradedCards から正規取得する。
-
+            // === canonical な単一経路で run-overview のデータを取る patches ===
+            // CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle): 全アップグレード
+            //   (smith / event / カード効果) の単一経路。pile.Type==Deck のみ実 upgrade。
+            //   +1 報酬カードの生成は pile が Deck 以外なので自動除外される。
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.CardCmd", "Upgrade",
+                nameof(RunOverviewPatches.CardCmdUpgradePostfix),
+                new Type[] {
+                    typeof(System.Collections.Generic.IEnumerable<>).MakeGenericType(AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardModel")!),
+                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardPreviewStyle")!,
+                });
+            // CardModel.FloorAddedToDeck setter: deck 追加完了時 (= マスターデッキに入った瞬間) に sync で呼ばれる。
+            // CardCmd.Add は async で Postfix の timing が悪いため、setter 経由で確実に拾う。
+            PatchPropertySetter(typeof(CardModel), "FloorAddedToDeck", nameof(RunOverviewPatches.FloorAddedToDeckSetterPostfix));
             // RelicCmd.Obtain は STS2 の全レリック取得 (treasure / reward / event 等) を
-            // 通る単一経路。ここを patch して relic_obtained を emit する。
+            // 通る単一経路。
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.RelicCmd", "Obtain", nameof(RunOverviewPatches.RelicCmdObtainPostfix));
 
             // Merchant***Entry.OnTryPurchase に直接 patch（Hook.AfterItemPurchased では遅すぎるため）
@@ -189,6 +198,28 @@ public static class ModEntry
         catch (Exception ex)
         {
             Log.Error($"[StsStats] PatchInstanceMethodByName({fullTypeName}.{methodName}) failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>property setter を patch する（postfix で value/__instance を受け取れる）。</summary>
+    private static void PatchPropertySetter(Type ownerType, string propertyName, string postfixName)
+    {
+        try
+        {
+            var setter = AccessTools.PropertySetter(ownerType, propertyName);
+            if (setter == null)
+            {
+                Log.Error($"[StsStats] Property setter not found: {ownerType.Name}.{propertyName}");
+                return;
+            }
+            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
+                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
+            _harmony!.Patch(setter, postfix: new HarmonyMethod(postfix));
+            Log.Info($"[StsStats] Patched setter: {ownerType.Name}.{propertyName}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] PatchPropertySetter({ownerType.Name}.{propertyName}) failed: {ex.Message}");
         }
     }
 
