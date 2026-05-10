@@ -414,9 +414,11 @@ internal static class RunOverviewPatches
                 bool picked = (bool?)c.GetType().GetProperty("WasPicked")?.GetValue(c) ?? false;
                 var card = c.GetType().GetProperty("Card")?.GetValue(c);
                 string cId = GetIdEntry(card);
-                // Title は LocString。ToString() だと localize されないものがあるので
-                // ResolveLocString 経由で日本語を取る。
-                string cName = ResolveLocString(card?.GetType().GetProperty("Title")?.GetValue(card));
+                // CardModel.Title は LocString ではなく string (内部で TitleLocString.GetFormattedText
+                // を呼び済み)。ToString() でそのまま日本語名が取れる。
+                // 過去 ResolveLocString を呼ぶように変えて "" が返ってしまい、未 play の skip カード
+                // が card_id 表示になるリグレッションを起こしていた。
+                string cName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
                 list.Add(new
                 {
                     card_id     = cId,
