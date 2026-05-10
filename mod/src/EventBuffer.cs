@@ -69,6 +69,9 @@ internal static class EventBuffer
     /// <summary>現在の floor 番号 (0 = 未開始)。setter patch から「今追加されたか」判定に使う。</summary>
     public static int CurrentFloor => _floor;
 
+    /// <summary>resume 時 SessionManager が呼ぶ: 永続化されてた combat_index を書き戻す。</summary>
+    public static void RestoreCombatIndex(int idx) => _combatIndex = idx;
+
     public static int CurrentCombatIndex => _combatIndex;
     public static int CurrentTurnNumber  => _turnNumber;
 

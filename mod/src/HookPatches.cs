@@ -65,6 +65,10 @@ internal static class HookPatches
             _currentCombatWasVictory = false;
             _currentCombatEndEmitted = false;
 
+            // resume 跨ぎでも combat_index が単調増加するよう、戦闘開始ごとに永続化
+            if (ModEntry.SessionStore != null)
+                SessionManager.PersistCombatIndex(EventBuffer.CurrentCombatIndex, ModEntry.SessionStore);
+
             EmitCombatStart(runState, combatState);
 
             Log.Info("[StsStats] Combat started");

@@ -152,6 +152,16 @@ internal static class SessionManager
             store.Save(existing with { LastSeenFloor = currentTotalFloor });
     }
 
+    /// <summary>戦闘開始ごとに combat_index を永続化。resume 後も単調増加させるため。</summary>
+    public static void PersistCombatIndex(int combatIndex, RunSessionStore store)
+    {
+        if (CurrentLookupKey == null) return;
+        var existing = store.Load(CurrentLookupKey);
+        if (existing == null) return;
+        if (combatIndex <= existing.LastCombatIndex) return;
+        store.Save(existing with { LastCombatIndex = combatIndex });
+    }
+
     private static void ApplyStored(StoredSession s)
     {
         SessionId             = s.SessionId;
@@ -160,6 +170,11 @@ internal static class SessionManager
         CurrentRunKey         = s.RunKey;
         CurrentLastSeenFloor  = s.LastSeenFloor;
         RunStartAlreadyEmitted = s.RunStartEmitted;
+        // resume: 前回までの combat_index を EventBuffer に書き戻す。
+        // これをしないと _combatIndex が 0 にリセットされ、resume 後の戦闘 1 が
+        // 過去戦闘 1 と同じ combat_index になり、web 集計で events が混ざって
+        // 過去の戦闘統計が「上書き」されたように見える。
+        EventBuffer.RestoreCombatIndex(s.LastCombatIndex);
     }
 
     private static void ResetState()
