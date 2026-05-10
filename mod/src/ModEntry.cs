@@ -85,9 +85,12 @@ public static class ModEntry
             // 取れない問題への対応。
             PatchPropertySetterByName("MegaCrit.Sts2.Core.Entities.Players.Player", "Gold",
                 nameof(RunOverviewPatches.PlayerGoldSetterPostfix));
-            // RelicCmd.Obtain は STS2 の全レリック取得 (treasure / reward / event 等) を
-            // 通る単一経路。
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.RelicCmd", "Obtain", nameof(RunOverviewPatches.RelicCmdObtainPostfix));
+            // RelicModel.FloorAddedToDeck setter: RelicCmd.Obtain 内で必ず set されるため、
+            // STS2 の全レリック取得 (treasure / reward / event / 戦闘ドロップ) を sync で捕捉。
+            // 旧 RelicCmd.Obtain patch は Obtain<T>(Player) との overload 衝突 (Ambiguous match)
+            // で起動時 fail してた → setter patch に置換。
+            PatchPropertySetterByName("MegaCrit.Sts2.Core.Models.RelicModel", "FloorAddedToDeck",
+                nameof(RunOverviewPatches.RelicFloorAddedToDeckSetterPostfix));
 
             // Merchant***Entry.OnTryPurchase に直接 patch（Hook.AfterItemPurchased では遅すぎるため）
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardEntry",         "OnTryPurchase", nameof(RunOverviewPatches.MerchantCardEntryOnTryPurchasePostfix));

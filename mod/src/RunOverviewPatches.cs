@@ -557,25 +557,41 @@ internal static class RunOverviewPatches
     // 現在は AfterRestSiteSmithPostfix が CurrentMapPointHistoryEntry.UpgradedCards を
     // 読み出して鍛治アップグレードを emit する一本化された経路を担当している。
 
-    // === RelicCmd.Obtain(RelicModel, Player, int) Postfix ===
-    // STS2 のレリック取得は全部この 1 メソッド経由 (treasure, reward, event,
-    // 戦闘ドロップ等)。Hook.AfterRewardTaken の RelicReward 分岐や宝箱の
-    // 別経路に頼らず、ここを単一の正規経路として relic_obtained を emit する。
-    public static void RelicCmdObtainPostfix(object relic, object player)
+    // === RelicModel.FloorAddedToDeck setter Postfix ===
+    // STS2 のレリック取得は全部 RelicCmd.Obtain → relic.FloorAddedToDeck = runState.TotalFloor 経由
+    // (treasure / reward / event / 戦闘ドロップ全部)。
+    //
+    // 旧実装 (RelicCmd.Obtain Postfix) は overload (Obtain<T>(Player) と
+    // Obtain(RelicModel, Player, int)) で Ambiguous match に落ちて patch 適用失敗
+    // → relic_obtained event 0 件 → 「宝箱レリック表示されない」が発生してた。
+    //
+    // CardModel.FloorAddedToDeck と同じパターンで setter を直接 patch する。
+    // RelicModel.FloorAddedToDeck の型は int (CardModel の int? とは違う、デコンパイル確認済)。
+    public static void RelicFloorAddedToDeckSetterPostfix(object __instance, int value)
     {
         try
         {
             if (!SessionManager.IsReady) return;
-            string relicId = GetIdEntry(relic);
-            string relicName = ResolveLocString(GetPropValue(relic, "Title"));
-            string pid = GetStringProp(player, "NetId");
-            EventBuffer.EmitGlobalEvent("relic_obtained", string.IsNullOrEmpty(pid) ? null : pid, new
+            if (value < 0) return;            // 初期化時の 0 / -1 は無視 (実取得は floor>=1)
+            string relicId = GetIdEntry(__instance);
+            if (string.IsNullOrEmpty(relicId)) return;
+            string relicName = ResolveLocString(GetPropValue(__instance, "Title"));
+            string? ownerId = null;
+            try
+            {
+                var owner = __instance.GetType().GetProperty("Owner")?.GetValue(__instance);
+                var netId = owner?.GetType().GetProperty("NetId")?.GetValue(owner);
+                if (netId != null) ownerId = netId.ToString();
+            }
+            catch { }
+            EventBuffer.EmitGlobalEvent("relic_obtained", ownerId, new
             {
                 relic_id   = relicId,
                 relic_name = relicName,
+                floor      = value,
             });
         }
-        catch (Exception ex) { Log.Error($"[StsStats] RelicCmd.Obtain Postfix error: {ex.Message}"); }
+        catch (Exception ex) { Log.Error($"[StsStats] RelicModel.FloorAddedToDeck setter Postfix error: {ex.Message}"); }
     }
 
     private static string? TryGetCardOwnerId(object? card)
