@@ -1,6 +1,6 @@
 # API契約
 
-mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装されている API のみを記述する**。将来追加予定のエンドポイント・event_type は `ROADMAP.md` 側に記載し、このドキュメントには含めない。
+mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装されている API のみを記述する**。将来追加予定のエンドポイント・event_type は `roadmap.md` 側に記載し、このドキュメントには含めない。
 
 実装変更時はまずこのドキュメントを更新し、それから mod / backend / WebUI のコードを揃える。
 
@@ -301,6 +301,8 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 
 ## 関連ドキュメント
 
-- `STATS_DESIGN.md` — 集めている統計項目の設計（表示要件起点）
-- `PHASE35_PLAN.md` — このAPIを実装する具体的な実装計画
-- `ROADMAP.md` — events カタログの将来追加予定と派生統計のアイデア
+- `spec/combat-stats.md` — 戦闘統計画面の表示仕様
+- `spec/run-overview.md` — ラン全体統計画面の表示仕様
+- `spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
+- `roadmap.md` — events カタログの将来追加予定と派生統計のアイデア
+- `archive/phase35-plan.md` — 旧 phase 計画 (歴史的経緯)

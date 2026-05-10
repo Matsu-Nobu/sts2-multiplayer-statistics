@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace StsStats;
 
 /// <summary>
-/// docs/API.md のエンドポイントを叩く HTTP クライアント。
+/// docs/api.md のエンドポイントを叩く HTTP クライアント。
 /// 失敗時は false / null を返し、例外は内部でログして握る。
 /// </summary>
 internal interface IApiClient

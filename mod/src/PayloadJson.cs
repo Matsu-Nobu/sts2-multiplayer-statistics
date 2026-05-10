@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace StsStats;
 
 /// <summary>
-/// docs/API.md と一致する JSON ペイロードを構築・直列化する。
+/// docs/api.md と一致する JSON ペイロードを構築・直列化する。
 /// StatsLogger（JSONL 出力）と ApiClient（HTTP 送信）の両方から使う。
 /// </summary>
 internal static class PayloadJson

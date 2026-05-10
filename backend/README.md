@@ -2,7 +2,7 @@
 
 Go 製の API サーバ。mod から POST されてくる戦闘ターン・イベントを SQLite に保存し、WebUI / 共有URL から閲覧できるよう配信する。
 
-仕様は repo 直下の `docs/API.md`、設計判断は `docs/PHASE2_PLAN.md` を参照。
+仕様は repo 直下の `docs/api.md`、設計判断は `docs/archive/phase2-plan.md` を参照。
 
 ## 要件
 

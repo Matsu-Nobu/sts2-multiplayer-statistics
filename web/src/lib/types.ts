@@ -1,4 +1,4 @@
-// docs/API.md と一致させること。Phase 3.5 形式（events 統合）。
+// docs/api.md と一致させること。Phase 3.5 形式（events 統合）。
 
 export interface SessionMeta {
   id: string;
@@ -80,7 +80,7 @@ export interface TurnPayload {
 }
 
 /**
- * docs/API.md POST /sessions/{id}/events の各要素 + サーバ付与の received_at。
+ * docs/api.md POST /sessions/{id}/events の各要素 + サーバ付与の received_at。
  * 戦闘内 event は combat_index / turn_number / sequence を持ち、
  * 戦闘外 event はそれらが null。
  */

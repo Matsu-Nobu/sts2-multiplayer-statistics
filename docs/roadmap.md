@@ -1,6 +1,6 @@
 # ロードマップ
 
-将来構想と段階的拡張計画。Phase 2 は最小（戦闘データの統計表示のみ）に絞り、ROADMAP の項目はそれ以降で順次着手する。
+将来構想と段階的拡張計画。Phase 2 は最小（戦闘データの統計表示のみ）に絞り、roadmap の項目はそれ以降で順次着手する。
 
 ---
 
@@ -35,7 +35,7 @@
 
 ### Phase 3 — WebUI 本実装
 
-`STATS_DESIGN.md` の表示要件を満たす:
+`spec/combat-stats.md` の表示要件を満たす:
 - ターン推移折れ線（与ダメ）
 - 戦闘単位棒グラフ（与ダメ・被ダメ・シールド）
 - カード別ダメージテーブル
@@ -88,7 +88,7 @@
 - mod 側: `StatsCollector` をイベントバッファに置き換え、ターン終了時に `POST /sessions/{id}/turns/{n}/events` 等で bulk 送信
 - backend: events テーブルを拡張、または turn-events 用のテーブルを別途作る
 - WebUI: 戦闘単位サマリは集計クエリ経由で取得、貢献度（rDPS）が初めて正確に算出可能になる
-- API.md / PHASE2_PLAN.md / ROADMAP の整合更新
+- api.md / 関連 spec / roadmap の整合更新
 
 **rDPS の算定**: 各 `damage_dealt` イベントに発火時の active power と applier を埋め込めば、Skada 系 mod や FFXIV FFLogs と同じ二段階（additive + multiplicative）の貢献度計算ができる。Phase 2 段階で諸々妥協していた「貢献度スコア」はここで初めて実装する。
 
@@ -131,7 +131,7 @@ WebUI 拡張:
 - mod デフォルト URL を本番に切替
 - README にセルフホスト手順
 - rate limit / データ保持期限実装
-- 詳細は `OPERATIONS.md` 参照
+- 詳細は `operations.md` 参照
 
 ---
 
@@ -177,7 +177,10 @@ WebUI 拡張:
 
 ## 関連ドキュメント
 
-- `STATS_DESIGN.md` — 表示要件と統計指標の定義
-- `API.md` — 現行 API 仕様
-- `PHASE2_PLAN.md` — Phase 2 実装計画
-- `OPERATIONS.md` — 運用・配布方針
+- `spec/combat-stats.md` — 戦闘統計画面の表示仕様
+- `spec/run-overview.md` — ラン全体統計画面の表示仕様
+- `spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
+- `api.md` — 現行 API 仕様
+- `architecture.md` — システムアーキテクチャ
+- `operations.md` — 運用・配布方針
+- `archive/phase2-plan.md` — 旧 Phase 2 実装計画 (歴史的経緯)
