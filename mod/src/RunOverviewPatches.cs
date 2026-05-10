@@ -191,16 +191,19 @@ internal static class RunOverviewPatches
     // setter を patch する: CardCmd.Add 内で deck 追加成功時に同期的に setter が
     // 呼ばれる (`result.cardAdded.FloorAddedToDeck = runState.TotalFloor;`)。
     // この瞬間 = カードが master deck に確実に入った瞬間 + sync。
-    public static void FloorAddedToDeckSetterPostfix(object __instance, int value)
+    //
+    // 注: setter の引数型は CardModel.FloorAddedToDeck が `int?` (nullable) なので
+    //   `int? value` で受ける必要がある。`int` だと Harmony がバインド失敗して
+    //   patch が適用されない (silent failure で events が一切出ない)。
+    public static void FloorAddedToDeckSetterPostfix(object __instance, int? value)
     {
         try
         {
             if (!SessionManager.IsReady) return;
-            if (value < 0) return;            // 初期化時の -1 は無視
+            if (!value.HasValue || value.Value < 0) return;
             string cardId = GetIdEntry(__instance);
             if (string.IsNullOrEmpty(cardId)) return;
-            string cardName = ResolveLocString(GetPropValue(__instance, "Title"));
-            if (string.IsNullOrEmpty(cardName)) cardName = GetPropValue(__instance, "Title")?.ToString() ?? "";
+            string cardName = GetPropValue(__instance, "Title")?.ToString() ?? "";
             string? ownerId = TryGetCardOwnerId(__instance);
             EventBuffer.EmitGlobalEvent("card_obtained", ownerId, new
             {
@@ -208,7 +211,7 @@ internal static class RunOverviewPatches
                 card_name   = cardName,
                 card_rarity = GetCardRarity(__instance),
                 is_upgraded = GetCardIsUpgraded(__instance),
-                floor       = value,
+                floor       = value.Value,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] FloorAddedToDeck setter Postfix error: {ex.Message}"); }
