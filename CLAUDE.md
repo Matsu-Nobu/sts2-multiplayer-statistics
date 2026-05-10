@@ -126,6 +126,16 @@ build しただけ / install パス間違いの状態で再起動を依頼しな
 build エラーを潰した = 動作確認、ではない。`pnpm dev` か `make` で開発サーバ起動して、
 実際にブラウザで開いて、開発者ツールでエラーが出てないか / spec 通りの DOM が出てるか見る。
 
+### 3.5 `fetch(..., { cache: 'force-cache' })` を絶対に使わない
+
+force-cache は cache エントリを問答無用で返すモード。一度 4xx / 5xx を喰らうとブラウザが
+その失敗応答を `cache key='GET <URL>'` で保存し、後でサーバ側を直してハードリロードしても
+**force-cache が古い失敗応答を永遠に返し続ける**嵌めになる (実体験で 1 時間溶かした)。
+
+通常 cache (HTTP の Cache-Control / ETag) に任せる。サーバ側で適切な Cache-Control を
+返せばよい。catalog.json のような大きい不変ファイルなら backend で `max-age=31536000, immutable`
+を付ければ通常 cache でも十分速い。
+
 ---
 
 ## 4. backend 側のルール
