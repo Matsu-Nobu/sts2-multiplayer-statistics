@@ -78,6 +78,9 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/s/{id}", indexHTML())
 	r.Mount("/assets/", staticAssets())
 	r.Get("/favicon.ico", staticAssets().ServeHTTP)
+	// /catalog.{lang}.json — STS2 のカード/レリック/ポーション/エンチャント definitions。
+	// web/public/ に置いた静的 JSON が embed FS 経由で配信される。
+	r.Get("/catalog.{lang}.json", staticAssets().ServeHTTP)
 
 	return r
 }
