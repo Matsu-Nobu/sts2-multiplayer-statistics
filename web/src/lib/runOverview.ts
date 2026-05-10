@@ -36,11 +36,11 @@ export interface FloorSummary {
   gold_out: number;
   damage_taken: number;
   damage_dealt: number;
-  cards_obtained: { card_id: string; card_name?: string }[];
+  cards_obtained: { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean }[];
   relics_obtained: { relic_id: string; relic_name?: string }[];
   potions_obtained: { potion_id: string; potion_name?: string }[];
   cards_removed:   { card_id: string; card_name?: string }[];
-  cards_upgraded:  { card_id: string; card_name?: string }[];
+  cards_upgraded:  { card_id: string; card_name?: string; card_rarity?: string }[];
   cards_enchanted: { card_id: string; card_name?: string; enchantment_id: string; amount: number }[];
   rest_options:    string[];          // "heal" / "smith" 等
   shop_purchases:  ItemPurchasedPayload[];
@@ -106,13 +106,23 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     }));
   }
   // room_entered が無い floor (= STS2 の Neow/初期フロアは Hook.AfterRoomEntered が
-  // 発火しない) を、他 event から floor 番号だけ拾って補完。room_type は空のままだが
-  // reward_taken / event_choice 等が紐付いて表示されるようになる。
+  // 発火しない) を、他 event から floor 番号だけ拾って補完。
   for (const ev of events) {
     if (ev.floor == null) continue;
     if (byFloor.has(ev.floor)) continue;
     orderedFloors.push(ev.floor);
     byFloor.set(ev.floor, makeEmpty(ev.floor));
+  }
+  // 最小 floor から 1 まで埋める (Neow = floor 1 は何の event も持たないため、
+  // 補完しないとグラフが floor 2 以降から始まってしまう)。
+  if (orderedFloors.length > 0) {
+    const minFloor = Math.min(...orderedFloors);
+    for (let f = 1; f < minFloor; f++) {
+      if (!byFloor.has(f)) {
+        orderedFloors.push(f);
+        byFloor.set(f, makeEmpty(f));
+      }
+    }
   }
   orderedFloors.sort((a, b) => a - b);
 
@@ -164,8 +174,8 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
         break;
       }
       case 'card_obtained': {
-        const p = ev.payload as { card_id: string; card_name?: string };
-        if (p.card_id) sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
+        const p = ev.payload as { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean };
+        if (p.card_id) sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name, card_rarity: p.card_rarity, is_upgraded: p.is_upgraded });
         // shop / event 由来 card との二重表示は最終 pass で dedup する (event 順序に依存しないため)
         break;
       }
@@ -187,8 +197,8 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
         break;
       }
       case 'card_upgraded': {
-        const p = ev.payload as CardUpgradedPayload;
-        sum.cards_upgraded.push({ card_id: p.card_id, card_name: p.card_name });
+        const p = ev.payload as CardUpgradedPayload & { card_rarity?: string };
+        sum.cards_upgraded.push({ card_id: p.card_id, card_name: p.card_name, card_rarity: p.card_rarity });
         break;
       }
       case 'card_removed': {

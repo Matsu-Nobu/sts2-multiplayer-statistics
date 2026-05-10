@@ -157,51 +157,141 @@
         </div>
 
         <!-- 階の詳細: 全 section 統一 chip 形式 -->
-        {#snippet section(label: string, items: { label: string; sub?: string }[])}
-          {#if items.length > 0}
+        <!--
+          card chip: rarity で背景色 + 枠 / is_upgraded で文字色 (黄緑)
+            Common  → グレー
+            Uncommon → 水色
+            Rare     → 黄色
+            Curse / Status / Token / Basic / 等 → デフォルト (グレー)
+          generic chip: rarity 概念なし
+        -->
+        {#snippet genericChip(label: string, sub: string = '')}
+          <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200">
+            {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
+          </span>
+        {/snippet}
+
+        {#snippet row(label: string)}
+          <div class="text-xs uppercase text-slate-400 tracking-wide pt-1">{label}</div>
+        {/snippet}
+
+        <div class="space-y-2">
+          {#if selected.cards_obtained.length > 0}
             <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
-              <div class="text-xs uppercase text-slate-400 tracking-wide pt-1">{label}</div>
+              {@render row('カード入手')}
               <div class="flex flex-wrap gap-1.5">
-                {#each items as it}
-                  <span class="px-2 py-0.5 rounded bg-bg-2 border border-bg-3 text-sm text-slate-200">
-                    {it.label}{#if it.sub}<span class="text-slate-400 ml-1">{it.sub}</span>{/if}
-                  </span>
+                {#each selected.cards_obtained as c}
+                  {@const bg = c.card_rarity === 'Common' ? 'bg-slate-700/60 border-slate-500' : c.card_rarity === 'Uncommon' ? 'bg-sky-900/60 border-sky-500' : c.card_rarity === 'Rare' ? 'bg-yellow-900/60 border-yellow-500' : 'bg-bg-2 border-bg-3'}
+                  {@const fg = c.is_upgraded ? 'text-lime-300' : 'text-slate-200'}
+                  <span class="px-2 py-0.5 rounded text-sm border {bg} {fg}">{c.card_name ?? cardLabel(c.card_id)}</span>
                 {/each}
               </div>
             </div>
           {/if}
-        {/snippet}
 
-        <div class="space-y-2">
-          {@render section('カード入手', selected.cards_obtained.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
-          {@render section('レリック入手', selected.relics_obtained.map(r => ({ label: r.relic_name ?? r.relic_id })))}
-          {@render section('ポーション入手', selected.potions_obtained.map(p => ({ label: p.potion_name ?? p.potion_id })))}
-          {@render section('カードアップグレード', selected.cards_upgraded.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
-          {@render section('エンチャント付与', selected.cards_enchanted.map(e => ({ label: e.card_name ?? cardLabel(e.card_id), sub: `← ${e.enchantment_id}` })))}
-          {@render section('カード除去', selected.cards_removed.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
-          {@render section('ショップ購入', selected.shop_purchases.map(p => ({
-            label:
-              p.card_id   ? (p.card_name ?? cardLabel(p.card_id)) :
-              p.relic_id  ? (p.relic_name ?? p.relic_id)          :
-              p.potion_id ? (p.potion_name ?? p.potion_id)        :
-              itemKindLabel(p.item_kind),
-            sub: `${p.gold_spent} ゴールド`,
-          })))}
-          {@render section('休憩所', selected.rest_options.map(o => ({ label: o })))}
-          {@render section('イベント選択', selected.event_choices.map(c => ({ label: c.title || c.history_name || c.text_key })))}
+          {#if selected.relics_obtained.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('レリック入手')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.relics_obtained as r}{@render genericChip(r.relic_name ?? r.relic_id)}{/each}
+              </div>
+            </div>
+          {/if}
 
-          <!-- 提示されたカード選択肢: pick / skip を視覚的に区別する独自レイアウト -->
+          {#if selected.potions_obtained.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('ポーション入手')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.potions_obtained as p}{@render genericChip(p.potion_name ?? p.potion_id)}{/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if selected.cards_upgraded.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('カードアップグレード')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.cards_upgraded as c}
+                  {@const bg = c.card_rarity === 'Common' ? 'bg-slate-700/60 border-slate-500' : c.card_rarity === 'Uncommon' ? 'bg-sky-900/60 border-sky-500' : c.card_rarity === 'Rare' ? 'bg-yellow-900/60 border-yellow-500' : 'bg-bg-2 border-bg-3'}
+                  <span class="px-2 py-0.5 rounded text-sm border {bg} text-lime-300">{c.card_name ?? cardLabel(c.card_id)}</span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if selected.cards_enchanted.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('エンチャント付与')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.cards_enchanted as e}{@render genericChip(e.card_name ?? cardLabel(e.card_id), `← ${e.enchantment_id}`)}{/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if selected.cards_removed.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('カード除去')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.cards_removed as c}{@render genericChip(c.card_name ?? cardLabel(c.card_id))}{/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if selected.shop_purchases.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('ショップ購入')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.shop_purchases as p}
+                  {#if p.card_id}
+                    {@const bg = (p as any).card_rarity === 'Common' ? 'bg-slate-700/60 border-slate-500' : (p as any).card_rarity === 'Uncommon' ? 'bg-sky-900/60 border-sky-500' : (p as any).card_rarity === 'Rare' ? 'bg-yellow-900/60 border-yellow-500' : 'bg-bg-2 border-bg-3'}
+                    {@const fg = (p as any).is_upgraded ? 'text-lime-300' : 'text-slate-200'}
+                    <span class="px-2 py-0.5 rounded text-sm border {bg} {fg}">
+                      {p.card_name ?? cardLabel(p.card_id)}<span class="text-yellow-400 ml-1">({p.gold_spent}G)</span>
+                    </span>
+                  {:else}
+                    {@render genericChip(
+                      p.relic_id ? (p.relic_name ?? p.relic_id) :
+                      p.potion_id ? (p.potion_name ?? p.potion_id) :
+                      itemKindLabel(p.item_kind),
+                      `${p.gold_spent} ゴールド`,
+                    )}
+                  {/if}
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if selected.rest_options.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('休憩所')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.rest_options as o}{@render genericChip(o)}{/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if selected.event_choices.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              {@render row('イベント選択')}
+              <div class="flex flex-wrap gap-1.5">
+                {#each selected.event_choices as c}{@render genericChip(c.title || c.history_name || c.text_key)}{/each}
+              </div>
+            </div>
+          {/if}
+
+          <!-- 提示されたカード選択肢: pick / skip + rarity / upgraded を視覚化 -->
           {#if selected.card_choices.length > 0}
             <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
-              <div class="text-xs uppercase text-slate-400 tracking-wide pt-1">提示カード選択肢</div>
+              {@render row('提示カード選択肢')}
               <div class="space-y-1">
                 {#each selected.card_choices as group, gi}
                   <div class="flex flex-wrap items-center gap-1.5">
                     {#if selected.card_choices.length > 1}<span class="text-slate-500 text-xs">#{gi + 1}</span>{/if}
                     {#each group.choices as c}
-                      <span class="px-2 py-0.5 rounded text-sm border {c.was_picked ? 'bg-accent/20 text-accent border-accent/40' : 'bg-bg-2 text-slate-500 border-bg-3 line-through'}">
-                        {c.card_name || cardLabel(c.card_id)}
-                      </span>
+                      {@const bg = c.card_rarity === 'Common' ? 'bg-slate-700/60 border-slate-500' : c.card_rarity === 'Uncommon' ? 'bg-sky-900/60 border-sky-500' : c.card_rarity === 'Rare' ? 'bg-yellow-900/60 border-yellow-500' : 'bg-bg-2 border-bg-3'}
+                      {@const fg = c.is_upgraded ? 'text-lime-300' : (c.was_picked ? 'text-slate-100' : 'text-slate-500')}
+                      {@const skipMark = c.was_picked ? '' : 'opacity-60 line-through'}
+                      <span class="px-2 py-0.5 rounded text-sm border {bg} {fg} {skipMark}">{c.card_name || cardLabel(c.card_id)}</span>
                     {/each}
                   </div>
                 {/each}

@@ -137,6 +137,22 @@ internal static class RunOverviewPatches
         catch { return 0UL; }
     }
 
+    /// <summary>CardModel.Rarity (CardRarity enum) を文字列で返す。"Common" / "Uncommon" / "Rare" 等。</summary>
+    private static string GetCardRarity(object? card)
+    {
+        if (card == null) return "";
+        try { return card.GetType().GetProperty("Rarity")?.GetValue(card)?.ToString() ?? ""; }
+        catch { return ""; }
+    }
+
+    /// <summary>CardModel.IsUpgraded (bool) を返す。</summary>
+    private static bool GetCardIsUpgraded(object? card)
+    {
+        if (card == null) return false;
+        try { return (bool?)card.GetType().GetProperty("IsUpgraded")?.GetValue(card) ?? false; }
+        catch { return false; }
+    }
+
     // === CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle) Postfix ===
     // STS2 のカードアップグレードは全部この経路 (smith / Apotheosis / Falling event /
     // EnchantedKnowledge 等)。内部で deck pile のカードだけ UpgradedCards.Add される
@@ -159,8 +175,10 @@ internal static class RunOverviewPatches
                 string? ownerId = TryGetCardOwnerId(card);
                 EventBuffer.EmitGlobalEvent("card_upgraded", ownerId, new
                 {
-                    card_id   = cardId,
-                    card_name = cardName,
+                    card_id      = cardId,
+                    card_name    = cardName,
+                    card_rarity  = GetCardRarity(card),
+                    is_upgraded  = true,
                 });
             }
         }
@@ -185,9 +203,11 @@ internal static class RunOverviewPatches
             string? ownerId = TryGetCardOwnerId(__instance);
             EventBuffer.EmitGlobalEvent("card_obtained", ownerId, new
             {
-                card_id   = cardId,
-                card_name = cardName,
-                floor     = value,
+                card_id     = cardId,
+                card_name   = cardName,
+                card_rarity = GetCardRarity(__instance),
+                is_upgraded = GetCardIsUpgraded(__instance),
+                floor       = value,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] FloorAddedToDeck setter Postfix error: {ex.Message}"); }
@@ -230,6 +250,8 @@ internal static class RunOverviewPatches
 
             string cardId = "";
             string cardName = "";
+            string cardRarity = "";
+            bool cardIsUpgraded = false;
             string relicId = "";
             string relicName = "";
             string potionId = "";
@@ -242,7 +264,10 @@ internal static class RunOverviewPatches
                         var creationResult = GetPropValue(entry, "CreationResult");
                         var card = GetPropValue(creationResult, "Card");
                         cardId = GetIdEntry(card);
-                        cardName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
+                        cardName = ResolveLocString(GetPropValue(card, "Title"));
+                        if (string.IsNullOrEmpty(cardName)) cardName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
+                        cardRarity = GetCardRarity(card);
+                        cardIsUpgraded = GetCardIsUpgraded(card);
                     }
                     break;
                 case "MerchantPotionEntry":
@@ -266,6 +291,8 @@ internal static class RunOverviewPatches
                 item_kind   = kind,
                 card_id     = cardId,
                 card_name   = cardName,
+                card_rarity = cardRarity,
+                is_upgraded = cardIsUpgraded,
                 relic_id    = relicId,
                 relic_name  = relicName,
                 potion_id   = potionId,
@@ -392,9 +419,11 @@ internal static class RunOverviewPatches
                 string cName = ResolveLocString(card?.GetType().GetProperty("Title")?.GetValue(card));
                 list.Add(new
                 {
-                    card_id    = cId,
-                    card_name  = cName,
-                    was_picked = picked,
+                    card_id     = cId,
+                    card_name   = cName,
+                    card_rarity = GetCardRarity(card),
+                    is_upgraded = GetCardIsUpgraded(card),
+                    was_picked  = picked,
                 });
                 if (picked) pickedId = cId;
             }
