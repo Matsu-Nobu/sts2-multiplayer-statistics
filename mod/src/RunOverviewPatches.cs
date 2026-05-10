@@ -364,7 +364,9 @@ internal static class RunOverviewPatches
                 bool picked = (bool?)c.GetType().GetProperty("WasPicked")?.GetValue(c) ?? false;
                 var card = c.GetType().GetProperty("Card")?.GetValue(c);
                 string cId = GetIdEntry(card);
-                string cName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
+                // Title は LocString。ToString() だと localize されないものがあるので
+                // ResolveLocString 経由で日本語を取る。
+                string cName = ResolveLocString(card?.GetType().GetProperty("Title")?.GetValue(card));
                 list.Add(new
                 {
                     card_id    = cId,
