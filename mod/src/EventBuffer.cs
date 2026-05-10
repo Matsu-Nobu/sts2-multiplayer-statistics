@@ -45,10 +45,12 @@ internal static class EventBuffer
     private static Task? _batchWorker;
     private static CancellationTokenSource? _batchCts;
 
-    /// <summary>戦闘開始時。combat_index を増やし、turn_number=1（1ターン目が即時開始する想定）、sequence=0 にリセット。</summary>
+    /// <summary>戦闘開始時。combat_index を **現在 floor と同値** にする (各 floor 高々 1 戦闘なので
+    /// floor 自体を combat 識別子にできる)。これで resume 跨ぎでも combat_index が単調保証され、
+    /// mod 側で別途永続化する必要がなくなる。turn_number=1, sequence=0 にリセット。</summary>
     public static void BeginCombat()
     {
-        _combatIndex++;
+        _combatIndex = _floor;
         _turnNumber = 1;
         _sequence   = 0;
     }
@@ -68,9 +70,6 @@ internal static class EventBuffer
 
     /// <summary>現在の floor 番号 (0 = 未開始)。setter patch から「今追加されたか」判定に使う。</summary>
     public static int CurrentFloor => _floor;
-
-    /// <summary>resume 時 SessionManager が呼ぶ: 永続化されてた combat_index を書き戻す。</summary>
-    public static void RestoreCombatIndex(int idx) => _combatIndex = idx;
 
     public static int CurrentCombatIndex => _combatIndex;
     public static int CurrentTurnNumber  => _turnNumber;

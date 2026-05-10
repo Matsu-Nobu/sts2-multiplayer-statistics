@@ -152,15 +152,6 @@ internal static class SessionManager
             store.Save(existing with { LastSeenFloor = currentTotalFloor });
     }
 
-    /// <summary>戦闘開始ごとに combat_index を永続化。resume 後も単調増加させるため。</summary>
-    public static void PersistCombatIndex(int combatIndex, RunSessionStore store)
-    {
-        if (CurrentLookupKey == null) return;
-        var existing = store.Load(CurrentLookupKey);
-        if (existing == null) return;
-        if (combatIndex <= existing.LastCombatIndex) return;
-        store.Save(existing with { LastCombatIndex = combatIndex });
-    }
 
     private static void ApplyStored(StoredSession s)
     {
@@ -170,11 +161,9 @@ internal static class SessionManager
         CurrentRunKey         = s.RunKey;
         CurrentLastSeenFloor  = s.LastSeenFloor;
         RunStartAlreadyEmitted = s.RunStartEmitted;
-        // resume: 前回までの combat_index を EventBuffer に書き戻す。
-        // これをしないと _combatIndex が 0 にリセットされ、resume 後の戦闘 1 が
-        // 過去戦闘 1 と同じ combat_index になり、web 集計で events が混ざって
-        // 過去の戦闘統計が「上書き」されたように見える。
-        EventBuffer.RestoreCombatIndex(s.LastCombatIndex);
+        // 注: combat_index は floor と同値 (BeginCombat で _combatIndex = _floor)。
+        // floor は STS2 のセーブに乗ってて resume 後 BeforeCombatStart で正しい値が
+        // 来るので、別途永続化不要。
     }
 
     private static void ResetState()

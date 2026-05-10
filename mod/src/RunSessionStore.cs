@@ -98,8 +98,7 @@ internal record StoredSession(
     ulong  HostSteamId,
     string StartedAt,             // run の開始時刻（mod 検出時刻、UTC ISO8601）
     int    LastSeenFloor,         // 最後に観測した TotalFloor
-    bool   RunStartEmitted = false,
-    int    LastCombatIndex = 0    // 最後に開始した戦闘の combat_index (resume 時に EventBuffer に書き戻す)
+    bool   RunStartEmitted = false
 );
 
 /// <summary>
