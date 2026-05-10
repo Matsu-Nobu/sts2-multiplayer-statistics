@@ -71,6 +71,10 @@ public static class ModEntry
             // 信頼できなかった。鍛治アップグレードは AfterRestSiteSmithPostfix が
             // CurrentMapPointHistoryEntry.UpgradedCards から正規取得する。
 
+            // RelicCmd.Obtain は STS2 の全レリック取得 (treasure / reward / event 等) を
+            // 通る単一経路。ここを patch して relic_obtained を emit する。
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.RelicCmd", "Obtain", nameof(RunOverviewPatches.RelicCmdObtainPostfix));
+
             // Merchant***Entry.OnTryPurchase に直接 patch（Hook.AfterItemPurchased では遅すぎるため）
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardEntry",         "OnTryPurchase", nameof(RunOverviewPatches.MerchantCardEntryOnTryPurchasePostfix));
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantPotionEntry",       "OnTryPurchase", nameof(RunOverviewPatches.MerchantPotionEntryOnTryPurchasePostfix));

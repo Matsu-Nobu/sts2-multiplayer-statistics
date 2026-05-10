@@ -152,7 +152,6 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       case 'reward_taken': {
         const p = ev.payload as RewardTakenPayload;
         if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
-        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
         // CardReward の場合、提示された全選択肢（picked + skipped）も記録
         if (p.card_choices && p.card_choices.length > 0) {
           sum.card_choices.push({
@@ -160,20 +159,26 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
             choices: p.card_choices,
           });
         }
-        // potion は AfterPotionProcured 経由で別途記録されるためここでは追加しない
+        // relic は RelicCmd.Obtain (relic_obtained) が単一の正規経路。
+        // potion は AfterPotionProcured (potion_obtained) が単一の正規経路。
         break;
       }
       case 'item_purchased': {
         const p = ev.payload as ItemPurchasedPayload;
         sum.shop_purchases.push(p);
         if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
-        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
-        // potion は AfterPotionProcured 経由で別途記録されるためここでは追加しない
+        // relic / potion は item_purchased 由来も RelicCmd.Obtain / AfterPotionProcured を通るため
+        // ここでは追加しない (重複防止)。
         break;
       }
       case 'potion_obtained': {
         const p = ev.payload as PotionObtainedPayload;
         if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
+        break;
+      }
+      case 'relic_obtained': {
+        const p = ev.payload as { relic_id: string; relic_name?: string };
+        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
         break;
       }
       case 'card_upgraded': {

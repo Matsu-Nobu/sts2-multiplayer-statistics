@@ -416,6 +416,27 @@ internal static class RunOverviewPatches
     // 現在は AfterRestSiteSmithPostfix が CurrentMapPointHistoryEntry.UpgradedCards を
     // 読み出して鍛治アップグレードを emit する一本化された経路を担当している。
 
+    // === RelicCmd.Obtain(RelicModel, Player, int) Postfix ===
+    // STS2 のレリック取得は全部この 1 メソッド経由 (treasure, reward, event,
+    // 戦闘ドロップ等)。Hook.AfterRewardTaken の RelicReward 分岐や宝箱の
+    // 別経路に頼らず、ここを単一の正規経路として relic_obtained を emit する。
+    public static void RelicCmdObtainPostfix(object relic, object player)
+    {
+        try
+        {
+            if (!SessionManager.IsReady) return;
+            string relicId = GetIdEntry(relic);
+            string relicName = ResolveLocString(GetPropValue(relic, "Title"));
+            string pid = GetStringProp(player, "NetId");
+            EventBuffer.EmitGlobalEvent("relic_obtained", string.IsNullOrEmpty(pid) ? null : pid, new
+            {
+                relic_id   = relicId,
+                relic_name = relicName,
+            });
+        }
+        catch (Exception ex) { Log.Error($"[StsStats] RelicCmd.Obtain Postfix error: {ex.Message}"); }
+    }
+
     private static string? TryGetCardOwnerId(object? card)
     {
         if (card == null) return null;
