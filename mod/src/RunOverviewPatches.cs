@@ -226,6 +226,12 @@ internal static class RunOverviewPatches
         {
             if (!SessionManager.IsReady) return;
             if (!value.HasValue || value.Value < 0) return;
+            // 「現在の floor と一致する」= 本当に今 deck に追加された瞬間のみ emit。
+            // 階遷移時の deck serialization / MP sync で setter が「過去の floor 値」で
+            // 再発火するケースを除外する (Neow で取った Inferno が 階 2 入場時に再発火する等)。
+            int currentFloor = EventBuffer.CurrentFloor;
+            if (currentFloor > 0 && value.Value != currentFloor) return;
+
             string cardId = GetIdEntry(__instance);
             if (string.IsNullOrEmpty(cardId)) return;
             string cardName = GetPropValue(__instance, "Title")?.ToString() ?? "";
@@ -573,6 +579,10 @@ internal static class RunOverviewPatches
         {
             if (!SessionManager.IsReady) return;
             if (value < 0) return;            // 初期化時の 0 / -1 は無視 (実取得は floor>=1)
+            // 「現在の floor と一致する」= 今 obtain された瞬間のみ emit (deck reload で
+            // 過去 floor 値で再発火するケースを除外)
+            int currentFloor = EventBuffer.CurrentFloor;
+            if (currentFloor > 0 && value != currentFloor) return;
             string relicId = GetIdEntry(__instance);
             if (string.IsNullOrEmpty(relicId)) return;
             string relicName = ResolveLocString(GetPropValue(__instance, "Title"));

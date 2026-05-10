@@ -66,6 +66,9 @@ internal static class EventBuffer
     /// <summary>マップ移動・戦闘開始等で更新する。</summary>
     public static void UpdateFloor(int floor) => _floor = floor;
 
+    /// <summary>現在の floor 番号 (0 = 未開始)。setter patch から「今追加されたか」判定に使う。</summary>
+    public static int CurrentFloor => _floor;
+
     public static int CurrentCombatIndex => _combatIndex;
     public static int CurrentTurnNumber  => _turnNumber;
 
