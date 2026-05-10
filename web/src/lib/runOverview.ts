@@ -166,9 +166,8 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
       case 'item_purchased': {
         const p = ev.payload as ItemPurchasedPayload;
         sum.shop_purchases.push(p);
-        if (p.card_id)  sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name });
-        // relic / potion は item_purchased 由来も RelicCmd.Obtain / AfterPotionProcured を通るため
-        // ここでは追加しない (重複防止)。
+        // カード / relic / potion は shop_purchases に出るので cards_obtained / relics_obtained /
+        // potions_obtained には追加しない (二重表示防止)。
         break;
       }
       case 'potion_obtained': {

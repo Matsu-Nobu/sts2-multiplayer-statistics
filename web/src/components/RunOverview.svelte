@@ -156,100 +156,58 @@
           </div>
         </div>
 
-        <!-- 階の詳細: 入手物 / イベント / 戦闘結果 (戦闘統計は出さない) -->
+        <!-- 階の詳細: 全 section 統一 chip 形式 -->
+        {#snippet section(label: string, items: { label: string; sub?: string }[])}
+          {#if items.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              <div class="text-xs uppercase text-slate-400 tracking-wide pt-1">{label}</div>
+              <div class="flex flex-wrap gap-1.5">
+                {#each items as it}
+                  <span class="px-2 py-0.5 rounded bg-bg-2 border border-bg-3 text-sm text-slate-200">
+                    {it.label}{#if it.sub}<span class="text-slate-400 ml-1">{it.sub}</span>{/if}
+                  </span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/snippet}
+
         <div class="space-y-2">
-          {#if selected.cards_obtained.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">カード入手</h4>
-              <ul class="text-sm">
-                {#each selected.cards_obtained as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
-              </ul>
-            </div>
-          {/if}
-          {#if selected.card_choices.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">提示されたカード選択肢</h4>
-              {#each selected.card_choices as group, gi}
-                <div class="text-sm flex flex-wrap gap-2 mt-1">
-                  {#if selected.card_choices.length > 1}<span class="text-slate-500 text-xs">#{gi + 1}</span>{/if}
-                  {#each group.choices as c}
-                    <span class="px-2 py-0.5 rounded {c.was_picked ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-2 text-slate-400 border border-bg-3'}">
-                      {c.was_picked ? '✓ ' : ''}{c.card_name || cardLabel(c.card_id)}
-                    </span>
-                  {/each}
-                </div>
-              {/each}
-            </div>
-          {/if}
-          {#if selected.relics_obtained.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">レリック入手</h4>
-              <ul class="text-sm">{#each selected.relics_obtained as r}<li>{r.relic_name ?? r.relic_id}</li>{/each}</ul>
-            </div>
-          {/if}
-          {#if selected.potions_obtained.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">ポーション入手</h4>
-              <ul class="text-sm">{#each selected.potions_obtained as p}<li>{p.potion_name ?? p.potion_id}</li>{/each}</ul>
-            </div>
-          {/if}
+          {@render section('カード入手', selected.cards_obtained.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
+          {@render section('レリック入手', selected.relics_obtained.map(r => ({ label: r.relic_name ?? r.relic_id })))}
+          {@render section('ポーション入手', selected.potions_obtained.map(p => ({ label: p.potion_name ?? p.potion_id })))}
           {#if selected.rest_options.includes('smith') && selected.cards_upgraded.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">鍛治でアップグレード</h4>
-              <ul class="text-sm">
-                {#each selected.cards_upgraded as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
-              </ul>
-            </div>
+            {@render section('鍛治アップグレード', selected.cards_upgraded.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
           {/if}
-          {#if selected.cards_enchanted.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">エンチャント付与</h4>
-              <ul class="text-sm">
-                {#each selected.cards_enchanted as e}
-                  <li>{e.card_name ?? cardLabel(e.card_id)} ← {e.enchantment_id}</li>
+          {@render section('エンチャント付与', selected.cards_enchanted.map(e => ({ label: e.card_name ?? cardLabel(e.card_id), sub: `← ${e.enchantment_id}` })))}
+          {@render section('カード除去', selected.cards_removed.map(c => ({ label: c.card_name ?? cardLabel(c.card_id) })))}
+          {@render section('ショップ購入', selected.shop_purchases.map(p => ({
+            label:
+              p.card_id   ? (p.card_name ?? cardLabel(p.card_id)) :
+              p.relic_id  ? (p.relic_name ?? p.relic_id)          :
+              p.potion_id ? (p.potion_name ?? p.potion_id)        :
+              itemKindLabel(p.item_kind),
+            sub: `${p.gold_spent} ゴールド`,
+          })))}
+          {@render section('休憩所', selected.rest_options.map(o => ({ label: o })))}
+          {@render section('イベント選択', selected.event_choices.map(c => ({ label: c.title || c.history_name || c.text_key })))}
+
+          <!-- 提示されたカード選択肢: pick / skip を視覚的に区別する独自レイアウト -->
+          {#if selected.card_choices.length > 0}
+            <div class="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 items-start">
+              <div class="text-xs uppercase text-slate-400 tracking-wide pt-1">提示カード選択肢</div>
+              <div class="space-y-1">
+                {#each selected.card_choices as group, gi}
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    {#if selected.card_choices.length > 1}<span class="text-slate-500 text-xs">#{gi + 1}</span>{/if}
+                    {#each group.choices as c}
+                      <span class="px-2 py-0.5 rounded text-sm border {c.was_picked ? 'bg-accent/20 text-accent border-accent/40' : 'bg-bg-2 text-slate-500 border-bg-3 line-through'}">
+                        {c.card_name || cardLabel(c.card_id)}
+                      </span>
+                    {/each}
+                  </div>
                 {/each}
-              </ul>
-            </div>
-          {/if}
-          {#if selected.cards_removed.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">カード除去</h4>
-              <ul class="text-sm">
-                {#each selected.cards_removed as c}<li>{c.card_name ?? cardLabel(c.card_id)}</li>{/each}
-              </ul>
-            </div>
-          {/if}
-          {#if selected.shop_purchases.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">購入履歴</h4>
-              <ul class="text-sm space-y-1">
-                {#each selected.shop_purchases as p}
-                  <li class="text-slate-200">
-                    <span class="text-slate-500">{itemKindLabel(p.item_kind)}:</span>
-                    {#if p.card_id}{p.card_name ?? cardLabel(p.card_id)}
-                    {:else if p.relic_id}{p.relic_name ?? p.relic_id}
-                    {:else if p.potion_id}{p.potion_name ?? p.potion_id}
-                    {:else}—{/if}
-                    <span class="text-yellow-400">（{p.gold_spent} ゴールド消費）</span>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
-          {#if selected.rest_options.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">休憩所</h4>
-              <div class="text-sm">{selected.rest_options.join(', ')}</div>
-            </div>
-          {/if}
-          {#if selected.event_choices.length > 0}
-            <div>
-              <h4 class="text-xs uppercase text-slate-400 tracking-wide">イベント選択</h4>
-              <ul class="text-sm">
-                {#each selected.event_choices as c}
-                  <li>{c.title || c.history_name || c.text_key}</li>
-                {/each}
-              </ul>
+              </div>
             </div>
           {/if}
         </div>
