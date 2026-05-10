@@ -76,11 +76,10 @@ export async function loadCatalog(lang: string = 'ja'): Promise<CatalogLookup> {
       _cache = { lang, catalog, lookup };
       return lookup;
     } catch (e) {
-      console.warn('[catalog] load failed, using empty fallback', e);
+      console.warn('[catalog] load failed, will retry next call', e);
+      // 失敗時は cache に詰めない (次回呼出で再 fetch される)
       const empty: ItemCatalog = { cards: [], relics: [], potions: [], enchantments: [] };
-      const lookup = buildLookup(empty);
-      _cache = { lang, catalog: empty, lookup };
-      return lookup;
+      return buildLookup(empty);
     } finally {
       _inflight = null;
     }

@@ -204,8 +204,8 @@
           generic chip: rarity 概念なし
         -->
         {#snippet genericChip(label: string, sub: string = '', tip: { title: string; html: string } | null = null)}
-          {#if tip && (tip.title || tip.html)}
-            <CardTooltip titleText={tip.title} descriptionHtml={tip.html}>
+          {#if tip && tip.html}
+            <CardTooltip descriptionHtml={tip.html}>
               <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200 cursor-help">
                 {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
               </span>
@@ -225,8 +225,8 @@
           {@const bg = rarity === 'Common' ? 'bg-slate-700/60 border-slate-500' : rarity === 'Uncommon' ? 'bg-sky-900/60 border-sky-500' : rarity === 'Rare' ? 'bg-yellow-900/60 border-yellow-500' : 'bg-bg-2 border-bg-3'}
           {@const fg = isUpgraded ? 'text-lime-300' : (skipped ? 'text-slate-500' : 'text-slate-200')}
           {@const skipMark = skipped ? 'opacity-60 line-through' : ''}
-          {#if tip && (tip.title || tip.html)}
-            <CardTooltip titleText={tip.title} descriptionHtml={tip.html}>
+          {#if tip && tip.html}
+            <CardTooltip descriptionHtml={tip.html}>
               <span class="px-2 py-0.5 rounded text-sm border {bg} {fg} {skipMark} cursor-help">
                 {label}{#if suffix}<span class="text-yellow-400 ml-1">{suffix}</span>{/if}
               </span>
