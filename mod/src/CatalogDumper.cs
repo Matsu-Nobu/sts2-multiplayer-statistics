@@ -82,7 +82,7 @@ internal static class CatalogDumper
             string id = GetIdEntry(card);
             if (string.IsNullOrEmpty(id)) return null;
             string baseTitle = card.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
-            string baseDesc  = ResolveLoc(card.GetType().GetProperty("Description")?.GetValue(card));
+            string baseDesc  = ResolveDescription(card);
             string rarity    = card.GetType().GetProperty("Rarity")?.GetValue(card)?.ToString() ?? "";
             int maxUpgrade   = (int?)card.GetType().GetProperty("MaxUpgradeLevel")?.GetValue(card) ?? 1;
 
@@ -110,7 +110,9 @@ internal static class CatalogDumper
             string id = GetIdEntry(relic);
             if (string.IsNullOrEmpty(id)) return null;
             string title = ResolveLoc(relic.GetType().GetProperty("Title")?.GetValue(relic));
-            string desc  = ResolveLoc(relic.GetType().GetProperty("Description")?.GetValue(relic));
+            // RelicModel.Description は private なので DynamicDescription (public) を使う。
+            // DynamicDescription が Owner 要求等で空/例外なら private Description にフォールバック。
+            string desc  = ResolveDescription(relic);
             string rarity = relic.GetType().GetProperty("Rarity")?.GetValue(relic)?.ToString() ?? "";
             return new
             {
@@ -130,7 +132,8 @@ internal static class CatalogDumper
             string id = GetIdEntry(potion);
             if (string.IsNullOrEmpty(id)) return null;
             string title = ResolveLoc(potion.GetType().GetProperty("Title")?.GetValue(potion));
-            string desc  = ResolveLoc(potion.GetType().GetProperty("Description")?.GetValue(potion));
+            // PotionModel.Description は private なので DynamicDescription / private Description フォールバック
+            string desc  = ResolveDescription(potion);
             string rarity = potion.GetType().GetProperty("Rarity")?.GetValue(potion)?.ToString() ?? "";
             return new
             {
@@ -165,6 +168,33 @@ internal static class CatalogDumper
                 if (m == null) continue;
                 var v = m.Invoke(loc, null) as string;
                 if (!string.IsNullOrEmpty(v)) return v;
+            }
+        }
+        catch { }
+        return "";
+    }
+
+    /// <summary>非 public プロパティ含む Description LocString を取り出す。DynamicDescription
+    /// が Owner を要求して例外を吐く canonical model 対策に、private Description にフォールバックする。</summary>
+    private static string ResolveDescription(object model)
+    {
+        // 1. DynamicDescription (public) を試す
+        try
+        {
+            var dyn = model.GetType().GetProperty("DynamicDescription")?.GetValue(model);
+            var s = ResolveLoc(dyn);
+            if (!string.IsNullOrEmpty(s)) return s;
+        }
+        catch { }
+        // 2. private Description にフォールバック
+        try
+        {
+            var prop = model.GetType().GetProperty("Description",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (prop != null)
+            {
+                var raw = prop.GetValue(model);
+                return ResolveLoc(raw);
             }
         }
         catch { }
