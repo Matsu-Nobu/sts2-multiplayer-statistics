@@ -121,8 +121,53 @@ internal static class RunOverviewPatches
             {
                 option = "smith",
             });
+
+            // 鍛治した card は CurrentMapPointHistoryEntry.GetEntry(playerId).UpgradedCards に
+            // 既に追加されている (Hook 発火直前の CardCmd.Upgrade 内で push 済)。
+            // これを正規の出処として読んで card_upgraded を emit する。
+            // Hook.OnUpgrade は +1 カード報酬の生成時にも発火するため信頼できない。
+            ulong netId = GetUlong(player, "NetId");
+            foreach (var modelId in EnumerateUpgradedCardIds(runState, netId))
+            {
+                EventBuffer.EmitGlobalEvent("card_upgraded", string.IsNullOrEmpty(pid) ? null : pid, new
+                {
+                    card_id   = modelId,
+                    card_name = "",
+                    source    = "smith",
+                });
+            }
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterRestSiteSmith error: {ex.Message}"); }
+    }
+
+    /// <summary>CurrentMapPointHistoryEntry.GetEntry(ulong).UpgradedCards (List&lt;ModelId&gt;) を文字列で列挙。</summary>
+    private static IEnumerable<string> EnumerateUpgradedCardIds(object? runState, ulong playerId)
+    {
+        var entry = GetPropValue(runState, "CurrentMapPointHistoryEntry");
+        if (entry == null) yield break;
+        var getEntry = entry.GetType().GetMethod("GetEntry", new[] { typeof(ulong) });
+        if (getEntry == null) yield break;
+        var perPlayer = getEntry.Invoke(entry, new object?[] { playerId });
+        if (perPlayer == null) yield break;
+        var list = perPlayer.GetType().GetProperty("UpgradedCards")?.GetValue(perPlayer)
+                    as System.Collections.IEnumerable;
+        if (list == null) yield break;
+        foreach (var modelId in list)
+        {
+            string entryStr = modelId?.GetType().GetProperty("Entry")?.GetValue(modelId)?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(entryStr)) yield return entryStr;
+        }
+    }
+
+    private static ulong GetUlong(object? o, string prop)
+    {
+        if (o == null) return 0UL;
+        try
+        {
+            var v = o.GetType().GetProperty(prop)?.GetValue(o);
+            return v is ulong u ? u : 0UL;
+        }
+        catch { return 0UL; }
     }
 
     // === Merchant***Entry.OnTryPurchase Postfix ===
@@ -262,7 +307,8 @@ internal static class RunOverviewPatches
                     break;
                 case "CardReward":
                     {
-                        var picked = TryFindRecentCardChoices(runState, pid, out cardChoices);
+                        ulong netId = GetUlong(player, "NetId");
+                        var picked = TryFindRecentCardChoices(runState, netId, out cardChoices);
                         cardId = picked;
                     }
                     break;
@@ -294,16 +340,17 @@ internal static class RunOverviewPatches
     /// <summary>
     /// 直近の CardReward について「提示された全カード」(picked/skipped 両方) を choices に詰めて返し、
     /// 戻り値として picked card_id を返す。
-    /// 構造: runState.CurrentMapPointHistoryEntry.GetEntry(playerId).CardChoices
+    /// 構造: runState.CurrentMapPointHistoryEntry.GetEntry(ulong NetId).CardChoices
+    ///        : List&lt;CardChoiceHistoryEntry { Card, WasPicked }&gt;
     /// </summary>
-    private static string TryFindRecentCardChoices(object? runState, string playerId, out List<object>? choices)
+    private static string TryFindRecentCardChoices(object? runState, ulong playerId, out List<object>? choices)
     {
         choices = null;
         try
         {
             var entry = GetPropValue(runState, "CurrentMapPointHistoryEntry");
             if (entry == null) return "";
-            var getEntry = entry.GetType().GetMethod("GetEntry", new[] { typeof(string) });
+            var getEntry = entry.GetType().GetMethod("GetEntry", new[] { typeof(ulong) });
             if (getEntry == null) return "";
             var perPlayer = getEntry.Invoke(entry, new object?[] { playerId });
             if (perPlayer == null) return "";
@@ -364,24 +411,10 @@ internal static class RunOverviewPatches
         catch (Exception ex) { Log.Error($"[StsStats] AfterPotionProcured error: {ex.Message}"); }
     }
 
-    // === CardModel.OnUpgrade Postfix ===
-    public static void OnUpgradePostfix(object __instance)
-    {
-        try
-        {
-            if (!SessionManager.IsReady) return;
-            string cardId = GetIdEntry(__instance);
-            string cardName = __instance?.GetType().GetProperty("Title")?.GetValue(__instance)?.ToString() ?? "";
-            if (string.IsNullOrEmpty(cardId)) return;
-            string? ownerId = TryGetCardOwnerId(__instance);
-            EventBuffer.EmitGlobalEvent("card_upgraded", ownerId, new
-            {
-                card_id   = cardId,
-                card_name = cardName,
-            });
-        }
-        catch (Exception ex) { Log.Error($"[StsStats] OnUpgrade Postfix error: {ex.Message}"); }
-    }
+    // CardModel.OnUpgrade Postfix は廃止 — +1 カード報酬の生成時にも発火するため
+    // 信頼できない (アップグレード操作ではないのに card_upgraded が emit される)。
+    // 現在は AfterRestSiteSmithPostfix が CurrentMapPointHistoryEntry.UpgradedCards を
+    // 読み出して鍛治アップグレードを emit する一本化された経路を担当している。
 
     private static string? TryGetCardOwnerId(object? card)
     {

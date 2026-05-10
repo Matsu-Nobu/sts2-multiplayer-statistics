@@ -67,8 +67,9 @@ public static class ModEntry
             PatchHookGeneric(nameof(Hook.AfterPotionDiscarded),   nameof(RunOverviewPatches.AfterPotionDiscardedPostfix));
             PatchHookGeneric(nameof(Hook.BeforeCardRemoved),      nameof(RunOverviewPatches.BeforeCardRemovedPostfix));
 
-            // CardModel.OnUpgrade を patch してカードアップグレードを補足
-            PatchInstanceMethod(typeof(CardModel), "OnUpgrade", nameof(RunOverviewPatches.OnUpgradePostfix));
+            // 注: CardModel.OnUpgrade の patch は廃止 — +1 カード報酬の生成時にも発火するため
+            // 信頼できなかった。鍛治アップグレードは AfterRestSiteSmithPostfix が
+            // CurrentMapPointHistoryEntry.UpgradedCards から正規取得する。
 
             // Merchant***Entry.OnTryPurchase に直接 patch（Hook.AfterItemPurchased では遅すぎるため）
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardEntry",         "OnTryPurchase", nameof(RunOverviewPatches.MerchantCardEntryOnTryPurchasePostfix));
