@@ -164,19 +164,15 @@
         <header class="flex items-center justify-between">
           <h3 class="text-base font-medium">
             <span class="mr-2">{v.emoji}</span>
-            <span class="text-slate-200">階 {selected.floor}</span>
-            <span class="ml-2 text-slate-400">{v.label}</span>
-            {#if selected.encounter_name}
-              <span class="ml-2 text-slate-500">— {selected.encounter_name}</span>
-            {/if}
+            <span class="text-slate-200">{selected.encounter_name ? `${v.label}（${selected.encounter_name}）` : v.label}</span>
           </h3>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3">
             {#if selected.combat_index != null && onJumpToCombat}
               <button
                 type="button"
-                class="text-xs px-3 py-1 rounded bg-accent text-bg-0 hover:opacity-90"
+                class="text-xs text-accent hover:underline"
                 onclick={() => onJumpToCombat!(selected!.combat_index!)}
-              >この戦闘の統計を見る →</button>
+              >詳細</button>
             {/if}
             <button type="button" class="text-xs text-slate-400 hover:text-slate-200" onclick={() => selectedFloor = null}>閉じる ✕</button>
           </div>
