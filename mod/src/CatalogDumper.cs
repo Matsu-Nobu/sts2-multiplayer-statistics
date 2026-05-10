@@ -240,9 +240,10 @@ internal static class CatalogDumper
             catch { /* private 実装が無い card もあり得る */ }
 
             // IfUpgradedVar(UpgradeDisplay.{upgradeDisplayName}) を bind
+            // IfUpgradedVar は ...Localization.DynamicVars / UpgradeDisplay は ...Localization (デコンパイル確認)
             var ifUpgradedVarType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Localization.DynamicVars.IfUpgradedVar")
                                  ?? AccessTools.TypeByName("IfUpgradedVar");
-            var upgradeDisplayType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Localization.DynamicVars.UpgradeDisplay")
+            var upgradeDisplayType = AccessTools.TypeByName("MegaCrit.Sts2.Core.Localization.UpgradeDisplay")
                                   ?? AccessTools.TypeByName("UpgradeDisplay");
             if (ifUpgradedVarType != null && upgradeDisplayType != null)
             {
@@ -305,7 +306,8 @@ internal static class CatalogDumper
             // 3. UpgradePreviewType を Deck に設定 (CardUpgradePreviewType enum)
             try
             {
-                var previewTypeEnum = AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardUpgradePreviewType")
+                // CardUpgradePreviewType は MegaCrit.Sts2.Core.Entities.Cards namespace (デコンパイル確認)
+                var previewTypeEnum = AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Cards.CardUpgradePreviewType")
                                     ?? AccessTools.TypeByName("CardUpgradePreviewType");
                 if (previewTypeEnum != null)
                 {

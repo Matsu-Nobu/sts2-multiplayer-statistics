@@ -71,11 +71,14 @@ public static class ModEntry
             // CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle): 全アップグレード
             //   (smith / event / カード効果) の単一経路。pile.Type==Deck のみ実 upgrade。
             //   +1 報酬カードの生成は pile が Deck 以外なので自動除外される。
+            // CardPreviewStyle は MegaCrit.Sts2.Core.Nodes.CommonUi namespace (デコンパイル確認済)。
+            // MegaCrit.Sts2.Core.Models.CardPreviewStyle と書いてた古い実装は TypeByName が
+            // null を返して "Value cannot be null. (Parameter 'types')" で patch fail してた。
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.CardCmd", "Upgrade",
                 nameof(RunOverviewPatches.CardCmdUpgradePostfix),
                 new Type[] {
                     typeof(System.Collections.Generic.IEnumerable<>).MakeGenericType(AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardModel")!),
-                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardPreviewStyle")!,
+                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle")!,
                 });
             // CardModel.FloorAddedToDeck setter: deck 追加完了時 (= マスターデッキに入った瞬間) に sync で呼ばれる。
             // CardCmd.Add は async で Postfix の timing が悪いため、setter 経由で確実に拾う。
