@@ -422,6 +422,46 @@ internal static class RunOverviewPatches
     ///         → List&lt;CardChoiceHistoryEntry&gt; （CardChoiceHistoryEntry { Card, WasPicked }）
     /// 末尾から WasPicked=true のものを 1 件取る。
     /// </summary>
+    // === CardReward.OnSkipped Postfix ===
+    // ユーザがカード報酬を skip した場合、Hook.AfterRewardTaken は **発火しない**
+    // (decompile で SelectUnsynchronized を確認、OnSelect 成功時しか Hook 呼ばれない)。
+    // → reward_taken event が emit されず、提示カード選択肢が WebUI に出ない。
+    // CardReward.OnSkipped 内で全 choices に wasPicked=false で CardChoices が
+    // populated されるので、Postfix で MapPointHistoryEntry を読んで synthetic
+    // reward_taken event を出す (card_id="" + card_choices 全部 was_picked=false)。
+    public static void CardRewardOnSkippedPostfix(object __instance)
+    {
+        try
+        {
+            if (!SessionManager.IsReady) return;
+            var player = __instance?.GetType().BaseType?.GetProperty("Player",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(__instance)
+                ?? __instance?.GetType().GetProperty("Player",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(__instance);
+            if (player == null) return;
+            var runState = player.GetType().GetProperty("RunState")?.GetValue(player);
+            if (runState == null) return;
+            string pid = GetStringProp(player, "NetId");
+            ulong netId = GetUlong(player, "NetId");
+            var picked = TryFindRecentCardChoices(runState, netId, out var cardChoices);
+
+            EventBuffer.EmitGlobalEvent("reward_taken", string.IsNullOrEmpty(pid) ? null : pid, new
+            {
+                reward_kind  = "CardReward",
+                gold_amount  = 0,
+                card_id      = "",   // skip なので picked 無し
+                card_name    = "",
+                potion_id    = "",
+                potion_name  = "",
+                relic_id     = "",
+                relic_name   = "",
+                card_choices = cardChoices,
+                skipped      = true,
+            });
+        }
+        catch (Exception ex) { Log.Error($"[StsStats] CardReward.OnSkipped Postfix error: {ex.Message}"); }
+    }
+
     /// <summary>
     /// 直近の CardReward について「提示された全カード」(picked/skipped 両方) を choices に詰めて返し、
     /// 戻り値として picked card_id を返す。

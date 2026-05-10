@@ -115,6 +115,11 @@ public static class ModEntry
             // EventOption.Chosen でランダムイベントの選択肢を補足
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Events.EventOption", "Chosen", nameof(RunOverviewPatches.EventOptionChosenPostfix));
 
+            // CardReward.OnSkipped: skip 時 Hook.AfterRewardTaken は発火しないので
+            // OnSkipped を patch して synthetic reward_taken を emit する。
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Rewards.CardReward", "OnSkipped",
+                nameof(RunOverviewPatches.CardRewardOnSkippedPostfix));
+
             // 間接ダメージのソース帰属（Hook では識別できないため、ゲーム本体メソッドを直接 patch）
             PatchPower<PoisonPower>(nameof(PoisonPower.AfterSideTurnStart),
                 nameof(IndirectDamagePatches.PoisonPrefix), nameof(IndirectDamagePatches.PoisonPostfix));
