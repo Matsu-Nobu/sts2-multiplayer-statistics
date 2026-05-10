@@ -26,7 +26,8 @@ DOCKER_DATA_DIR := $(PWD)/.docker-data
         backend-dev backend-test \
         web-dev \
         app-build app-run \
-        docker-build docker-run
+        docker-build docker-run \
+        dump-catalog
 
 # メンテナ専用ターゲット（fly-deploy 等）は Makefile.local に置いて gitignore する。
 -include Makefile.local
@@ -48,6 +49,10 @@ help:
 	@echo ""
 	@echo "make docker-build     コンテナイメージ生成"
 	@echo "make docker-run       :8080 で起動 (./.docker-data に永続化)"
+	@echo ""
+	@echo "make dump-catalog [LANG=ja]  STS2 アップデート時にカタログ更新"
+	@echo "                              → STS2 を起動してランを 1 つ開始 → mod が dump"
+	@echo "                              → web/public/catalog.\$$LANG.json にコピー"
 
 # --- mod ----------------------------------------------------------------------
 
@@ -111,4 +116,45 @@ docker-run: docker-build
 		-p 8080:8080 \
 		-v $(DOCKER_DATA_DIR):/data \
 		$(DOCKER_IMAGE):dev
+
+# --- catalog dump (STS2 アップデート時のみ) -----------------------------------
+# 手順:
+#   1. STS2 のゲーム内設定で言語を LANG (デフォルト ja) にしておく
+#   2. `make dump-catalog [LANG=ja]` を実行
+#   3. プロンプト指示通り STS2 を起動してランを 1 階だけでも開始
+#   4. STS2 を閉じる
+#   5. このターゲットが mod の dump 出力を web/public/catalog.$LANG.json にコピー
+#   6. `git diff web/public/catalog.$LANG.json` で内容確認 → commit
+
+LANG ?= ja
+DUMP_SRC := $(STS2_MODS_DIR)/StsStats/catalog-dump.json
+DUMP_DST := $(WEB_DIR)/public/catalog.$(LANG).json
+
+dump-catalog:
+	@test -n "$(STS2_MODS_DIR)" || (echo "STS2_MODS_DIR not set in .env" && exit 1)
+	@echo "=== カタログ更新ワークフロー (lang=$(LANG)) ==="
+	@echo ""
+	@echo "1. STS2 のゲーム内言語を [$(LANG)] に設定済か確認してください"
+	@echo "2. 環境変数 STS_STATS_DUMP_CATALOG=1 を立てて STS2 を起動してください:"
+	@echo ""
+	@echo "     STS_STATS_DUMP_CATALOG=1 open -a 'Slay the Spire 2'"
+	@echo ""
+	@echo "   (CatalogDumper はこの env var が立ってるときだけ動く)"
+	@echo "3. 新規ランを 1 階 (Neow まで) 進めてください"
+	@echo "4. STS2 を閉じてください"
+	@echo "5. ここで Enter を押してください"
+	@read _
+	@test -f "$(DUMP_SRC)" || (echo "❌ dump file not found: $(DUMP_SRC)" && echo "   → STS_STATS_DUMP_CATALOG=1 を設定したか / mod が install されてるか / Neow まで進めたか確認" && exit 1)
+	@mkdir -p $(WEB_DIR)/public
+	@cp "$(DUMP_SRC)" "$(DUMP_DST)"
+	@echo ""
+	@echo "✅ コピー完了: $(DUMP_DST)"
+	@echo ""
+	@wc -c "$(DUMP_DST)" | awk '{printf "  raw size:  %s bytes\n", $$1}'
+	@gzip -c "$(DUMP_DST)" | wc -c | awk '{printf "  gzip size: %s bytes\n", $$1}'
+	@echo ""
+	@echo "次:"
+	@echo "  git diff $(DUMP_DST)"
+	@echo "  git add $(DUMP_DST) && git commit -m 'chore: update catalog ($(LANG)) for STS2 v...'"
+	@echo "  make deploy"
 

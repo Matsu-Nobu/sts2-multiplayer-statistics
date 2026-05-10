@@ -118,6 +118,28 @@
 
 ショップ購入のカード chip には末尾に `(NNNG)` を黄色で付加する。
 
+### 2.6 chip ホバー tooltip (description)
+
+カード / レリック / ポーション / エンチャント の chip に hover すると、
+カタログ (`docs/architecture.md` 「カタログ」節参照) から取得した description を popover で表示する。
+
+実装: `web/src/components/CardTooltip.svelte`、レンダラ: `web/src/lib/catalog.ts` `renderCardDescription`。
+
+- 上段: アイテム名 (アップグレード反映: `name_upgraded` if `is_upgraded`)
+- 下段: description text
+  - STS2 内部装飾タグ → HTML span に変換:
+    - `[gold]X[/gold]` → `text-yellow-300`
+    - `[blue]X[/blue]` → `text-sky-400`
+    - `[green]X[/green]` → `text-lime-300` (アップグレード差分強調)
+    - `[red]X[/red]` → `text-red-400`
+    - `[purple]X[/purple]` → `text-purple-400`
+    - `[img]res://...[/img]` → 削除
+  - 戦闘文脈依存で解決不能な `{...}` placeholder → `XX` にフォールバック (灰色)
+    - 例: `{CalculatedDamage}ダメージ` → `XXダメージ`
+- カードの description は `is_upgraded` に応じて base / upgraded を出し分け
+- カタログに該当 id が無い場合は tooltip を出さない (chip だけ表示)
+- カタログ未ロード中 (`catalog == null`) も tooltip 出さない
+
 ---
 
 ## 3. データ集計 (`runOverview.ts`)

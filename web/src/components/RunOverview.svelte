@@ -3,8 +3,10 @@
   import type { CombatInfo } from '../lib/aggregate';
   import { buildFloorSummaries, roomVisual, type FloorSummary } from '../lib/runOverview';
   import { formatPowerName } from '../lib/powers';
+  import { renderCardDescription, type CatalogLookup } from '../lib/catalog';
   import HpChart from './HpChart.svelte';
   import CombatView from './CombatView.svelte';
+  import CardTooltip from './CardTooltip.svelte';
 
   interface Props {
     events: EventRecord[];
@@ -13,9 +15,40 @@
     playerNames: Record<string, string>;
     powerNames: Record<string, string>;
     cardNames: Record<string, string>;
+    catalog: CatalogLookup | null;
     onJumpToCombat?: (combatIndex: number) => void;
   }
-  let { events, combats, playerIds, playerNames, powerNames, cardNames, onJumpToCombat }: Props = $props();
+  let { events, combats, playerIds, playerNames, powerNames, cardNames, catalog, onJumpToCombat }: Props = $props();
+
+  // カタログから rarity / description を引いて tooltip 用 HTML を作る helpers
+  function cardTip(id: string, upgraded: boolean) {
+    const c = catalog?.card(id, upgraded);
+    return {
+      title: c?.name ?? id,
+      html: c ? renderCardDescription(c.description) : '',
+    };
+  }
+  function relicTip(id: string) {
+    const r = catalog?.relic(id);
+    return {
+      title: r?.name ?? id,
+      html: r ? renderCardDescription(r.description) : '',
+    };
+  }
+  function potionTip(id: string) {
+    const p = catalog?.potion(id);
+    return {
+      title: p?.name ?? id,
+      html: p ? renderCardDescription(p.description) : '',
+    };
+  }
+  function enchantmentTip(id: string) {
+    const e = catalog?.enchantment(id);
+    return {
+      title: e?.name ?? id,
+      html: e ? renderCardDescription(e.description) : '',
+    };
+  }
 
   // プレイヤー別タブ。最初は最初のプレイヤー
   let activePlayer: string = $state('');
@@ -170,23 +203,39 @@
             Curse / Status / Token / Basic / 等 → デフォルト (グレー)
           generic chip: rarity 概念なし
         -->
-        {#snippet genericChip(label: string, sub: string = '')}
-          <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200">
-            {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
-          </span>
+        {#snippet genericChip(label: string, sub: string = '', tip: { title: string; html: string } | null = null)}
+          {#if tip && (tip.title || tip.html)}
+            <CardTooltip titleText={tip.title} descriptionHtml={tip.html}>
+              <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200 cursor-help">
+                {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
+              </span>
+            </CardTooltip>
+          {:else}
+            <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200">
+              {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
+            </span>
+          {/if}
         {/snippet}
 
         {#snippet row(label: string)}
           <div class="text-xs uppercase text-slate-400 tracking-wide pt-1">{label}</div>
         {/snippet}
 
-        {#snippet cardChip(label: string, rarity: string | undefined, isUpgraded: boolean | undefined, suffix: string = '', skipped: boolean = false)}
+        {#snippet cardChip(label: string, rarity: string | undefined, isUpgraded: boolean | undefined, suffix: string = '', skipped: boolean = false, tip: { title: string; html: string } | null = null)}
           {@const bg = rarity === 'Common' ? 'bg-slate-700/60 border-slate-500' : rarity === 'Uncommon' ? 'bg-sky-900/60 border-sky-500' : rarity === 'Rare' ? 'bg-yellow-900/60 border-yellow-500' : 'bg-bg-2 border-bg-3'}
           {@const fg = isUpgraded ? 'text-lime-300' : (skipped ? 'text-slate-500' : 'text-slate-200')}
           {@const skipMark = skipped ? 'opacity-60 line-through' : ''}
-          <span class="px-2 py-0.5 rounded text-sm border {bg} {fg} {skipMark}">
-            {label}{#if suffix}<span class="text-yellow-400 ml-1">{suffix}</span>{/if}
-          </span>
+          {#if tip && (tip.title || tip.html)}
+            <CardTooltip titleText={tip.title} descriptionHtml={tip.html}>
+              <span class="px-2 py-0.5 rounded text-sm border {bg} {fg} {skipMark} cursor-help">
+                {label}{#if suffix}<span class="text-yellow-400 ml-1">{suffix}</span>{/if}
+              </span>
+            </CardTooltip>
+          {:else}
+            <span class="px-2 py-0.5 rounded text-sm border {bg} {fg} {skipMark}">
+              {label}{#if suffix}<span class="text-yellow-400 ml-1">{suffix}</span>{/if}
+            </span>
+          {/if}
         {/snippet}
 
         {#snippet groupHeader(title: string)}
@@ -208,19 +257,19 @@
                 {#if selected.cards_obtained.length > 0}
                   {@render kvRow('カード')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.cards_obtained as c}{@render cardChip(c.card_name ?? cardLabel(c.card_id), c.card_rarity, c.is_upgraded)}{/each}
+                    {#each selected.cards_obtained as c}{@render cardChip(c.card_name ?? cardLabel(c.card_id), c.card_rarity, c.is_upgraded, '', false, cardTip(c.card_id, !!c.is_upgraded))}{/each}
                   </div>
                 {/if}
                 {#if selected.relics_obtained.length > 0}
                   {@render kvRow('レリック')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.relics_obtained as r}{@render genericChip(r.relic_name ?? r.relic_id)}{/each}
+                    {#each selected.relics_obtained as r}{@render genericChip(r.relic_name ?? r.relic_id, '', relicTip(r.relic_id))}{/each}
                   </div>
                 {/if}
                 {#if selected.potions_obtained.length > 0}
                   {@render kvRow('ポーション')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.potions_obtained as p}{@render genericChip(p.potion_name ?? p.potion_id)}{/each}
+                    {#each selected.potions_obtained as p}{@render genericChip(p.potion_name ?? p.potion_id, '', potionTip(p.potion_id))}{/each}
                   </div>
                 {/if}
               </div>
@@ -235,19 +284,19 @@
                 {#if selected.cards_upgraded.length > 0}
                   {@render kvRow('アップグレード')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.cards_upgraded as c}{@render cardChip(c.card_name ?? cardLabel(c.card_id), c.card_rarity, true)}{/each}
+                    {#each selected.cards_upgraded as c}{@render cardChip(c.card_name ?? cardLabel(c.card_id), c.card_rarity, true, '', false, cardTip(c.card_id, true))}{/each}
                   </div>
                 {/if}
                 {#if selected.cards_enchanted.length > 0}
                   {@render kvRow('エンチャント')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.cards_enchanted as e}{@render genericChip(e.card_name ?? cardLabel(e.card_id), `← ${e.enchantment_id}`)}{/each}
+                    {#each selected.cards_enchanted as e}{@render genericChip(e.card_name ?? cardLabel(e.card_id), `← ${e.enchantment_id}`, enchantmentTip(e.enchantment_id))}{/each}
                   </div>
                 {/if}
                 {#if selected.cards_removed.length > 0}
                   {@render kvRow('除去')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.cards_removed as c}{@render genericChip(c.card_name ?? cardLabel(c.card_id))}{/each}
+                    {#each selected.cards_removed as c}{@render genericChip(c.card_name ?? cardLabel(c.card_id), '', cardTip(c.card_id, false))}{/each}
                   </div>
                 {/if}
               </div>
@@ -261,14 +310,13 @@
               <div class="flex flex-wrap gap-1.5">
                 {#each selected.shop_purchases as p}
                   {#if p.card_id}
-                    {@render cardChip(p.card_name ?? cardLabel(p.card_id), (p as any).card_rarity, (p as any).is_upgraded, `${p.gold_spent}G`)}
+                    {@render cardChip(p.card_name ?? cardLabel(p.card_id), (p as any).card_rarity, (p as any).is_upgraded, `${p.gold_spent}G`, false, cardTip(p.card_id, !!(p as any).is_upgraded))}
+                  {:else if p.relic_id}
+                    {@render genericChip(p.relic_name ?? p.relic_id, `${p.gold_spent} ゴールド`, relicTip(p.relic_id))}
+                  {:else if p.potion_id}
+                    {@render genericChip(p.potion_name ?? p.potion_id, `${p.gold_spent} ゴールド`, potionTip(p.potion_id))}
                   {:else}
-                    {@render genericChip(
-                      p.relic_id ? (p.relic_name ?? p.relic_id) :
-                      p.potion_id ? (p.potion_name ?? p.potion_id) :
-                      itemKindLabel(p.item_kind),
-                      `${p.gold_spent} ゴールド`,
-                    )}
+                    {@render genericChip(itemKindLabel(p.item_kind), `${p.gold_spent} ゴールド`)}
                   {/if}
                 {/each}
               </div>
@@ -298,7 +346,7 @@
                     {#each selected.card_choices as group, gi}
                       <div class="flex flex-wrap items-center gap-1.5">
                         {#if selected.card_choices.length > 1}<span class="text-slate-500 text-xs">#{gi + 1}</span>{/if}
-                        {#each group.choices as c}{@render cardChip(c.card_name || cardLabel(c.card_id), c.card_rarity, c.is_upgraded, '', !c.was_picked)}{/each}
+                        {#each group.choices as c}{@render cardChip(c.card_name || cardLabel(c.card_id), c.card_rarity, c.is_upgraded, '', !c.was_picked, cardTip(c.card_id, !!c.is_upgraded))}{/each}
                       </div>
                     {/each}
                   </div>

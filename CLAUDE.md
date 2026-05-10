@@ -176,6 +176,9 @@ build エラーを潰した = 動作確認、ではない。`pnpm dev` か `make
 | 宝箱レリックが表示 | Treasure floor を含むセッションで |
 | ショップで買ったカードが二重表示されない | shop_purchases あり / 同じカードが cards_obtained にも乗っているセッションで |
 | MP で host 自身の events が単一プレイヤーに統合 | host_steam_id != "1" の MP セッションで |
+| カード chip ホバーで description tooltip 表示 | カード / レリック / ポーション / エンチャント chip 全部 |
+| catalog の `[gold]X[/gold]` 等タグが色付け span に変換される | tooltip 描画見て確認 |
+| 解決不能な `{...}` placeholder が `XX` 表示になる | Stomp / Body Slam 等の chip ホバーで確認 |
 
 将来 E2E (playwright + fixture sessions) を入れたら、ここに mapping して
 `make verify` 一発で全部確認できるようにする。

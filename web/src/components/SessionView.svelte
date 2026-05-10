@@ -1,10 +1,17 @@
 <script lang="ts">
   import type { SessionDoc } from '../lib/types';
   import { buildCombatInfos, buildRunTotals, buildPowerNames, buildCardNames } from '../lib/aggregate';
+  import { loadCatalog, type CatalogLookup } from '../lib/catalog';
   import Header from './Header.svelte';
   import CombatView from './CombatView.svelte';
   import AllCombatsView from './AllCombatsView.svelte';
   import RunOverview from './RunOverview.svelte';
+
+  // カタログを 1 回 fetch (キャッシュ effective) して props で下に渡す。
+  // Promise を $state に詰めて await した結果を $derived で取り出す形でも良いが、
+  // ここはシンプルに「ロード完了するまで empty lookup を渡す」方式。
+  let catalog: CatalogLookup | null = $state(null);
+  $effect(() => { loadCatalog('ja').then(l => { catalog = l; }); });
 
   interface Props {
     doc: SessionDoc;
@@ -132,6 +139,7 @@
       {playerNames}
       {powerNames}
       {cardNames}
+      {catalog}
       onJumpToCombat={(ci) => { topTab = 'combats'; activeTab = ci; }}
     />
   {/if}

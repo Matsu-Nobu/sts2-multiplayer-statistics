@@ -152,6 +152,12 @@ public static class ModEntry
             }
 
             Log.Info("[StsStats] Initialized successfully");
+
+            // catalog dump を最早 trigger で試す。ModelDb がまだ populated されてなければ
+            // CatalogDumper 内で no-op になる (_dumped を立てない) → 後続の AfterRoomEntered /
+            // BeforeCombatStart で再試行される。理想的にはここ (mod Initialize) で成功して
+            // ユーザは新規ラン開始すら不要、ゲーム起動するだけで dump 完了する。
+            try { CatalogDumper.DumpOnce(); } catch { }
         }
         catch (System.Exception ex)
         {

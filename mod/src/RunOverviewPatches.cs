@@ -20,6 +20,9 @@ internal static class RunOverviewPatches
     {
         try
         {
+            // catalog dump retry (mod Initialize 時に ModelDb 未初期化なら no-op、ここで初成功する)
+            try { CatalogDumper.DumpOnce(); } catch { }
+
             // ラン開始の最初の room（floor 1 の Neow / Event 等）でセッション作成 + URL コピー。
             // BeforeCombatStart まで待たずに済むので、ラン開始直後に共有 URL がクリップボードへ。
             // SessionManager は冪等なので戦闘側からの呼び出しと併存して問題ない。
