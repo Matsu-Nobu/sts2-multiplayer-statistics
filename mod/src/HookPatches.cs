@@ -53,6 +53,10 @@ internal static class HookPatches
                     if (ModEntry.SessionStore != null)
                         SessionManager.MarkRunStartEmitted(ModEntry.SessionStore);
                 }
+
+                // 実験: catalog (cards/relics/potions の definitions) をローカルファイルに 1 回ダンプ。
+                // サイズと内容を確認するための一時計測。本番採用時は event 経由で送る。
+                CatalogDumper.DumpOnce();
             }
 
             EventBuffer.BeginCombat();
