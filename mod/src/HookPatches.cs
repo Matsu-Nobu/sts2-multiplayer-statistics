@@ -123,15 +123,26 @@ internal static class HookPatches
             _currentCombatWasVictory = true;
             Log.Info($"[StsStats] AfterCombatVictory fired (combat_index={EventBuffer.CurrentCombatIndex})");
 
-            // 最終ボス突破時の run_end(victory) 発行は維持
             if (runState == null || room == null) return;
+
+            // run_end(victory) 発行条件:
+            //   (a) IsVictoryRoom = TheArchitect (true ending) 撃破時、または
+            //   (b) 最終 act の Boss 室を撃破時 (= STS2 通常クリア。Architect は到達しなくても可)
+            //
+            // STS2 の AbstractRoom.IsVictoryRoom は実装上 EventRoom かつ CanonicalEvent==TheArchitect
+            // のときだけ true (ilspy 確認済)。act 3 ボス突破 = 多くのプレイヤーが「クリア」と
+            // 認識する瞬間なので、こちらでも victory 扱いする。
             bool isVictoryRoom = (bool?)(room.GetType().GetProperty("IsVictoryRoom")?.GetValue(room)) ?? false;
-            if (!isVictoryRoom) return;
 
             int actIndex = (int?)runState.GetType().GetProperty("CurrentActIndex")?.GetValue(runState) ?? -1;
             int actCount = (runState.GetType().GetProperty("Acts")?.GetValue(runState) as IEnumerable)?.Cast<object>().Count() ?? -1;
             bool isFinalAct = actIndex >= 0 && actCount > 0 && actIndex == actCount - 1;
-            if (!isFinalAct) return;
+
+            string roomType = room.GetType().GetProperty("RoomType")?.GetValue(room)?.ToString() ?? "";
+            bool isBossRoom = roomType == "Boss";
+
+            bool isClearTrigger = isVictoryRoom || (isFinalAct && isBossRoom);
+            if (!isClearTrigger) return;
 
             EmitRunEndForAllPlayers(runState, outcome: "victory");
         }
