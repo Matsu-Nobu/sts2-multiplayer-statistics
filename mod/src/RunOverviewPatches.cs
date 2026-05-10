@@ -72,6 +72,10 @@ internal static class RunOverviewPatches
     }
 
     // === AfterGoldGained(IRunState, Player) ===
+    // 注: Hook.AfterGoldGained は gain にしか発火しない (デコンパイル確認、AfterGoldLost 系 hook 無し)。
+    // Loss (event 罰金 / shop 購入 / その他) を捕捉するには Player.Gold setter を直接 patch する。
+    // この AfterGoldGained Postfix は冗長だが残しておく (setter patch と二重に同 gold で emit
+    // されるが web 側は最後の値で上書きするので問題なし)。
     public static void AfterGoldGainedPostfix(object? runState, object? player)
     {
         try
@@ -84,6 +88,24 @@ internal static class RunOverviewPatches
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterGoldGained error: {ex.Message}"); }
+    }
+
+    // === Player.Gold setter Postfix ===
+    // Player.Gold は単純な int property で、setter が「変更時のみ」_gold = value して
+    // GoldChanged event を発火する (デコンパイル確認)。Hook.AfterGoldGained では gain
+    // しか取れないので、setter を直接 patch して gain / loss / 任意の reset を全部捕捉する。
+    public static void PlayerGoldSetterPostfix(object __instance, int value)
+    {
+        try
+        {
+            if (!SessionManager.IsReady) return;
+            string pid = GetStringProp(__instance, "NetId");
+            EventBuffer.EmitGlobalEvent("gold_changed", string.IsNullOrEmpty(pid) ? null : pid, new
+            {
+                current_gold = value,
+            });
+        }
+        catch (Exception ex) { Log.Error($"[StsStats] Player.Gold setter Postfix error: {ex.Message}"); }
     }
 
     // === AfterActEntered(IRunState) ===

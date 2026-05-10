@@ -80,6 +80,11 @@ public static class ModEntry
             // CardModel.FloorAddedToDeck setter: deck 追加完了時 (= マスターデッキに入った瞬間) に sync で呼ばれる。
             // CardCmd.Add は async で Postfix の timing が悪いため、setter 経由で確実に拾う。
             PatchPropertySetter(typeof(CardModel), "FloorAddedToDeck", nameof(RunOverviewPatches.FloorAddedToDeckSetterPostfix));
+            // Player.Gold setter: gain / loss / 任意の reset を全部 sync で捕捉。
+            // Hook.AfterGoldGained は gain にしか発火しないため、event 罰 / shop 購入等の loss が
+            // 取れない問題への対応。
+            PatchPropertySetterByName("MegaCrit.Sts2.Core.Entities.Players.Player", "Gold",
+                nameof(RunOverviewPatches.PlayerGoldSetterPostfix));
             // RelicCmd.Obtain は STS2 の全レリック取得 (treasure / reward / event 等) を
             // 通る単一経路。
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.RelicCmd", "Obtain", nameof(RunOverviewPatches.RelicCmdObtainPostfix));
@@ -198,6 +203,21 @@ public static class ModEntry
         catch (Exception ex)
         {
             Log.Error($"[StsStats] PatchInstanceMethodByName({fullTypeName}.{methodName}) failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>名前空間付き型名で property setter を patch する。</summary>
+    private static void PatchPropertySetterByName(string fullTypeName, string propertyName, string postfixName)
+    {
+        try
+        {
+            var type = AccessTools.TypeByName(fullTypeName);
+            if (type == null) { Log.Error($"[StsStats] Type not found: {fullTypeName}"); return; }
+            PatchPropertySetter(type, propertyName, postfixName);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[StsStats] PatchPropertySetterByName({fullTypeName}.{propertyName}) failed: {ex.Message}");
         }
     }
 
