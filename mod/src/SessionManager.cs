@@ -71,6 +71,7 @@ internal static class SessionManager
         {
             ApplyStored(stored);
             UpdateLastSeenFloor(currentTotalFloor, store);
+            CopyToClipboard(stored.ShareUrl);    // resume 時もクリップボードに URL を入れる
             Log.Info($"[StsStats] Resumed session for run (floor {stored.LastSeenFloor} → {currentTotalFloor}): {stored.ShareUrl}");
             StatsLogger.LogSessionCreated(stored.SessionId, stored.ShareUrl);
             EventBuffer.FlushPending();
