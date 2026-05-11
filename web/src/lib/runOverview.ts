@@ -106,16 +106,20 @@ export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: stri
     }));
   }
   // room_entered が無い floor (= STS2 の Neow/初期フロアは Hook.AfterRoomEntered が
-  // 発火しない) を、他 event から floor 番号だけ拾って補完。
+  // 発火しないことがある) を、他 event から floor 番号だけ拾って補完。
+  // → これにより「reward_taken / card_obtained / event_choice 等が floor=1 で
+  //   記録されていれば 1 階が表示される」が、events が全く無い場合 (resume mid-run 等)
+  //   は floor 1 を作らない。空の floor 1 をグラフに描くと「情報が正しく表示されない」
+  //   と見えるため、events が実在する floor のみ表示する。
   for (const ev of events) {
     if (ev.floor == null) continue;
     if (byFloor.has(ev.floor)) continue;
     orderedFloors.push(ev.floor);
     byFloor.set(ev.floor, makeEmpty(ev.floor));
   }
-  // 最小 floor から 1 まで埋める (Neow = floor 1 は何の event も持たないため、
-  // 補完しないとグラフが floor 2 以降から始まってしまう)。
-  if (orderedFloors.length > 0) {
+  // 旧実装は「1 階から最小観測 floor まで」を強制 backfill していたが、events 0 件の
+  // 空 floor がグラフに紛れて誤情報に見えるため廃止。events を持たない floor は出さない。
+  if (false && orderedFloors.length > 0) {
     const minFloor = Math.min(...orderedFloors);
     for (let f = 1; f < minFloor; f++) {
       if (!byFloor.has(f)) {
