@@ -726,11 +726,15 @@ internal static class HookPatches
 
     /// <summary>
     /// AfterRoomEntered 等の他フックからも呼べるよう object 受け wrapper。
-    /// セッション既確立なら即 return（ラン開始直後の最初の room でだけ実行する想定）。
+    /// 注: `IsReady` early-return は廃止。理由 = abandon → 新規ラン時に旧 session の
+    ///     IsReady=true が残っており、新 run の floor 1 AfterRoomEntered で
+    ///     EnsureSession を skip してしまっていた。結果、floor 1 events が旧 session の
+    ///     outgoing に積まれた後 BeforeCombatStart で reset され、floor 1 表示が壊れて
+    ///     URL コピーも floor 2 まで遅れていた。EnsureSession 内部で lookupKey 比較
+    ///     による idempotency があるので gate 不要。
     /// </summary>
     internal static void EnsureSessionFromAnyRoom(object? runState)
     {
-        if (SessionManager.IsReady) return;
         if (runState is IRunState r) EnsureSessionForRun(r);
     }
 
