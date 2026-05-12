@@ -136,7 +136,7 @@
     {/if}
 
     <!-- HP 推移グラフ -->
-    <HpChart {floors} {selectedFloor} onSelect={selectFloor} {cardNames} />
+    <HpChart {floors} {selectedFloor} onSelect={selectFloor} {cardNames} {catalog} />
 
     <!-- 階セレクタ（プルダウン） -->
     <div class="flex items-center gap-3">
@@ -286,7 +286,10 @@
                 {#if selected.cards_enchanted.length > 0}
                   {@render kvRow('エンチャント')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.cards_enchanted as e}{@render genericChip(e.card_name ?? cardLabel(e.card_id), `← ${e.enchantment_id}`, enchantmentTip(e.enchantment_id))}{/each}
+                    {#each selected.cards_enchanted as e}
+                      {@const enchName = catalog?.enchantment(e.enchantment_id)?.name ?? e.enchantment_id}
+                      {@render genericChip(e.card_name ?? cardLabel(e.card_id), `← ${enchName}`, enchantmentTip(e.enchantment_id))}
+                    {/each}
                   </div>
                 {/if}
                 {#if selected.cards_removed.length > 0}

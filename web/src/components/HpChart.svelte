@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Chart, registerables, type ChartConfiguration } from 'chart.js';
   import { roomVisual, type FloorSummary } from '../lib/runOverview';
+  import type { CatalogLookup } from '../lib/catalog';
   Chart.register(...registerables);
 
   interface Props {
@@ -9,10 +10,12 @@
     selectedFloor: number | null;
     onSelect: (floor: number) => void;
     cardNames?: Record<string, string>;
+    catalog?: CatalogLookup | null;
   }
-  let { floors, selectedFloor, onSelect, cardNames = {} }: Props = $props();
+  let { floors, selectedFloor, onSelect, cardNames = {}, catalog = null }: Props = $props();
 
   function nameCard(id: string): string { return cardNames[id] ?? id; }
+  function nameEnchant(id: string): string { return catalog?.enchantment(id)?.name ?? id; }
 
   let canvas: HTMLCanvasElement;
   let chart: Chart | null = null;
@@ -94,7 +97,7 @@
                 if (f.cards_removed.length > 0)
                   lines.push(`カード除去: ${f.cards_removed.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
                 if (f.cards_enchanted && f.cards_enchanted.length > 0)
-                  lines.push(`エンチャント: ${f.cards_enchanted.map(e => `${e.card_name ?? nameCard(e.card_id)}←${e.enchantment_id}`).join(', ')}`);
+                  lines.push(`エンチャント: ${f.cards_enchanted.map(e => `${e.card_name ?? nameCard(e.card_id)}←${nameEnchant(e.enchantment_id)}`).join(', ')}`);
                 if (f.event_choices && f.event_choices.length > 0)
                   lines.push(`イベント選択: ${f.event_choices.map(c => c.title || c.history_name || c.text_key).join(', ')}`);
                 return lines;
