@@ -606,11 +606,15 @@ internal static class HookPatches
                 if (info == null) continue;
                 string characterId = TryGetCharacterId(player) ?? "UNKNOWN";
 
+                // player_name を payload に含める。backend は run_start 受信時に
+                // UpsertPlayer(player_id, player_name) する。これで peer (非 host) も
+                // 名前付きで players テーブルに登録される。
                 EventBuffer.EmitGlobalEvent("run_start", info.Value.id, new
                 {
                     character_id = characterId,
                     ascension    = ascension,
                     seed         = seed,
+                    player_name  = info.Value.name,
                 });
             }
         }

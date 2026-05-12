@@ -173,9 +173,7 @@ export function buildCardNames(events: EventRecord[]): Record<string, string> {
 
 export function playerName(doc: SessionDoc, pid: string): string {
   const p = doc.players.find(p => p.steam_id === pid);
-  // display_name は backend の SQL が COALESCE で "" を返すケースあり ("" 自体は
-  // not nullish → ?? では fallback されない)。空文字も fallback 扱いに。
-  return (p?.display_name && p.display_name.length > 0) ? p.display_name : pid;
+  return p?.display_name ?? pid;
 }
 
 // === 内部 ===================================================================

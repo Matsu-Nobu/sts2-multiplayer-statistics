@@ -39,15 +39,7 @@
   let combats = $derived(buildCombatInfos(doc));
   let totals = $derived(buildRunTotals(combats));
   let playerIds = $derived(doc.players.map(p => p.steam_id));
-  // playerNames は空文字を含めない。Backend の SQL が `COALESCE(p.display_name, '')` で
-  // 空文字を返すケース (players テーブル未登録 = MP の peer 等) があり、
-  // `playerNames[pid] ?? pid` が `""` を返してタイムライン等で player 名が空表示になる
-  // バグの原因。空エントリを除外することで各 component の `?? pid` fallback が機能する。
-  let playerNames = $derived(Object.fromEntries(
-    doc.players
-      .filter(p => p.display_name && p.display_name.length > 0)
-      .map(p => [p.steam_id, p.display_name])
-  ));
+  let playerNames = $derived(Object.fromEntries(doc.players.map(p => [p.steam_id, p.display_name])));
   let powerNames = $derived(buildPowerNames(doc.events));
   let cardNames = $derived(buildCardNames(doc.events));
 

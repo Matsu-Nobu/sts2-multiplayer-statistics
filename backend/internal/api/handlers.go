@@ -146,6 +146,19 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		if ev.EventType == "run_end" {
 			s.applyRunEnd(r, id, ev)
 		}
+
+		// Side effect: run_start → player_name から players テーブルに UpsertPlayer。
+		// POST /sessions の host_name は host だけ登録するため、MP の peer (non-host)
+		// は別経路で名前を登録しないと display_name="" のまま UI に出てしまう。
+		// mod 側で各プレイヤーに run_start を emit する際 player_name を含めている。
+		if ev.EventType == "run_start" && ev.PlayerID != nil && *ev.PlayerID != "" {
+			var rs struct {
+				PlayerName string `json:"player_name"`
+			}
+			if json.Unmarshal(payload, &rs) == nil && rs.PlayerName != "" {
+				_ = s.Store.UpsertPlayer(r.Context(), *ev.PlayerID, rs.PlayerName)
+			}
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
