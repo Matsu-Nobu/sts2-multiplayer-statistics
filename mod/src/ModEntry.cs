@@ -110,8 +110,17 @@ public static class ModEntry
                     typeof(bool),
                 });
 
-            // CardModel.EnchantInternal で「カードにエンチャ付与」を補足
-            PatchInstanceMethod(typeof(CardModel), "EnchantInternal", nameof(RunOverviewPatches.EnchantInternalPostfix));
+            // CardCmd.Enchant が「player action としてのエンチャ実行」の単一経路。
+            // EnchantInternal を直接 patch すると deck reload 等でも発火して大量誤検出する。
+            // CardCmd.Enchant は overload (Enchant<T>(card, amount) / Enchant(enchantment, card, amount))
+            // あるが、generic の方は内部で非 generic を呼ぶので非 generic だけ patch すれば足りる。
+            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.CardCmd", "Enchant",
+                nameof(RunOverviewPatches.CardCmdEnchantPostfix),
+                new Type[] {
+                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.EnchantmentModel")!,
+                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardModel")!,
+                    typeof(decimal),
+                });
             // EventOption.Chosen でランダムイベントの選択肢を補足
             PatchInstanceMethodByName("MegaCrit.Sts2.Core.Events.EventOption", "Chosen", nameof(RunOverviewPatches.EventOptionChosenPostfix));
 

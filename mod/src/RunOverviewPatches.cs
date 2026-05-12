@@ -657,28 +657,24 @@ internal static class RunOverviewPatches
         catch { return null; }
     }
 
-    // === CardModel.EnchantInternal(EnchantmentModel, decimal) Postfix ===
-    // カードへのエンチャ付与（イベント・レリック・カード効果由来 すべて）。
-    // ただし EnchantInternal はカードのインスタンスが作り直されるたびに呼ばれる
-    // (deck reload, save resume, クローン等)。同じ (card instance, enchantment_id)
-    // ペアでの再 emit を防ぐため重複検出する。
-    private static readonly HashSet<long> _seenEnchants = new();
-    public static void EnchantInternalPostfix(object __instance, object enchantment, decimal amount)
+    // === CardCmd.Enchant(EnchantmentModel, CardModel, decimal) Postfix ===
+    // 真のエンチャ実行点 (decompile 確認: CardCmd.Enchant が内部で
+    // card.EnchantInternal を呼んで、pile.Type==Deck のときだけ
+    // CardsEnchanted 履歴に追加する)。EnchantInternal を直接 patch すると
+    // card インスタンス再生成 (deck reload / save resume / クローン) でも発火するため
+    // 同じエンチャが何回も emit される誤検出が発生してた。CardCmd.Enchant は
+    // player action 単位の単一経路。
+    public static void CardCmdEnchantPostfix(object enchantment, object card, decimal amount)
     {
         try
         {
             if (!SessionManager.IsReady) return;
-            string cardId = GetIdEntry(__instance);
-            string cardName = __instance?.GetType().GetProperty("Title")?.GetValue(__instance)?.ToString() ?? "";
+            string cardId = GetIdEntry(card);
+            string cardName = card?.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
             string enchantmentId = GetIdEntry(enchantment);
             if (string.IsNullOrEmpty(cardId) || string.IsNullOrEmpty(enchantmentId)) return;
 
-            // (card instance, enchantment_id) の dedup key
-            int cardHash = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(__instance);
-            long key = ((long)cardHash << 32) ^ enchantmentId.GetHashCode();
-            lock (_seenEnchants) { if (!_seenEnchants.Add(key)) return; }
-
-            string? ownerId = TryGetCardOwnerId(__instance);
+            string? ownerId = TryGetCardOwnerId(card);
             EventBuffer.EmitGlobalEvent("card_enchanted", ownerId, new
             {
                 card_id        = cardId,
@@ -687,13 +683,7 @@ internal static class RunOverviewPatches
                 amount         = (int)amount,
             });
         }
-        catch (Exception ex) { Log.Error($"[StsStats] EnchantInternal Postfix error: {ex.Message}"); }
-    }
-
-    // 戦闘間で dedup state をクリア（戦闘終了時に呼ぶ）
-    internal static void ClearEnchantDedup()
-    {
-        lock (_seenEnchants) _seenEnchants.Clear();
+        catch (Exception ex) { Log.Error($"[StsStats] CardCmd.Enchant Postfix error: {ex.Message}"); }
     }
 
     // === EventOption.Chosen() Postfix ===
