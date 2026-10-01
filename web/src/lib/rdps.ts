@@ -15,6 +15,7 @@
 
 import type { EventRecord, DamageDealtPayload, PowerSnapshot } from './types';
 import { latestCombatEvents, splitByStacks, sharedAppliers } from './aggregate';
+import { isModsV2, stepContributions, stepActors, stepLabel, allocateInt, type ModsV2 } from './contrib';
 
 export interface RdpsBreakdown {
   total: number;          // self + to の合計
@@ -73,9 +74,13 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
       continue;
     }
 
-    // 2. modifications が記録されていれば「観測した delta」で attribution（新モデル）
-    //    無ければ旧モデル（VULN 1/3 ハードコード）にフォールバック
-    if (p.modifications && p.modifications.length > 0) {
+    // 2. v2: 補正 1 つずつの内訳 (spec combat-stats.md §3.5)
+    if (isModsV2(p.modifications)) {
+      attributeV2(p.modifications, dealer, effective, credit);
+      continue;
+    }
+    // 旧データ: (pre, post, modifier) の記録で按分 / それも無ければ弱体 1/3 の固定ルール
+    if (Array.isArray(p.modifications) && p.modifications.length > 0) {
       attributeViaModifications(p, dealer, effective, credit);
     } else {
       const vulnContrib = Math.round(effective / 3);
@@ -116,7 +121,7 @@ function attributeViaModifications(
   effective: number,
   credit: (recipient: string, applier: string, source: string, amt: number) => void,
 ): void {
-  const mods = p.modifications ?? [];
+  const mods = Array.isArray(p.modifications) ? p.modifications : [];
   const finalPost = mods.length > 0 ? mods[mods.length - 1].post : (p.total_damage ?? effective);
   const scale = finalPost > 0 ? effective / finalPost : 1;
 
@@ -169,6 +174,38 @@ function attributeViaModifications(
   }
 
   credit(dealer, dealer, 'self', Math.round(dealerShare * scale));
+}
+
+/**
+ * v2: 1 ヒットの有効ダメージ E を、基礎ダメージ (本人) と補正ごとの寄与 (行為者) に配る。
+ * 正の寄与は行為者へ (本人が付けたものは本人)、負の寄与は本人の取り分から引く (0 未満にしない)。
+ * 最後に全体を E に合わせて縮める → 合計は必ず E (spec combat-stats.md §3.5)。
+ */
+function attributeV2(
+  m: ModsV2,
+  dealer: string,
+  effective: number,
+  credit: (recipient: string, applier: string, source: string, amt: number) => void,
+): void {
+  const contribs = stepContributions(m).filter(c => c.step.phase !== 'hp_lost');
+  const SELF = `${dealer}\u0000self`;
+  const weights = new Map<string, number>();
+  const add = (k: string, w: number) => weights.set(k, (weights.get(k) ?? 0) + w);
+  const base = m.base ?? ((m.final ?? effective) - contribs.reduce((a, c) => a + c.contrib, 0));
+  add(SELF, base);
+  for (const { step, contrib } of contribs) {
+    const actors = stepActors(step);
+    if (contrib > 0 && actors.length > 0) {
+      for (const a of actors) add(a.player_id === dealer ? SELF : `${a.player_id}\u0000${stepLabel(step)}`, contrib * a.weight);
+    } else {
+      add(SELF, contrib);   // 行為者のいない正の寄与 / 負の寄与は本人の取り分で調整
+    }
+  }
+  if ((weights.get(SELF) ?? 0) < 0) weights.set(SELF, 0);
+  for (const [k, n] of allocateInt(effective, weights)) {
+    const [party, label] = k.split('\u0000');
+    credit(dealer, party, party === dealer ? 'self' : label, n);
+  }
 }
 
 function findPower(snap: PowerSnapshot[] | undefined, powerId: string): PowerSnapshot | null {

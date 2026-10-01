@@ -124,7 +124,7 @@ internal static class Lifecycle
             }
             EventBuffer.BeginCombat();
             PowerOriginRegistry.ClearForCombat();
-            DamageModificationLog.Clear();
+            ModifierLog.Clear();
             _combatOpen = true;
 
             var enc = combatState?.Encounter;

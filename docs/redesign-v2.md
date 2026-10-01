@@ -248,6 +248,8 @@ card = { id, name, rarity, type, upgrade_level, enchantment_id? }
      web は **与ダメージ・カード別の表・貢献スコアのすべてで、スタック数の比で按分** する (2026-10-02 確定)。
      `player_id` には最大スタックの人を入れる (表示の都合。集計は `source_appliers` を使う)。
    - それ以外 (自分に付いたバフ・レリック・オーブ等) は、その持ち主の行為。
+5. **貢献スコア** (2026-10-02 改訂): ダメージ補正・HP 減少補正を補正 1 つずつ記録し (全パワーの付与者付き)、
+   掛け算は対数で按分する。ブロックは付けた人ごとに残量を追う。詳細は spec combat-stats.md §3.5。
    - 現行の `IndirectDamagePatches` (毒・Doom・雷・トゲ等の手書き patch) は廃止する。
 3. **Doom**: Doom の実行中に敵の HP が減ったら、減った量を `damage_dealt` (`is_doom_kill: true`、出どころ `DOOM_POWER`) として送る。
    貢献スコアでは、その量を Doom の付与者に付与量の比で配分する (§5 #3 で確定)。

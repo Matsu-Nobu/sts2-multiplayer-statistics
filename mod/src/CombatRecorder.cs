@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.ValueProps;
 
 namespace StsStats;
 
@@ -23,21 +25,42 @@ internal static class CombatRecorder
 {
     // === ダメージ ================================================================
 
-    /// <summary>Hook.ModifyDamage: ダメージ補正 (pre → post と関与モデル) を記録し、直後の AfterDamageGiven で消費する。</summary>
+    /// <summary>Hook.ModifyDamage: ダメージ補正を補正 1 つずつ記録し (ModifierLog)、直後の AfterDamageGiven で消費する。</summary>
     public static void ModifyDamagePostfix(
         Creature? target,
         Creature? dealer,
         decimal damage,
+        ValueProp props,
+        CardModel? cardSource,
+        CardPlay? cardPlay,
+        ModifyDamageHookType modifyDamageHookType,
+        CardPreviewMode previewMode,
         ref IEnumerable<AbstractModel> modifiers,
         decimal __result)
     {
-        try
-        {
-            // プレビュー (カードにカーソルを乗せたとき等) は target / dealer が空になりがちなので除外
-            if (target == null || dealer == null) return;
-            DamageModificationLog.Record(damage, __result, modifiers);
-        }
+        try { ModifierLog.RecordDamage(target, dealer, damage, props, cardSource, cardPlay, modifyDamageHookType, previewMode, modifiers, __result); }
         catch (Exception ex) { Log.Error($"[StsStats] ModifyDamage postfix error: {ex.Message}"); }
+    }
+
+    /// <summary>Hook.ModifyHpLost: ブロック後の HP 減少補正 (バッファー・霊体等) を記録する (rMit 用)。</summary>
+    public static void ModifyHpLostPostfix(
+        Creature? target,
+        decimal amount,
+        ValueProp props,
+        Creature? dealer,
+        CardModel? cardSource,
+        HpLossHookPhase phases,
+        ref IEnumerable<AbstractModel> modifiers,
+        decimal __result)
+    {
+        try { ModifierLog.RecordHpLost(target, amount, props, dealer, cardSource, phases, modifiers, __result); }
+        catch (Exception ex) { Log.Error($"[StsStats] ModifyHpLost postfix error: {ex.Message}"); }
+    }
+
+    /// <summary>Hook.AfterBlockCleared: ブロックが消えたので、誰のブロックかの記録も消す。</summary>
+    public static void AfterBlockClearedPostfix(Creature? creature)
+    {
+        if (creature != null) BlockLedger.Clear(creature);
     }
 
     public static void AfterDamageGivenPostfix(
@@ -47,7 +70,9 @@ internal static class CombatRecorder
         Creature?     target,
         CardModel?    cardSource)
     {
-        var mods = DamageModificationLog.Drain();
+        // 同じ対象・攻撃者の補正記録 (と、受けた側の HP 減少補正) を取り出す。返る前でも必ず取り出して捨てる
+        var receiverForLog = results?.Receiver ?? target;
+        var (modDamage, modHpLost) = ModifierLog.Take(target, dealer, receiverForLog);
         try
         {
             if (combatState == null || results == null) return;
@@ -76,14 +101,6 @@ internal static class CombatRecorder
                                 ?? (dealer == null ? SourceContext.CurrentActorPlayerId(receiver) : null);
                 if (dealerId == null) return;   // 敵 → 敵
 
-                // 直近の ModifyDamage 群のうち post が total と一致するものを実ヒット由来として採用 (同内容は 1 件に)
-                var seen = new HashSet<string>();
-                var modList = mods
-                    .Where(m => (int)m.Post == total)
-                    .Where(m => seen.Add($"{(int)m.Pre}->{(int)m.Post}|{string.Join(',', m.ModifierIds)}"))
-                    .Select(m => new { pre = (int)m.Pre, post = (int)m.Post, modifier_types = m.ModifierTypes, modifier_ids = m.ModifierIds })
-                    .ToList();
-
                 EventBuffer.EmitTurnEvent("damage_dealt", dealerId, new
                 {
                     amount             = amount,
@@ -100,14 +117,19 @@ internal static class CombatRecorder
                     source_kind        = sourceKind,
                     active_on_target   = ActivePowersSnapshot.ForCreature(receiver),
                     active_on_dealer   = ActivePowersSnapshot.ForCreature(dealer),
-                    modifications      = modList,
+                    modifications      = ModifierLog.ToPayload(modDamage),
                 });
             }
             else
             {
                 // 受けた側がプレイヤー本人のときだけ被ダメ (ペットの被ダメは持ち主に数えない)
                 if (receiver.Player == null) return;
-                EventBuffer.EmitTurnEvent("damage_received", Identity.Of(receiver.Player), new
+                string receiverId = Identity.Of(receiver.Player);
+                // 防いだブロックを、付けた人ごとに分ける。ペットが狙われてもブロックは持ち主のもの (CreatureCmd.Damage)
+                var blockOwner = target?.PetOwner?.Creature ?? target ?? receiver;
+                var blockSources = BlockLedger.Consume(blockOwner, blocked, blockOwner.Block, receiverId)
+                    .Select(b => (object)new { player_id = b.PlayerId, amount = b.Amount }).ToList();
+                EventBuffer.EmitTurnEvent("damage_received", receiverId, new
                 {
                     amount             = amount,
                     total_damage       = total,
@@ -116,6 +138,8 @@ internal static class CombatRecorder
                     source_card_id     = source?.CardId,
                     active_on_target   = ActivePowersSnapshot.ForCreature(receiver),
                     active_on_dealer   = ActivePowersSnapshot.ForCreature(dealer),
+                    modifications      = ModifierLog.ToPayload(modDamage, modHpLost),
+                    block_sources      = blockSources,
                 });
             }
         }
@@ -154,7 +178,7 @@ internal static class CombatRecorder
                 source_kind        = "power",
                 active_on_target   = ActivePowersSnapshot.ForCreature(creature),
                 active_on_dealer   = new List<object>(),
-                modifications      = new List<object>(),
+                modifications      = (object?)null,
             });
         }
         catch (Exception ex) { Log.Error($"[StsStats] AfterCurrentHpChanged (doom) error: {ex.Message}"); }
@@ -173,6 +197,7 @@ internal static class CombatRecorder
             string sourceKind = cardSource != null ? "card" : SourceContext.CurrentKind();
             string? giverId = cardSource != null ? Identity.Of(cardSource.Owner) : SourceContext.CurrentActorPlayerId(creature);
 
+            BlockLedger.Add(creature, giverId ?? receiverId, amount);
             EventBuffer.EmitTurnEvent("block_gained", receiverId, new
             {
                 amount           = (int)amount,

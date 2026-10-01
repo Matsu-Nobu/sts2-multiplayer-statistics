@@ -1,4 +1,6 @@
 // docs/api.md と一致させること。v2 形式 (docs/redesign-v2.md)。
+import type { ModsV2 } from './contrib';
+export type { ModsV2 } from './contrib';
 
 export interface SessionMeta {
   id: string;
@@ -225,7 +227,7 @@ export interface DamageDealtPayload {
   source_kind?: string;               // 'card' | 'power' | 'relic' | 'orb' | 'enchantment' | 'potion' | 'unknown'
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
-  modifications?: DamageModification[];  // Hook.ModifyDamage で観測した (pre,post,modifier) ログ
+  modifications?: DamageModification[] | ModsV2;  // v2: 補正 1 つずつ (ModsV2)。配列は旧データ
 }
 
 export interface DamageReceivedPayload {
@@ -236,6 +238,8 @@ export interface DamageReceivedPayload {
   source_card_id?: string | null;
   active_on_target: PowerSnapshot[];
   active_on_dealer?: PowerSnapshot[]; // dealer (敵) に乗っていた power（rMit で WEAK 等を見る）
+  modifications?: ModsV2;              // 被ダメ側の補正 1 つずつ (rMit)
+  block_sources?: { player_id: string; amount: number }[];   // 防いだブロックを付けた人ごとに
 }
 
 export interface BlockGainedPayload {

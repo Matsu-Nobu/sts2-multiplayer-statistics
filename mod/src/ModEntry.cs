@@ -59,6 +59,8 @@ public static class ModEntry
         P(typeof(Hook), "AfterDamageGiven",        typeof(CombatRecorder), null, "AfterDamageGivenPostfix");
         P(typeof(Hook), "AfterCurrentHpChanged",   typeof(CombatRecorder), null, "AfterCurrentHpChangedPostfix");
         P(typeof(Hook), "AfterBlockGained",        typeof(CombatRecorder), null, "AfterBlockGainedPostfix");
+        P(typeof(Hook), "AfterBlockCleared",       typeof(CombatRecorder), null, "AfterBlockClearedPostfix");
+        P(typeof(Hook), "ModifyHpLost",            typeof(CombatRecorder), null, "ModifyHpLostPostfix");
         P(typeof(Hook), "AfterEnergySpent",        typeof(CombatRecorder), null, "AfterEnergySpentPostfix");
         P(typeof(Hook), "AfterCardPlayed",         typeof(CombatRecorder), null, "AfterCardPlayedPostfix");
         P(typeof(Hook), "AfterCardDrawn",          typeof(CombatRecorder), null, "AfterCardDrawnPostfix");

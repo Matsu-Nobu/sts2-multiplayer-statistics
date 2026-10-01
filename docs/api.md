@@ -225,7 +225,7 @@ Content-Type: application/json
 | `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?` | 使用者 |
 | `card_drawn` | `card_id`, `card_name?`, `from_hand_draw?` | ドローした人 |
 | `damage_dealt` | `amount` (敵HPに通った分), `total_damage` (ブロック込み), `blocked_damage`, `overkill_damage`, `was_target_killed`, `is_doom_kill`, `source_appliers?`, `target_creature_id`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `active_on_target[]`, `active_on_dealer[]`, `modifications[]` | 与えた人 (ペットは持ち主。攻撃者が空なら出どころパワーの付与者) |
-| `damage_received` | `amount` (自HPに受けた分), `total_damage`, `blocked_damage` (=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]` | 受けた人 (**致死の一撃を含む**) |
+| `damage_received` | `amount` (自HPに受けた分), `total_damage`, `blocked_damage` (=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]`, `modifications`, `block_sources[]` | 受けた人 (**致死の一撃を含む**) |
 | `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `from_player?` | 受けた人 |
 | `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | 付与者 |
 | `energy_spent` | `amount`, `source_card_id?` | 使った人 |
@@ -241,6 +241,33 @@ Content-Type: application/json
 カードかどうかは `source_kind` (`card` / `power` / `relic` / `orb` / `enchantment` / `potion` / `unknown`) で判定する
 (`source_card_type` の `Power` はカードの種類「パワー」と同じ文字列なので判定に使わない)。`damage_dealt` / `block_gained` に付く。
 mod が起動時に対象メソッドを自動で列挙して追跡する (`redesign-v2.md` §2.4)。v1 の合成タグ (`(poison)` 等) は廃止。
+
+#### `modifications` (damage_dealt / damage_received。貢献スコア用、spec combat-stats.md §3.5)
+
+ゲームの補正計算で値を変えたモデルを、計算順に 1 つずつ並べたもの。
+
+```json
+{
+  "base": 6,                 // 補正前のダメージ (カードの基礎値)
+  "final": 13.5,             // ダメージ補正後 (ブロック前・HP 上限前)
+  "steps": [
+    { "phase": "additive",       "model_id": "STRENGTH_POWER",   "model_name": "筋力", "kind": "power", "value": 3,
+      "appliers": [{ "player_id": "765...A", "stacks": 3 }] },
+    { "phase": "multiplicative", "model_id": "VULNERABLE_POWER", "model_name": "弱体", "kind": "power", "value": 1.5,
+      "appliers": [{ "player_id": "765...B", "stacks": 2 }] },
+    { "phase": "multiplicative", "model_id": "PEN_NIB",          "model_name": "ペン先", "kind": "relic", "value": 2, "owner": "765...A" }
+  ]
+}
+```
+
+- `phase`: `enchant` / `additive` (value = 増減量) / `multiplicative` (value = 倍率) / `cap` (value = 上限で下がった量、負) /
+  `hp_lost` (ブロック後の HP 減少補正。value = 変化量。damage_received のみ)
+- `appliers`: パワーの付与者ごとのスタック数 (全パワー)。`owner`: レリック・エンチャント等の持ち主
+- v1 形式 (配列で `pre` / `post` / `modifier_types` / `modifier_ids`) は旧データのみ
+
+#### `block_sources` (damage_received)
+
+`[{ "player_id", "amount" }]`: このヒットで防いだブロック量を、ブロックを付けた人ごとに分けたもの (残っているブロックの比で按分)。
 
 `source_appliers` (`[{ "player_id", "stacks" }]`): 出どころが **ダメージを受けた敵自身に付いているパワー** (毒・Doom・絞殺など) のとき、
 そのパワーの付与者ごとのスタック数。web は与ダメージ・カード別の表・rDPS をこの比で按分する。`player_id` は最大スタックの人。
