@@ -75,23 +75,25 @@ spec の「run_end 以降の hp_changed を除外」ルールは、`OnEnded` を
 
 ## 2. 実装必要リスト
 
+✅ = 実装済 (ビルド・patch 引数バインド・reflection 照合まで確認、ゲーム実機は未確認)。
+
 ### P0: 更新で壊れた (ビルド不可)
 
 | # | 内容 | 対応 |
 |---|---|---|
-| P0-1 | `Hook.AfterTurnEnd` 削除 | `Hook.AfterSideTurnEnd(ICombatState, CombatSide side, IEnumerable<Creature>)` に置換 (`side` 名同じ、player side 終了ごと・extra turn 含め 1 回) |
-| P0-2 | `DoomPower.BeforeTurnEnd` 削除 | `BeforeSideTurnEnd` (敵側) / `AfterSideTurnEnd` (player 側) に分割。ただし P1-3 参照 |
-| P0-3 | Hook 引数が `CombatState` → `ICombatState`、`NullCombatState` 新設 | 全 postfix の引数型を `ICombatState?` に |
+| P0-1 ✅ | `Hook.AfterTurnEnd` 削除 | `Hook.AfterSideTurnEnd(ICombatState, CombatSide side, IEnumerable<Creature>)` に置換 (`side` 名同じ、player side 終了ごと・extra turn 含め 1 回) |
+| P0-2 ✅ | `DoomPower.BeforeTurnEnd` 削除 | `BeforeSideTurnEnd` (敵側) / `AfterSideTurnEnd` (player 側) に分割。ただし P1-3 参照 |
+| P0-3 ✅ | Hook 引数が `CombatState` → `ICombatState`、`NullCombatState` 新設 | 全 postfix の引数型を `ICombatState?` に |
 
 ### P1: 以前から壊れていた (データ欠損)
 
 | # | 内容 | 根拠 | 対応 |
 |---|---|---|---|
-| P1-1 | **毒ダメージが 1 件も記録されていない** | `PoisonPower` は `dealer=null` で `CreatureCmd.Damage`。`AfterDamageGivenPostfix` 冒頭が `if (dealer == null) return;` で間接帰属分岐に到達しない。過去ログ: 毒付与中の被弾 970 件に対し `(poison)` 0 件 | dealer=null 早期 return を撤去し DamageSourceContext / Power.Applier で帰属 |
-| P1-2 | **ペット (Osty) のダメージが落ちる** | `TryFindPlayerForCreature` が `player.Creature == dealer` のみ比較。Osty は `Creature.PetOwner` を持つ別 creature | `dealer.Player ?? dealer.PetOwner` で解決 (reflection ループ不要) |
+| P1-1 ✅ | **毒ダメージが 1 件も記録されていない** | `PoisonPower` は `dealer=null` で `CreatureCmd.Damage`。`AfterDamageGivenPostfix` 冒頭が `if (dealer == null) return;` で間接帰属分岐に到達しない。過去ログ: 毒付与中の被弾 970 件に対し `(poison)` 0 件 | dealer=null 早期 return を撤去し DamageSourceContext / Power.Applier で帰属 |
+| P1-2 ✅ | **ペット (Osty) のダメージが落ちる** | `TryFindPlayerForCreature` が `player.Creature == dealer` のみ比較。Osty は `Creature.PetOwner` を持つ別 creature | `dealer.Player ?? dealer.PetOwner` で解決 (reflection ループ不要) |
 | P1-3 | **Doom はダメージではない** | `DoomPower.DoomKill` → `CreatureCmd.Kill` (`LoseHpInternal` + `AfterCurrentHpChanged` のみ、damage hook 不発)。過去ログ `(doom)` 0 件 | `Hook.AfterDiedToDoom(ICombatState, IReadOnlyList<Creature>)` で doom kill を記録 (killed HP 量 = 直前 CurrentHp)。rDPS の doom 按分仕様を spec で再定義 |
-| P1-4 | catalog の `card_type` / `cost` が全件空 | `CardModel.CardType` / `Cost` は存在しない (正: `Type`, cost は `EnergyCost` 系を要確認) | CatalogDumper 修正 |
-| P1-5 | `hit_index` が常に 0 | `DamageResult.HitIndex` は存在しない。web 未使用 | api.md から削除 |
+| P1-4 ✅ | catalog の `card_type` / `cost` が全件空 | `CardModel.CardType` / `Cost` は存在しない (正: `Type`, cost は `EnergyCost` 系を要確認) | CatalogDumper 修正 |
+| P1-5 ✅ | `hit_index` が常に 0 | `DamageResult.HitIndex` は存在しない。web 未使用 | api.md から削除 |
 | P1-6 | catalog が古い | 新規: カード 19 (ABUNDANCE, BLADE_SYMPHONY, BLAZE, CACOPHONY, CONCOCT, CONSTELLATION, DOWSING, FADE, HIBERNATE, IMITATION_LEARNING, MIDNIGHT, ONE_FOR_ALL, OUTRAGE, PLOT, SIDESTEP, SOULBOUND, THE_BALL, TUTOR, UNDERWORLD) / レリック 3 (DOWSING_ROD, NEOWS_SACRIFICE, VAKUU_CARD_SELECTOR) / ポーション 1 (AMBERGRIS)。削除: FOLLOW_THROUGH | `make dump-catalog` (ゲーム起動必要) |
 
 ### P2: 正規経路への置換 (場当たり hack の撤去)

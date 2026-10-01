@@ -227,7 +227,6 @@ export interface DamageDealtPayload {
   source_card_id?: string | null;
   source_card_name?: string | null;
   source_card_type?: string | null;
-  hit_index: number;
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
   modifications?: DamageModification[];  // Hook.ModifyDamage で観測した (pre,post,modifier) ログ

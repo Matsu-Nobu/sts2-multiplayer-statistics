@@ -132,7 +132,6 @@ Content-Type: application/json
       "amount":             18,
       "target_creature_id": "monster:1",
       "source_card_id":     "BASH",
-      "hit_index":          0,
       "active_on_target":   [{"power_id":"VULNERABLE_POWER","stacks":2,"applier":"76561...B"}],
       "active_on_dealer":   []
     }
@@ -177,7 +176,7 @@ Content-Type: application/json
 |-----------|---------|-----------|
 | `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?`, `energy_cost?` | dealer |
 | `card_drawn` | `card_id`, `from_hand_draw?` | drawer |
-| `damage_dealt` | `amount` (敵HPに通った分), `total_damage?` (試行総ダメ), `blocked_damage?` (敵blockで吸収), `overkill_damage?` (HP超過分), `was_target_killed?`, `target_creature_id`, `target_player_id?`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `hit_index`, `active_on_target[]`, `active_on_dealer[]` | dealer |
+| `damage_dealt` | `amount` (敵HPに通った分), `total_damage?` (試行総ダメ), `blocked_damage?` (敵blockで吸収), `overkill_damage?` (HP超過分), `was_target_killed?`, `target_creature_id`, `target_player_id?`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `active_on_target[]`, `active_on_dealer[]` | dealer |
 | `damage_received` | `amount` (自HPに受けた分), `total_damage?` (試行総ダメ), `blocked_damage?` (自blockで吸収=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]?` | target |
 | `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `from_player?` | receiver |
 | `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | applier |

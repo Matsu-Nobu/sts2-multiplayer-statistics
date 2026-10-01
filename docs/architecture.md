@@ -41,7 +41,7 @@ Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を
 
 ### 戦闘・ターン進行中
 1. Harmony patch した hook が逐次イベントを生成し、`EventBuffer` に蓄積する。
-2. ターン終了 (`AfterTurnEnd(side=Player)`) / 戦闘終了 (`AfterCombatEnd`) / run 終了の節目で、バッファ内のイベント列を `POST /sessions/{id}/events` に bulk 送信。
+2. ターン終了 (`AfterSideTurnEnd(side=Player)`) / 戦闘終了 (`AfterCombatEnd`) / run 終了の節目で、バッファ内のイベント列を `POST /sessions/{id}/events` に bulk 送信。
 3. 送信失敗時はバッファに残り次回再送。`event_uuid` UNIQUE 制約で重複は冪等に弾かれる。
 4. mod は `sts_stats.jsonl` にローカルログも書き出す（バックエンド消滅時の保険）。
 
@@ -65,7 +65,7 @@ STS2 のマルチプレイは決定論的ロックステップ方式で、全ク
 |------|------|
 | `BeforeCombatStart` | 戦闘カウンタ初期化、`combat_start` emit |
 | `AfterCombatEnd` | `combat_end` emit、buffer flush |
-| `AfterTurnEnd(side=Player)` | ターン終了の確定点。buffer flush |
+| `AfterSideTurnEnd(side=Player)` | ターン終了の確定点。buffer flush |
 | `AfterDamageGiven` | `damage_dealt` emit（dealer / target / 通った量・ブロック吸収・overkill） |
 | `ModifyDamage` (post) | overkill / blocked_damage の最終確定（HP snapshot ベース） |
 | `BeforeDamageReceived` / `AfterDamageReceived` | `damage_received` emit |
@@ -213,6 +213,8 @@ web/public/catalog.{lang}.json   ← リポジトリで version 管理
       "max_upgrade": 1
     }, ...
   ],
+  // card_type: CardModel.Type (Attack / Skill / Power / Status / Curse / Quest)
+  // cost:      CardModel.EnergyCost.Canonical。X コストは -1
   "relics":       [{ "id", "name", "description", "rarity" }, ...],
   "potions":      [{ "id", "name", "description", "rarity" }, ...],
   "enchantments": [{ "id", "name", "description" }, ...]

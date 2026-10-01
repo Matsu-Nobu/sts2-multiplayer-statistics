@@ -109,7 +109,7 @@ function genTurn(ctx: TurnCtx, draws: { player: string; cards: { id: string; nam
           blocked_damage: blocked,
           overkill_damage: overkill,
           target_creature_id: 'enemy:0', source_card_id: a.cardId,
-          source_card_name: a.cardName, source_card_type: a.cardType, hit_index: 0,
+          source_card_name: a.cardName, source_card_type: a.cardType,
           active_on_target: a.active_on_target ?? [],
           active_on_dealer: [],
         }, true);

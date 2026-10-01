@@ -14,8 +14,8 @@ UI に出るデータの「正解の出処」を定義する。同じデータ�
 |---|---|---|
 | `Hook.BeforeCombatStart` | `combat_start` | 戦闘開始 |
 | `Hook.AfterCombatEnd` | `combat_end` | 戦闘終了 (victory フラグ付き) |
-| `Hook.AfterTurnEnd(side=Player)` | (flush trigger) | turn 確定点。emit せずバッファ flush |
-| `Hook.AfterDamageGiven` + `Hook.ModifyDamage` (post snapshot) | `damage_dealt` | overkill / blocked_damage は ModifyDamage post の HP snapshot で確定 |
+| `Hook.AfterSideTurnEnd(side=Player)` | (flush trigger) | turn 確定点。emit せずバッファ flush (v0.111.0 で `AfterTurnEnd` から改名) |
+| `Hook.AfterDamageGiven` + `Hook.ModifyDamage` (post snapshot) | `damage_dealt` | overkill / blocked_damage は ModifyDamage post の HP snapshot で確定。dealer の解決は `Creature.Player ?? Creature.PetOwner` (Osty 等のペットは owner に帰属)。dealer=null (毒 tick 等) は §1 間接ダメージ帰属へ |
 | `Hook.BeforeDamageReceived` / `Hook.AfterDamageReceived` | `damage_received` | snapshot 差分で実 HP loss を計算 |
 | `Hook.AfterBlockGained` | `block_gained` | from_player で味方付与判別 |
 | `Hook.AfterEnergySpent` | `energy_spent` | |
@@ -29,15 +29,22 @@ UI に出るデータの「正解の出処」を定義する。同じデータ�
 ### 間接ダメージ帰属 (Harmony patch)
 
 `spec/combat-stats.md` の rDPS のため、以下の Power / Orb 個別 patch:
-- `PoisonPower.AfterSideTurnStart`
-- `DoomPower.AfterSideTurnStart`
-- `LightningOrb.{Evoke / EvokePassive / EvokeAuto}`
-- `ThornsPower.AfterDamageGiven`
-- `FlameBarrierPower.AfterDamageGiven`
-- `RampartPower.OnTurnStart`
-- `BlockNextTurnPower.OnTurnStart`
+| patch 対象 (デコンパイル確認済 v0.111.0) | 合成タグ | dealer |
+|---|---|---|
+| `PoisonPower.AfterSideTurnStart` | `(poison)` | **null** → target 上の `POISON_POWER.Applier` で帰属 |
+| `DoomPower.BeforeSideTurnEnd` / `DoomPower.AfterSideTurnEnd` | `(doom)` | — (下記注) |
+| `LightningOrb.Evoke` | `(lightning_evoke)` / `(lightning_evoke_auto)` | orb owner の creature |
+| `LightningOrb.Passive` | `(lightning_passive)` | orb owner の creature |
+| `ThornsPower.BeforeDamageReceived` | `(thorns)` | power owner |
+| `FlameBarrierPower.AfterDamageReceived` | `(flame_barrier)` | power owner |
+| `RampartPower.AfterSideTurnStart` | `(rampart)` (block) | — |
+| `BlockNextTurnPower.AfterBlockCleared` | `(block_next_turn)` (block) | — |
 
-→ `damage_dealt` / `block_gained` の `source_card_id` に `(poison)` / `(doom)` / `(lightning)` 等の合成タグで帰属を記録する。
+→ `damage_dealt` / `block_gained` の `source_card_id` に合成タグで帰属を記録する。
+
+注: Doom は **ダメージではない**。`DoomPower.DoomKill` → `CreatureCmd.Kill` で、damage hook は発火せず
+`AfterCurrentHpChanged` と `Hook.AfterDiedToDoom` のみ。現状 `(doom)` の `damage_dealt` は出ない (既知の制約、
+`docs/game-api-inventory.md` P1-3)。patch は v0.111.0 のシグネチャに合わせて維持している。
 
 ### ラン全体 (run-scoped)
 
@@ -54,7 +61,7 @@ UI に出るデータの「正解の出処」を定義する。同じデータ�
 | `Hook.AfterPotionDiscarded` | `potion_discarded` | |
 | `Hook.BeforeCardRemoved` | `card_removed` | |
 | `EventOption.Chosen` (instance method patch) | `event_choice` | LocalContext.NetId で player_id |
-| `CardModel.EnchantInternal` (instance method patch) | `card_enchanted` | mod 側 dedup + web 側 dedup |
+| `CardCmd.Enchant(EnchantmentModel, CardModel, decimal)` (static method patch) | `card_enchanted` | player action としてのエンチャ単一経路 (`EnchantInternal` は deck reload でも発火するため不可) |
 | `MerchantCardEntry.OnTryPurchase` 等 (instance method patch) | `item_purchased` | Hook.AfterItemPurchased では遅すぎるため直接 patch |
 
 ### Canonical: 正規一本化された patch
@@ -63,12 +70,12 @@ UI に出るデータの「正解の出処」を定義する。同じデータ�
 |---|---|---|
 | **カード追加** (戦闘報酬 / event / shop / Neow / 戦闘中生成) | `CardModel.FloorAddedToDeck` setter | `card_obtained` |
 | **カードアップグレード** (smith / Apotheosis / Falling event 等) | `CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle)` Postfix (sync メソッド) | `card_upgraded` |
-| **レリック取得** (treasure / reward / event / 戦闘ドロップ全部) | `MegaCrit.Sts2.Core.Commands.RelicCmd.Obtain(RelicModel, Player, int)` Postfix | `relic_obtained` |
+| **レリック取得** (treasure / reward / event / 戦闘ドロップ全部) | `RelicModel.FloorAddedToDeck` setter (`RelicCmd.Obtain` 内で必ず set される) | `relic_obtained` |
 
 これら canonical path を使う理由:
 - `CardCmd.Add` は async Task で Postfix のタイミングが state-machine 開始時 (deck 追加完了前) のため使えない → 同期の `FloorAddedToDeck` setter で代替
 - `CardModel.OnUpgrade` は +1 カード報酬の生成時にも発火するため信頼できない → `CardCmd.Upgrade` は内部で `pile.Type==Deck` のときだけ `UpgradedCards.Add` する仕様 (デコンパイル確認済) なので、同じ条件で emit
-- `Hook.AfterRewardTaken` の `RelicReward` 分岐だけだと宝箱 / event のレリックが取れない → `RelicCmd.Obtain` は STS2 全レリック取得経路 (treasure 含む) の集約点
+- `Hook.AfterRewardTaken` の `RelicReward` 分岐だけだと宝箱 / event のレリックが取れない → `RelicCmd.Obtain` は STS2 全レリック取得経路 (treasure 含む) の集約点。ただし `Obtain` を直接 patch すると `Obtain<T>(Player)` と overload 衝突 (Ambiguous match) するため、`Obtain` 内で set される `FloorAddedToDeck` setter で拾う
 
 ---
 
@@ -98,7 +105,7 @@ UI に出るデータの「正解の出処」を定義する。同じデータ�
 | 重複源 | 解決策 |
 |---|---|
 | ショップで買ったカードが `card_obtained` (CardCmd.Add 経由) と `item_purchased` 両方に乗る | 最終 pass で `cards_obtained` から `shop_purchases.card_id` 一致のものを除去 |
-| 同じカードへの enchant が `EnchantInternal` 複数 instance で複数発火 | mod 側で `(card hashcode, enchantment_id)` HashSet dedup + web 側で `(card_id, enchantment_id)` 単位 floor 単位 dedup |
+| 同じカードへの enchant の多重観測 (旧 `EnchantInternal` 経路の名残) | web 側で `(card_id, enchantment_id)` 単位 floor 単位 dedup |
 | `combat_end` が `AfterCombatEnd` と `AfterDeath` で 2 回 fire | mod 側 `_currentCombatEndEmitted` flag |
 | `run_end` がボス撃破時に erroneous fire | `_currentCombatWasVictory` で AfterDeath をスキップ + `_runEndEmitted` flag |
 | MP host 自身の event が player_id "1" と steam_id 両方で記録される | `SessionView` で `host_steam_id` が実 Steam ID のとき "1" を `host_steam_id` にエイリアス |
@@ -115,16 +122,21 @@ UI に出るデータの「正解の出処」を定義する。同じデータ�
 | `Hook.AfterRewardTaken` の `RelicReward` 分岐 | 宝箱 / event のレリックを通らない。`RelicCmd.Obtain` で全経路カバー |
 | `Hook.AfterItemPurchased` | `ClearAfterPurchase` 後に fire するため `MerchantEntry.CreationResult` が null。各 `MerchantEntry.OnTryPurchase` を直接 patch |
 | `AfterRestSiteSmithPostfix` 内の `UpgradedCards` 列挙 | 上位 `CardCmd.Upgrade` Postfix で全 upgrade 経路を 1 本にまとめたため不要 |
+| `RelicCmd.Obtain` 直接 patch | `Obtain<T>(Player)` との overload 衝突。`RelicModel.FloorAddedToDeck` setter で代替 |
+| `CardModel.EnchantInternal` patch | deck reload 等でも発火し大量誤検出。`CardCmd.Enchant` で代替 |
+| `Hook.AfterTurnEnd` | v0.111.0 で削除。`Hook.AfterSideTurnEnd` に改名 |
+| `DoomPower.BeforeTurnEnd` | v0.111.0 で削除。`BeforeSideTurnEnd` / `AfterSideTurnEnd` に分割 |
 
 ---
 
 ## 5. デコンパイルからの参照ポイント
 
-実装時に「正解のシグネチャ」を確認した STS2 内部コードの参照ポイント (`/tmp/sts2_dec/sts2.decompiled.cs` 行番号、参考):
+実装時に「正解のシグネチャ」を確認した STS2 内部コードの参照ポイント。ゲーム更新時の全体棚卸しは [`../game-api-inventory.md`](../game-api-inventory.md):
 
 - `MapPointHistoryEntry.GetEntry(ulong playerId)` — `string` ではなく **ulong**
 - `PlayerMapPointHistoryEntry` プロパティ群: `CardChoices` / `RelicChoices` / `UpgradedCards` / `BoughtRelics` / `BoughtPotions` / `CardsRemoved` / `CardsEnchanted` / `EventChoices` / `RestSiteChoices`
 - `RelicCmd.Obtain(RelicModel, Player, int)` — namespace `MegaCrit.Sts2.Core.Commands`
+- Hook の combat 引数は v0.111.0 から `ICombatState` (実装は `CombatState` / `NullCombatState`)。postfix 引数も `ICombatState?` で受ける
 - `CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle)` — sync void method
 - `CardModel.IsUpgraded` (`= CurrentUpgradeLevel > 0`) / `CardModel.Rarity` (CardRarity enum)
 - `CardRarity` enum: None / Basic / Common / Uncommon / Rare / Ancient / Event / Token / Status / Curse / Quest

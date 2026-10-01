@@ -35,7 +35,7 @@ internal static class HookPatches
 
     // === ライフサイクル hook ============================================
 
-    public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
+    public static void BeforeCombatStartPostfix(IRunState? runState, ICombatState? combatState)
     {
         try
         {
@@ -75,7 +75,7 @@ internal static class HookPatches
         }
     }
 
-    public static void AfterPlayerTurnStartPostfix(CombatState? combatState, object? player)
+    public static void AfterPlayerTurnStartPostfix(ICombatState? combatState, object? player)
     {
         try
         {
@@ -88,11 +88,11 @@ internal static class HookPatches
     }
 
     /// <summary>
-    /// AfterTurnEnd(ICombatState combatState, CombatSide side)
+    /// AfterSideTurnEnd(ICombatState combatState, CombatSide side, IEnumerable&lt;Creature&gt; participants)
     /// CombatSide.Player のときのみ「プレイヤー側ターン終了 → 次ターンへ」のシグナル
     /// として扱い、turn_number を進める。
     /// </summary>
-    public static void AfterTurnEndPostfix(CombatState? combatState, object? side)
+    public static void AfterSideTurnEndPostfix(ICombatState? combatState, object? side)
     {
         try
         {
@@ -104,11 +104,11 @@ internal static class HookPatches
         }
         catch (Exception ex)
         {
-            Log.Error($"[StsStats] AfterTurnEnd error: {ex.Message}");
+            Log.Error($"[StsStats] AfterSideTurnEnd error: {ex.Message}");
         }
     }
 
-    public static void AfterCombatEndPostfix(IRunState? runState, CombatState? combatState, object? room)
+    public static void AfterCombatEndPostfix(IRunState? runState, ICombatState? combatState, object? room)
     {
         try
         {
@@ -120,7 +120,7 @@ internal static class HookPatches
         }
     }
 
-    public static void AfterCombatVictoryPostfix(IRunState? runState, CombatState? combatState, object? room)
+    public static void AfterCombatVictoryPostfix(IRunState? runState, ICombatState? combatState, object? room)
     {
         try
         {
@@ -158,7 +158,7 @@ internal static class HookPatches
 
     public static void AfterDeathPostfix(
         IRunState?    runState,
-        CombatState?  combatState,
+        ICombatState?  combatState,
         Creature?     creature,
         bool          wasRemovalPrevented,
         float         deathAnimLength)
@@ -224,7 +224,7 @@ internal static class HookPatches
         }
     }
 
-    public static void BeforeDamageReceivedPostfix(CombatState? combatState, Creature? target)
+    public static void BeforeDamageReceivedPostfix(ICombatState? combatState, Creature? target)
     {
         try
         {
@@ -240,7 +240,7 @@ internal static class HookPatches
     }
 
     public static void AfterDamageGivenPostfix(
-        CombatState? combatState,
+        ICombatState? combatState,
         Creature?    dealer,
         DamageResult? results,
         Creature?    target,
@@ -248,7 +248,9 @@ internal static class HookPatches
     {
         try
         {
-            if (dealer == null || results == null) return;
+            // dealer=null は毒 tick 等の間接ダメ (PoisonPower は dealer=null で CreatureCmd.Damage を呼ぶ)。
+            // ここで return すると間接帰属分岐に到達せず毒ダメが 1 件も記録されない (旧バグ)。
+            if (results == null) return;
             // STS2 の DamageResult は HP cap が既にかかった値を返す:
             //   TotalDamage     = HP loss + 敵 block で吸収された分（= UnblockedDamage + BlockedDamage、cap 込み）
             //   BlockedDamage   = 敵 block で吸収された分
@@ -276,7 +278,7 @@ internal static class HookPatches
             if (target != null) TargetHpSnapshot.Clear(target);
 
             // dealer がプレイヤーか間接ダメージか判定
-            var dealerPlayer = TryFindPlayerForCreature(combatState, dealer);
+            var dealerPlayer = TryFindPlayerForCreature(combatState, dealer, includePets: true);
             string? dealerPlayerId;
             CardInfo? card;
 
@@ -300,8 +302,6 @@ internal static class HookPatches
             // 自傷ダメージ（Hemokinesis 等）や味方への誤爆は damage_dealt にカウントしない。
             // target が player creature（targetPlayerId != null）の場合は damage_received 側で記録される。
             if (targetPlayerId != null) return;
-
-            int hitIndex = (int?)results.GetType().GetProperty("HitIndex")?.GetValue(results) ?? 0;
 
             // ModifyDamage で観測した (pre, post, modifiers) を drain。
             // 直近 ModifyDamage 群の中で post が total と一致するエントリを「実ヒット由来」として優先採用。
@@ -332,7 +332,6 @@ internal static class HookPatches
                 source_card_id       = card?.CardId,
                 source_card_name     = card?.CardName,
                 source_card_type     = card?.CardType,
-                hit_index            = hitIndex,
                 active_on_target     = ActivePowersSnapshot.ForCreature(target),
                 active_on_dealer     = ActivePowersSnapshot.ForCreature(dealer),
                 modifications        = modList,
@@ -345,7 +344,7 @@ internal static class HookPatches
     }
 
     public static void AfterDamageReceivedPostfix(
-        CombatState?  combatState,
+        ICombatState?  combatState,
         Creature?     target,
         DamageResult? result,
         Creature?     dealer,
@@ -380,7 +379,7 @@ internal static class HookPatches
     }
 
     public static void AfterBlockGainedPostfix(
-        CombatState? combatState,
+        ICombatState? combatState,
         Creature?    creature,
         decimal      amount,
         CardModel?   cardSource)
@@ -411,7 +410,7 @@ internal static class HookPatches
         }
     }
 
-    public static void AfterEnergySpentPostfix(CombatState? combatState, CardModel? card, int amount)
+    public static void AfterEnergySpentPostfix(ICombatState? combatState, CardModel? card, int amount)
     {
         try
         {
@@ -437,7 +436,7 @@ internal static class HookPatches
         catch (Exception ex) { Log.Error($"[StsStats] BeforeCardPlayed scope enter error: {ex.Message}"); }
     }
 
-    public static void AfterCardPlayedPostfix(CombatState? combatState, object? cardPlay)
+    public static void AfterCardPlayedPostfix(ICombatState? combatState, object? cardPlay)
     {
         try
         {
@@ -477,7 +476,7 @@ internal static class HookPatches
         }
     }
 
-    public static void AfterCardDrawnPostfix(CombatState? combatState, CardModel? card, bool fromHandDraw)
+    public static void AfterCardDrawnPostfix(ICombatState? combatState, CardModel? card, bool fromHandDraw)
     {
         try
         {
@@ -500,7 +499,7 @@ internal static class HookPatches
     }
 
     public static void AfterPowerAmountChangedPostfix(
-        CombatState? combatState,
+        ICombatState? combatState,
         PowerModel?  power,
         decimal      amount,
         Creature?    applier,
@@ -513,7 +512,7 @@ internal static class HookPatches
             if (delta == 0) return;
 
             string powerId = power.Id.Entry;
-            var applierPlayer = TryFindPlayerForCreature(combatState, applier);
+            var applierPlayer = TryFindPlayerForCreature(combatState, applier, includePets: true);
             string? applierPlayerId = applierPlayer?.id;
 
             // PowerOriginRegistry に記録:
@@ -546,7 +545,7 @@ internal static class HookPatches
         }
     }
 
-    public static void AfterPotionUsedPostfix(CombatState? combatState, object? potion, Creature? target)
+    public static void AfterPotionUsedPostfix(ICombatState? combatState, object? potion, Creature? target)
     {
         try
         {
@@ -668,7 +667,7 @@ internal static class HookPatches
         }
     }
 
-    private static void EmitCombatStart(IRunState? runState, CombatState? combatState)
+    private static void EmitCombatStart(IRunState? runState, ICombatState? combatState)
     {
         try
         {
@@ -702,7 +701,7 @@ internal static class HookPatches
         }
     }
 
-    private static void EmitCombatEnd(IRunState? runState, CombatState? combatState)
+    private static void EmitCombatEnd(IRunState? runState, ICombatState? combatState)
     {
         try
         {
@@ -782,11 +781,17 @@ internal static class HookPatches
 
     // === ヘルパ群（Phase 2 から踏襲） ====================================
 
-    private static (string id, string name)? TryFindPlayerForCreature(CombatState? combatState, Creature? dealer)
+    /// <param name="includePets">
+    /// true なら Osty 等のペット creature (<c>Creature.PetOwner</c>) を owner プレイヤーに解決する。
+    /// 与ダメ / power 付与など「誰の行為か」の帰属で使う。被弾側 (target) では false のまま
+    /// (ペットの被ダメを owner の被ダメに数えない)。
+    /// </param>
+    private static (string id, string name)? TryFindPlayerForCreature(ICombatState? combatState, Creature? dealer, bool includePets = false)
     {
         if (dealer == null) return null;
         try
         {
+            if (includePets && dealer.PetOwner != null) return BuildPlayerInfo(dealer.PetOwner);
             var runState = combatState?.RunState;
             if (runState == null) return null;
             var players = runState.GetType().GetProperty("Players")?.GetValue(runState) as IEnumerable;
@@ -938,7 +943,7 @@ internal static class HookPatches
         catch { return null; }
     }
 
-    private static string? TryGetRoomType(IRunState? runState, CombatState? combatState)
+    private static string? TryGetRoomType(IRunState? runState, ICombatState? combatState)
     {
         try
         {
@@ -987,7 +992,7 @@ internal static class HookPatches
     /// 指定 target に乗っている Poison/Burn 等の DoT の applier を探して返す。
     /// 間接ダメージ（dealer がプレイヤーでない場合）の attribution に使う。
     /// </summary>
-    private static (string id, string name)? FindIndirectDamageApplier(Creature? target, CombatState? combatState)
+    private static (string id, string name)? FindIndirectDamageApplier(Creature? target, ICombatState? combatState)
     {
         if (target == null) return null;
         try
@@ -1006,7 +1011,7 @@ internal static class HookPatches
                 if (powerId.Contains("POISON") || powerId.Contains("BURN") || powerId.Contains("DOOM"))
                 {
                     var applier = power.GetType().GetProperty("Applier")?.GetValue(power) as Creature;
-                    var info = TryFindPlayerForCreature(combatState, applier);
+                    var info = TryFindPlayerForCreature(combatState, applier, includePets: true);
                     if (info != null) return info;
                 }
             }

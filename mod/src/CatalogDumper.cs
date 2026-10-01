@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Logging;
 
 namespace StsStats;
@@ -145,8 +146,10 @@ internal static class CatalogDumper
             string baseTitle = card.GetType().GetProperty("Title")?.GetValue(card)?.ToString() ?? "";
             string rarity    = card.GetType().GetProperty("Rarity")?.GetValue(card)?.ToString() ?? "";
             int maxUpgrade   = (int?)card.GetType().GetProperty("MaxUpgradeLevel")?.GetValue(card) ?? 1;
-            string cardType  = card.GetType().GetProperty("CardType")?.GetValue(card)?.ToString() ?? "";
-            int? cost        = TryGetIntProp(card, "Cost");
+            // CardModel に CardType / Cost プロパティは無い (旧実装はこれで全件空だった)。
+            // 正: CardModel.Type / CardModel.EnergyCost.Canonical (X コストは -1)。デコンパイル確認済 v0.111.0
+            string cardType  = (card as CardModel)?.Type.ToString() ?? "";
+            int? cost        = card is CardModel cm ? (cm.EnergyCost.CostsX ? -1 : cm.EnergyCost.Canonical) : null;
 
             return new
             {
@@ -390,18 +393,6 @@ internal static class CatalogDumper
             return ResolveLoc(prop?.GetValue(model));
         }
         catch { return ""; }
-    }
-
-    private static int? TryGetIntProp(object o, string name)
-    {
-        try
-        {
-            var v = o.GetType().GetProperty(name)?.GetValue(o);
-            if (v == null) return null;
-            if (v is int i) return i;
-            return Convert.ToInt32(v);
-        }
-        catch { return null; }
     }
 
     private static string? TryGetCurrentLocale()

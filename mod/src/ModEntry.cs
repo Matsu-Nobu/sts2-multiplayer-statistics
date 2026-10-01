@@ -37,7 +37,7 @@ public static class ModEntry
 
             PatchHook(nameof(Hook.BeforeCombatStart),        nameof(HookPatches.BeforeCombatStartPostfix));
             PatchHook(nameof(Hook.AfterPlayerTurnStart),     nameof(HookPatches.AfterPlayerTurnStartPostfix));
-            PatchHook(nameof(Hook.AfterTurnEnd),             nameof(HookPatches.AfterTurnEndPostfix));
+            PatchHook(nameof(Hook.AfterSideTurnEnd),         nameof(HookPatches.AfterSideTurnEndPostfix));
             PatchHook(nameof(Hook.AfterCombatEnd),           nameof(HookPatches.AfterCombatEndPostfix));
             PatchHook(nameof(Hook.ModifyDamage),             nameof(HookPatches.ModifyDamagePostfix));
             PatchHook(nameof(Hook.BeforeDamageReceived),     nameof(HookPatches.BeforeDamageReceivedPostfix));
@@ -132,7 +132,12 @@ public static class ModEntry
             // 間接ダメージのソース帰属（Hook では識別できないため、ゲーム本体メソッドを直接 patch）
             PatchPower<PoisonPower>(nameof(PoisonPower.AfterSideTurnStart),
                 nameof(IndirectDamagePatches.PoisonPrefix), nameof(IndirectDamagePatches.PoisonPostfix));
-            PatchPower<DoomPower>(nameof(DoomPower.BeforeTurnEnd),
+            // Doom は v0.111.0 で敵側 = BeforeSideTurnEnd / player 側 = AfterSideTurnEnd に分割 (デコンパイル確認済)。
+            // DoomKill は CreatureCmd.Kill で damage hook を通らないため、現状 (doom) の damage_dealt は出ない
+            // (docs/game-api-inventory.md P1-3)。context の push だけは維持する。
+            PatchPower<DoomPower>(nameof(DoomPower.BeforeSideTurnEnd),
+                nameof(IndirectDamagePatches.DoomPrefix), nameof(IndirectDamagePatches.DoomPostfix));
+            PatchPower<DoomPower>(nameof(DoomPower.AfterSideTurnEnd),
                 nameof(IndirectDamagePatches.DoomPrefix), nameof(IndirectDamagePatches.DoomPostfix));
             PatchOrb<LightningOrb>(nameof(LightningOrb.Evoke),
                 nameof(IndirectDamagePatches.LightningEvokePrefix), nameof(IndirectDamagePatches.LightningEvokePostfix));

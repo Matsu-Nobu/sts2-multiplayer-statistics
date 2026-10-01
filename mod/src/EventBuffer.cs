@@ -57,7 +57,7 @@ internal static class EventBuffer
 
     /// <summary>
     /// プレイヤー側ターン終了時に呼ぶ。次ターン用に turn_number を進め sequence をリセット。
-    /// AfterTurnEnd(side=Player) hook 起点。
+    /// AfterSideTurnEnd(side=Player) hook 起点。
     /// </summary>
     public static void BeginTurn()
     {
