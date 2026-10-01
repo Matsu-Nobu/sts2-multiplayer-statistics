@@ -70,15 +70,16 @@
 
 ### 2.2 Canonical path 厳守
 
-`docs/spec/data-sources.md` の §1.4 (Canonical) に列挙したものが各データの **唯一の正規経路**。
-他の経路から二重に拾うと dedup が必要になり、データ抜けと誤計上の温床になる:
+`docs/spec/data-sources.md` §1 に列挙したものが各データの **唯一の正規経路** (v2: ゲーム自身の記録を正とする。
+全体設計は `docs/redesign-v2.md`)。他の経路から二重に拾うと dedup が必要になり、データ抜けと誤計上の温床になる:
 
 | 何 | canonical |
 |---|---|
-| カード追加 | `CardModel.FloorAddedToDeck` setter |
-| カードアップグレード | `CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle)` |
-| レリック取得 | `RelicCmd.Obtain(RelicModel, Player, int)` |
-| 鍛治の存在 | `Hook.AfterRestSiteSmith` (option=smith のフラグだけ。card 自体は CardCmd.Upgrade) |
+| ラン全体の各階の内容 (入手・除去・強化・エンチャント・変化・選択・HP・ゴールド) | ゲームの階ごとの記録 `MapPointHistoryEntry`。確定点 `RunManager.UpdatePlayerStatsInMapPointHistory` → `floor_snapshot` |
+| ラン終了 (勝利・死亡・放棄) | `RunManager.OnEnded` + `IsAbandoned` |
+| 戦闘勝利 | `Hook.AfterCombatEnd` (勝利時しか呼ばれない) |
+| 与ダメ・被ダメ | `Hook.AfterDamageGiven` 1 か所 |
+| プレイヤー ID | `Identity.Normalize` (シングルプレイの `NetId=1` → Steam ID) |
 
 新しい canonical path を確立したら **`docs/spec/data-sources.md` を更新する**。
 canonical 化に伴って廃止した patch も §4「削除済み / 廃止された経路」に履歴として残す。
@@ -184,8 +185,10 @@ force-cache は cache エントリを問答無用で返すモード。一度 4xx
 | カード rarity の色分け | 同上、Common / Uncommon / Rare のカードがあるセッションで |
 | 鍛治アップグレードが反映 | rest_action(smith) を含むセッションで |
 | 宝箱レリックが表示 | Treasure floor を含むセッションで |
-| ショップで買ったカードが二重表示されない | shop_purchases あり / 同じカードが cards_obtained にも乗っているセッションで |
-| MP で host 自身の events が単一プレイヤーに統合 | host_steam_id != "1" の MP セッションで |
+| ショップで買ったカードが二重表示されない | ショップで購入したセッションで |
+| 全 event の player_id が Steam ID ("1" が無い) | シングルプレイ / MP の両方のセッションで |
+| MP で他プレイヤーの入手物が混ざらない | MP セッションのプレイヤータブ切り替えで |
+| 勝利・死亡・放棄が正しく表示される | それぞれで終えたセッションのヘッダーで |
 | カード chip ホバーで description tooltip 表示 | カード / レリック / ポーション / エンチャント chip 全部 |
 | catalog の `[gold]X[/gold]` 等タグが色付け span に変換される | tooltip 描画見て確認 |
 | 解決不能な `{...}` placeholder が `XX` 表示になる | Stomp / Body Slam 等の chip ホバーで確認 |

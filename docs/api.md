@@ -29,7 +29,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | `events` | run中に発生したすべてのイベント（戦闘内・外いずれも） | 1〜10万 |
 
 **設計方針**:
-- すべての出来事を時系列の event 列として記録（戦闘中の damage_dealt も、戦闘外の card_picked も同じテーブル）
+- すべての出来事を時系列の event 列として記録（戦闘中の damage_dealt も、戦闘外の floor_snapshot も同じテーブル）
 - 戦闘内 event は `(combat_index, turn_number, sequence)` で ordering、戦闘外は NULL
 - 集計（戦闘単位サマリ・rDPS・カード別統計）は **クライアント側** または専用集計エンドポイントで導出
 - 新統計の追加は基本的にスキーマ変更不要、`event_type` を増やすだけ
@@ -81,7 +81,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 
 ## `POST /sessions/{id}/events` `[Auth]`
 
-run 中に発生したイベントを **bulk 投稿** する。戦闘内（`card_played`, `damage_dealt`, ...）も戦闘外（`run_start`, `combat_start`, `card_picked`, ...）も同じエンドポイント・同じ shape で送る。
+run 中に発生したイベントを **bulk 投稿** する。戦闘内（`card_played`, `damage_dealt`, ...）も戦闘外（`run_start`, `combat_start`, `floor_snapshot`, ...）も同じエンドポイント・同じ shape で送る。
 
 **Headers**
 ```
@@ -157,47 +157,88 @@ Content-Type: application/json
 
 戦闘内 event は `combat_index` / `turn_number` / `sequence` をすべて set。戦闘外 event はそれらが NULL。
 
-### event_type カタログ（現行実装）
+### event_type カタログ（v2。設計は [`redesign-v2.md`](./redesign-v2.md)）
 
-#### run / combat ライフサイクル
+`player_id` は全 event で **正規化済み** (シングルプレイ・LAN ホストの `NetId=1` はローカルの Steam ID に置換)。
+プレイヤーに属さない event (`combat_start` / `combat_end` / `floor_snapshot` 等) だけ空。
 
-| event_type | payload | context |
-|-----------|---------|---------|
-| `run_start` | `character_id`, `ascension`, `seed` | floor のみ |
-| `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor` | floor のみ |
-| `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | floor + combat_index |
-| `combat_end` | `combat_index`, `victory` (bool) | floor + combat_index |
+#### run / 階 / combat ライフサイクル
+
+| event_type | payload | player_id | context |
+|-----------|---------|-----------|---------|
+| `run_start` | `character_id`, `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
+| `floor_snapshot` | §floor_snapshot | 空 | floor のみ |
+| `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
+| `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`) | 空 | floor のみ |
+| `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 空 | floor + combat_index |
+| `combat_end` | `combat_index`, `victory` (bool) | 空 | floor + combat_index |
+
+- `combat_index` = 戦闘の階番号。中断→再開で同じ `combat_index` の `combat_start` が再び来たら、
+  それより前の同じ `combat_index` の event は無効 (web が捨てる)。
+- `run_end` はラン 1 回につき 1 件。`final_hp` は勝利・放棄ではラン終了処理 (全員を倒す) の直前の HP、全滅では 0。
+
+#### floor_snapshot
+
+ゲーム自身の階ごとの記録 (`MapPointHistoryEntry`) の写し。同じ `floor` の snapshot は何度でも届く。
+**web は階ごとに最後に受け取ったものだけを使う。**
+
+```json
+{
+  "floor": 2, "act_index": 0, "is_final": true,
+  "rooms": [{ "room_type": "Monster", "model_id": "CORPSE_SLUGS_WEAK", "model_name": "屍ナメクジ",
+              "monster_ids": ["CORPSE_SLUG", "CORPSE_SLUG"], "turns_taken": 6 }],
+  "players": [{
+    "player_id": "76561199204788207",
+    "hp":   { "current": 44, "max": 70, "damage_taken": 12, "healed": 0, "max_gained": 0, "max_lost": 0 },
+    "gold": { "current": 113, "gained": 14, "spent": 0, "lost": 0, "stolen": 0 },
+    "cards_gained":      [card],
+    "cards_removed":     [card],
+    "cards_transformed": [{ "from": card, "to": card }],
+    "cards_upgraded":    [card],
+    "cards_downgraded":  [card],
+    "cards_enchanted":   [{ "card": card, "enchantment_id": "...", "enchantment_name": "..." }],
+    "card_choices":      [{ "card": card, "was_picked": true }],
+    "relic_choices":     [{ "id": "BOOMING_CONCH", "name": "轟音のほら貝", "rarity": "Ancient", "was_picked": true }],
+    "potion_choices":    [{ "id": "ENERGY_POTION", "name": "エナジーポーション", "was_picked": true }],
+    "potions_used":      [model], "potions_discarded": [model], "relics_removed": [model],
+    "event_choices":     ["轟音のほら貝"],
+    "ancient_choices":   [{ "title": "轟音のほら貝", "was_chosen": true }],
+    "rest_site_choices": ["SMITH"],
+    "bought":            { "relics": [model], "potions": [model], "colorless": [model] },
+    "completed_quests":  [model]
+  }]
+}
+```
+
+- `card` = `{ "id", "name", "rarity", "type", "upgrade_level", "enchantment_id"? }`、`model` = `{ "id", "name" }`。
+  名前・レアリティは mod が送信時に `ModelDb` から引く (ゲーム側の記録は ID のみ)。
+- `relic_choices` / `potion_choices` の `was_picked: true` が入手、`false` が報酬のスキップ。
+- `card_choices` は階ごとに 1 本のリスト (報酬ごとの区切りは無い)。ショップの階では買わなかった商品カードが入る。
+- `is_final`: その階を出て確定したもの (`true`) か、ライブ表示用に途中で送ったもの (`false`) か。
 
 #### 戦闘内（turn-scoped）
 
-すべて `combat_index` / `turn_number` / `sequence` を持つ。
+すべて `combat_index` / `turn_number` / `sequence` を持つ。戦闘中 (`CombatManager.IsInProgress`) だけ送る。
 
 | event_type | payload | player_id |
 |-----------|---------|-----------|
-| `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?`, `energy_cost?` | dealer |
-| `card_drawn` | `card_id`, `from_hand_draw?` | drawer |
-| `damage_dealt` | `amount` (敵HPに通った分), `total_damage?` (試行総ダメ), `blocked_damage?` (敵blockで吸収), `overkill_damage?` (HP超過分), `was_target_killed?`, `target_creature_id`, `target_player_id?`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `active_on_target[]`, `active_on_dealer[]` | dealer |
-| `damage_received` | `amount` (自HPに受けた分), `total_damage?` (試行総ダメ), `blocked_damage?` (自blockで吸収=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]?` | target |
-| `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `from_player?` | receiver |
-| `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | applier |
-| `energy_spent` | `amount`, `source_card_id?` | spender |
-| `potion_used` | `potion_id`, `target_creature_id?` | user |
+| `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?` | 使用者 |
+| `card_drawn` | `card_id`, `card_name?`, `from_hand_draw?` | ドローした人 |
+| `damage_dealt` | `amount` (敵HPに通った分), `total_damage` (ブロック込み), `blocked_damage`, `overkill_damage`, `was_target_killed`, `is_doom_kill`, `target_creature_id`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `active_on_target[]`, `active_on_dealer[]`, `modifications[]` | 与えた人 (ペットは持ち主。攻撃者が空なら出どころパワーの付与者) |
+| `damage_received` | `amount` (自HPに受けた分), `total_damage`, `blocked_damage` (=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]` | 受けた人 (**致死の一撃を含む**) |
+| `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `from_player?` | 受けた人 |
+| `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | 付与者 |
+| `energy_spent` | `amount`, `source_card_id?` | 使った人 |
+| `potion_used` | `potion_id`, `target_creature_id?` | 使った人 |
 
-#### 予約 source_card_id（合成タグ）
+`damage_dealt` / `damage_received` はどちらも `Hook.AfterDamageGiven` の 1 か所から作る (受けた側が敵なら前者、プレイヤーなら後者)。
 
-`AfterDamageGiven` / `AfterBlockGained` の `cardSource` が null の間接ダメ・パワー発生源は、以下の予約 ID で識別する。`source_card_type` には `"Power"` / `"Orb"` が入る。
+#### 出どころ (`source_card_id` にカードが無いとき)
 
-| 予約 ID | 意味 |
-|---|---|
-| `(poison)` | PoisonPower の tick |
-| `(doom)` | DoomPower の発動（残 HP 即死） |
-| `(lightning_evoke)` | Lightning Orb の手動 Evoke（Zap 等） |
-| `(lightning_evoke_auto)` | Lightning Orb のターン終端等で起こる自動 Evoke |
-| `(lightning_passive)` | Lightning Orb の Passive |
-| `(thorns)` | Thorns Power の反射ダメ |
-| `(flame_barrier)` | Flame Barrier Power の反射ダメ |
-| `(rampart)` | Rampart Power のターン頭 block |
-| `(block_next_turn)` | BlockNextTurn Power の発動 block |
+カード以外 (パワー・レリック・オーブ・エンチャント) が起こしたダメージ・ブロックは、その **モデルの ID** が
+`source_card_id` に入る (例: `POISON_POWER`, `DOOM_POWER`, `THORNS_POWER`, `LIGHTNING_ORB`, `BURNING_BLOOD`)。
+`source_card_type` にはモデルの種類 (`Power` / `Relic` / `Orb` / `Enchantment`)、`source_card_name` には表示名が入る。
+mod が起動時に対象メソッドを自動で列挙して追跡する (`redesign-v2.md` §2.4)。v1 の合成タグ (`(poison)` 等) は廃止。
 
 #### power snapshot（`active_on_target` / `active_on_dealer` の中身）
 
@@ -359,6 +400,7 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 | 時期 | 変更 |
 |------|------|
+| 2026-10 | v2: ラン全体の event を `floor_snapshot` に統合 (`room_entered` / `hp_changed` / `gold_changed` / `act_entered` / `rest_action` / `reward_taken` / `card_obtained` / `card_upgraded` / `card_enchanted` / `card_removed` / `relic_obtained` / `potion_obtained` / `potion_discarded` / `event_choice` を廃止)。`player_id` を全 event で正規化。`run_end` に `final_hp`。出どころをモデル ID に変更。`hit_index` 廃止 |
 | 2026-05 | `GET /catalog.{lang}.json` 追加（chip tooltip 用 STS2 definitions、静的） |
 | Phase 3.5 | `POST /turns` 廃止（410 Gone）、`turns` テーブル削除、`events` テーブルに combat_index / turn_number / sequence 追加。すべての出来事を `events` 1 表に統合 |
 | Phase 2 | 初版 |

@@ -57,36 +57,33 @@ Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を
 ### マルチプレイにおける送信責任
 
 STS2 のマルチプレイは決定論的ロックステップ方式で、全クライアントが同じシミュレーションを実行している。`AfterDamageGiven` 等の hook は他プレイヤーの行動でも発火し、`dealer` で識別できる。
-**ホスト 1 人の mod だけがサーバーへ送信する**（`RunManager.Instance.NetService.Type` で判定）。仲間は mod を入れる必要がない。
+**ホスト 1 人の mod だけがサーバーへ送信する**（`RunManager.Instance.NetService.Type == Client` のときは送信しない）。仲間は mod を入れる必要がない。
 
-### Harmony patch している主な hook
+### データの取り方 (v2)
 
-| hook | 用途 |
-|------|------|
-| `BeforeCombatStart` | 戦闘カウンタ初期化、`combat_start` emit |
-| `AfterCombatEnd` | `combat_end` emit、buffer flush |
-| `AfterSideTurnEnd(side=Player)` | ターン終了の確定点。buffer flush |
-| `AfterDamageGiven` | `damage_dealt` emit（dealer / target / 通った量・ブロック吸収・overkill） |
-| `ModifyDamage` (post) | overkill / blocked_damage の最終確定（HP snapshot ベース） |
-| `BeforeDamageReceived` / `AfterDamageReceived` | `damage_received` emit |
-| `BeforeCardPlayed` / `AfterCardPlayed` | `card_played` emit、`CardPlayedScope` の出入り |
-| `AfterCardDrawn` | `card_drawn` emit |
-| `AfterBlockGained` | `block_gained` emit |
-| `AfterEnergySpent` | `energy_spent` emit |
-| `AfterPowerAmountChanged` | `power_changed` emit |
-| `AfterPotionUsed` | `potion_used` emit |
+全体設計は [`redesign-v2.md`](./redesign-v2.md)。要点:
 
-### 間接ダメージ・パワー由来ブロックの帰属
+| 何 | どこから | event |
+|---|---|---|
+| ラン全体の各階の内容 | ゲーム自身の階ごとの記録 (`MapPointHistoryEntry`)。確定点 `RunManager.UpdatePlayerStatsInMapPointHistory` | `floor_snapshot` |
+| ショップの値段 | `Merchant*Entry.OnTryPurchase` | `item_purchased` |
+| ラン開始 / 終了 | 最初の部屋 (`AfterRoomEntered`) / `RunManager.OnEnded` (+ `IsAbandoned`、直前の HP は `WinRun` / `Abandon` の Prefix) | `run_start` / `run_end` |
+| 戦闘開始 / 勝利 / 敗北 | `BeforeCombatStart` / `AfterCombatEnd` (勝利でしか呼ばれない) / 戦闘中の `OnEnded` | `combat_start` / `combat_end` |
+| ターン区切り | `AfterSideTurnEnd(side=Player)` | (送信の区切り) |
+| 与ダメ・被ダメ | `AfterDamageGiven` 1 か所 (+ `ModifyDamage` の補正記録) | `damage_dealt` / `damage_received` |
+| ブロック・カード使用・ドロー・エナジー・ポーション・パワー | `AfterBlockGained` / `AfterCardPlayed` / `AfterCardDrawn` / `AfterEnergySpent` / `AfterPotionUsed` / `AfterPowerAmountChanged` | 各 event |
 
-`AfterDamageGiven` の `cardSource` は `CardModel?` のみで、Poison / Doom / Lightning Orb / Thorns / Flame Barrier / Rampart / BlockNextTurn 等は識別できない。これを補うため、AsyncLocal による source context 伝搬を実装している。
+### 誰の行為か (帰属)
 
-- `DamageSourceContext` (`AsyncLocal`) — 間接ダメージのソースを伝搬
-- `BlockSourceContext` (`AsyncLocal`) — Power 由来ブロックのソースを伝搬
-- `CardPlayedScope` — Lightning Orb の手動 Evoke / 自動 Evoke を区別するためのフラグ
-
-これらが解決した cardSource は予約タグ（`(poison)` / `(doom)` / `(lightning_evoke)` / `(lightning_evoke_auto)` / `(lightning_passive)` / `(thorns)` / `(flame_barrier)` / `(rampart)` / `(block_next_turn)`）として `source_card_id` に入る。詳細は `api.md` の「予約 source_card_id」セクション参照。
-
-複数プレイヤーが同じデバフ（Vulnerable / Poison 等）を撒いている場合、`active_on_target` の各 power エントリに `appliers[]`（player_id × stacks）を埋めて送る。WebUI 側は stacks 比で按分し rDPS / rMit を算定する。
+- プレイヤー ID は `Identity` で正規化 (シングルプレイ・LAN ホストの `NetId=1` → ローカルの Steam ID)。
+- ペット (Osty 等) の与ダメ・付与は `Creature.PetOwner` の持ち主に付ける。
+- **出どころの自動追跡 (`SourceContext`)**: 起動時に、パワー・レリック・オーブ・エンチャントの全具象クラスの
+  上書き Hook メソッドのうち、本体で `CreatureCmd.Damage / GainBlock / Kill`、`PowerCmd.Apply`、
+  `PlayerCmd.GainEnergy` を呼ぶものを IL から自動で選んで patch し、実行中のモデルを `AsyncLocal` に積む。
+  カードが無いダメージ・ブロックには、そのモデルの ID (`POISON_POWER` 等) が出どころとして付く。
+  攻撃者が空のダメージ (毒など) は、出どころパワーの付与者を与え手にする。
+- 複数プレイヤーが同じデバフを撒いた場合、`active_on_target` の各 power に `appliers[]`
+  (player_id × stacks) を入れて送り、web が stacks 比で按分して rDPS / rMit を出す。
 
 ### HTTP 送信
 

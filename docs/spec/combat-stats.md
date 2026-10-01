@@ -61,7 +61,7 @@ ordinal は出現順 1 始まり。
 
 ### 3.1 メタ情報
 
-- encounter_name / room_type / 結果 (victory / defeat) / ターン数
+- encounter_name / room_type / 結果 (`勝利` / `敗北`、`combat_end.victory`。戦闘中のまま終わっていない戦闘は `進行中`) / ターン数
 
 ### 3.2 ターン推移 (PerTurnTable)
 
@@ -95,6 +95,9 @@ power × applier の行列:
 ## 4. データソース
 
 ベースは `web/src/lib/aggregate.ts` の `buildCombatInfos(doc)` → `CombatInfo[]`。
+
+各 `combat_index` について **最後の `combat_start` より後の event だけ** を使う (中断→再開で戦闘をやり直した場合、
+中断前の分はゲーム上無かったことになっているため)。`combat_start` の無い `combat_index` は戦闘として扱わない。
 さらに `buildRunTotals(combats)` で累計。
 
 | 集計 | 元 event_type |
@@ -110,7 +113,7 @@ power × applier の行列:
 | ポーション使用 | `potion_used` |
 | 最大単発 | `damage_dealt.payload.amount` の max + `source_card_id` |
 | オーバーキル | `damage_dealt.payload.overkill_damage` |
-| rDPS | `damage_dealt` の `active_on_dealer` / `active_on_target` |
+| rDPS | `damage_dealt` の `active_on_dealer` / `active_on_target`。`source_card_id` が `POISON_POWER` / `DOOM_POWER` (Doom による撃破、`is_doom_kill`) のものは 100% をそのパワーの付与者に stacks 比で配分 |
 
 mod 側で patch している hook と event_type の対応は [`spec/data-sources.md`](./data-sources.md) 参照。
 
@@ -119,12 +122,12 @@ mod 側で patch している hook と event_type の対応は [`spec/data-sourc
 ## 5. 単一プレイ vs MP
 
 - player_id ごとに集計。MP は per-player tab で切り替え。
-- SP の場合 player は 1 人だが、`SessionView` で MP の host 自身の event が "1" として記録される問題があるので、`host_steam_id` への alias を適用してから集計に渡す（`spec/run-overview.md` §2.1 と同じ）。
+- プレイヤー ID は mod が正規化して送る (シングルプレイでも Steam ID)。web 側の読み替えは無い。
 
 ---
 
 ## 6. 既知の制約
 
-- 味方へのエナジー付与: STS2 に hook 未確認 → 未追跡 (`roadmap.md` 候補)
+- 味方へのエナジー付与: 未追跡 (`PlayerCmd.GainEnergy` で取れることは確認済み。`redesign-v2.md` §2.4-4、v2 の後続)
 - スター消費 / シャッフル回数: 未追跡
 - クロスセッション統計（プレイヤー単位・カード単位の集計エンドポイント）: `roadmap.md` Phase 4

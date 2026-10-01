@@ -40,7 +40,7 @@
 - `activePlayer` が選ばれてる player は accent 背景。
 - タブ切り替えで `selectedFloor = null` にリセット。
 
-`SessionView` で MP の host 自身の event は `LocalContext.NetId` が `"1"` (local-player pseudo) になるため、別人扱いされて 2 タブ出る問題があった。`SessionView` で `host_steam_id` が実 Steam ID のとき `"1"` を `host_steam_id` にエイリアスすることで 1 タブに統合される。
+プレイヤー ID は mod が正規化して送る (シングルプレイ・LAN ホストの `NetId=1` → Steam ID)。web 側の読み替えは無い。
 
 ### 2.2 HP 折れ線グラフ
 
@@ -85,9 +85,11 @@
 | グループ | 表示行 | データ source |
 |---|---|---|
 | **入手** | カード / レリック / ポーション | `cards_obtained` / `relics_obtained` / `potions_obtained` |
-| **デッキ改造** | アップグレード / エンチャント / 除去 | `cards_upgraded` / `cards_enchanted` / `cards_removed` |
+| **デッキ改造** | アップグレード / エンチャント / 変化 / 除去 | `cards_upgraded` / `cards_enchanted` / `cards_transformed` / `cards_removed` |
 | **ショップ購入** | (フラットな chip 列) | `shop_purchases` |
 | **選択** | 休憩所 / イベント / カード選択肢 | `rest_options` / `event_choices` / `card_choices` |
+
+変化 (`cards_transformed`) は `変化前 → 変化後` の chip 2 つを矢印でつなぐ。
 
 各 group は枠付きカード内、label-value 2 列レイアウト (`grid-cols-[6rem_1fr]`)。
 
@@ -114,9 +116,10 @@
 提示カード選択肢:
 - pick されたものは通常の rarity chip
 - skip されたものは `opacity-60 line-through text-slate-500`、rarity 色は維持
-- 同階に複数 group ある場合は `#1 #2` の番号付き
+- 階ごとに 1 本の並び (報酬ごとの `#1 #2` 区切りは無い。ゲームの記録に区切りが無いため。2026-10-01 確定)
+- **ショップの階では出さない** (ゲームの記録に、買わなかった商品カードが「選ばなかった」として入るため)
 
-ショップ購入のカード chip には末尾に `(NNNG)` を黄色で付加する。
+ショップ購入の chip には末尾に `NNNG` (値段) を黄色で付加する。
 
 ### 2.6 chip ホバー tooltip (description)
 
@@ -144,11 +147,12 @@
 
 ## 3. データ集計 (`runOverview.ts`)
 
+データの出処は [`data-sources.md`](./data-sources.md) §2.1。
+
 ### 3.1 入力
 
 - `events: EventRecord[]` — セッション全 event
-- `filterPlayerId?: string` — マルチプレイ時、特定 player の視点
-  - 単一プレイヤーセッション (`playerIds.length === 1`) では `undefined` を渡し、フィルタしない
+- `playerId: string` — 表示するプレイヤー (単一プレイでもその人の ID を渡す)
 
 ### 3.2 出力
 
@@ -159,51 +163,46 @@ interface FloorSummary {
   floor, act_index, room_type, room_class
   encounter_name?, combat_index?, victory?
   hp_in, hp_out, max_hp_in, max_hp_out, gold_in, gold_out
-  damage_taken, damage_dealt
-  cards_obtained:   { card_id, card_name?, card_rarity?, is_upgraded? }[]
-  relics_obtained:  { relic_id, relic_name? }[]
-  potions_obtained: { potion_id, potion_name? }[]
-  cards_upgraded:   { card_id, card_name?, card_rarity? }[]
-  cards_enchanted:  { card_id, card_name?, enchantment_id, amount }[]
-  cards_removed:    { card_id, card_name? }[]
-  rest_options:     string[]
-  shop_purchases:   ItemPurchasedPayload[]
-  event_choices:    { title, history_name, text_key }[]
-  card_choices:     { picked_card_id, choices: { card_id, card_name, card_rarity?, is_upgraded?, was_picked }[] }[]
+  damage_taken
+  cards_obtained:    { card_id, card_name?, card_rarity?, is_upgraded? }[]
+  relics_obtained:   { relic_id, relic_name? }[]
+  potions_obtained:  { potion_id, potion_name? }[]
+  cards_upgraded:    { card_id, card_name?, card_rarity? }[]
+  cards_enchanted:   { card_id, card_name?, enchantment_id, enchantment_name? }[]
+  cards_transformed: { from: Card, to: Card }[]
+  cards_removed:     { card_id, card_name? }[]
+  rest_options:      string[]
+  shop_purchases:    ItemPurchasedPayload[]
+  event_choices:     { title }[]
+  card_choices:      { picked_card_id, choices: { card_id, card_name, card_rarity?, is_upgraded?, was_picked }[] }[]  // 0 か 1 件
 }
 ```
 
 ### 3.3 floor 列の構築ロジック
 
-1. `room_entered` event のある floor を skeleton として作成
-2. `room_entered` が無い floor も、他 event (reward_taken / event_choice / combat_start 等) に floor 番号がついていれば skeleton 追加 (Hook.AfterRoomEntered は Neow / 初期 floor で発火しないため)
-3. 最小 floor から 1 まで empty floor で backfill (Neow = floor 1 を必ず表示)
+1. `floor_snapshot` を階ごとに集め、**各階で最後に受け取ったもの** だけを使う
+2. 階の並び = snapshot のある階を番号順に (1 階 = ネオウも記録から必ず来る)
+3. 各階の `players[]` から `playerId` の分を取り出して `FloorSummary` を作る
+4. `room_type` / `encounter_name` は `rooms[]` の最後の部屋 (「？」マスから戦闘になった場合は戦闘の部屋)。
+   `combat_index` / `victory` は同じ階の `combat_start` / `combat_end` (最後の `combat_start` 以降) から
 
-### 3.4 hp_in / gold_in の決定
+### 3.4 HP / ゴールド
 
-- 基本: `room_entered.hp` / `.gold` (= local プレイヤーの値)
-- `filterPlayerId` 指定時: 該当 player の `hp_changed` / `gold_changed` の `room_entered` 直前の最新値で上書き
+- `hp_out` / `max_hp_out` / `gold_out` = その階の `hp.current` / `hp.max` / `gold.current`
+- `hp_in` / `max_hp_in` / `gold_in` = 1 つ前の階の退出値。1 階は `run_start` (そのプレイヤー) の `hp` / `max_hp` / `gold`
+- **勝利・放棄のランの最後の階**: ゲームがラン終了処理で全員を倒すため記録の HP は 0。`run_end.final_hp[playerId]` を `hp_out` に使う
+- 全滅のランの最後の階は記録どおり 0
 
-### 3.5 hp_out / gold_out の決定
+### 3.5 ショップ
 
-- `hp_out`: その階内で発生した最後の **playerId 付き** `hp_changed.current_hp`
-  - playerId=null の hp_changed は **敵の HP 変動** なので除外（混入すると敵が死んだ瞬間の `cur=0` を player の hp_out として表示してしまう）
-  - 階内に対象 hp_changed なしなら `hp_out = hp_in`
-  - **`run_end` 以降の hp_changed は除外**: ラン終了後の cleanup / 状態リセットで HP=0 が emit されることがある (特に Act 3 ラスボス勝利後、player の死亡アニメーションが走る等)。これを拾うと「クリアしたのに HP=0」という不自然な表示になる。run_end 時点の HP を「ラン終了時 HP」として固定する。
-  - 戦闘終了直後の Burning Blood (+6 等) のような戦闘終了 trigger 効果は **保持する** (combat_end の直後、run_end より前に発生する正規の HP 変化)。
-- 休憩所 (`rest_action: heal`) は silent heal で `hp_changed` を発火しないため、`room_entered[restFloor+1].hp` を直接 `hp_out` として採用
-- `gold_out`: その階内で発生した最後の `gold_changed.current_gold` (なければ `gold_in`)
-
-### 3.6 重複排除
-
-- ショップで買ったカードは `shop_purchases` と `card_obtained` 両方に乗るため、最終 pass で `cards_obtained` から `shop_purchases.card_id` と一致するものを除去
-- エンチャントは mod 側 instance hashcode dedup が漏れる場合があるため、web 側で `(card_id, enchantment_id)` 単位で floor 単位 dedup
+- `shop_purchases` = その階の `item_purchased` のうち `player_id == playerId` のもの
+- 表示ルール: ショップで買ったカードは「ショップ購入」欄にだけ出し、「入手 / カード」欄には出さない
+  (ゲームの記録の `cards_gained` には買ったカードも入るので、同じ階の `item_purchased` のカード ID を 1 枚ずつ差し引く)
 
 ---
 
 ## 4. 既知の制約
 
-- **CardReward の `card_choices`** は新 mod のみ (`MapPointHistoryEntry.GetEntry(ulong)` で正規取得)。古い mod で記録されたセッションは `card_id=""` / `card_choices=[]`。
-- **Event の選択肢**は `EventOption.Chosen` で title のみ取得。「結果」(HP delta / カード追加 / レリック追加等) は別 event 経路 (`hp_changed` / `card_obtained` / `relic_obtained` / `gold_changed`) で同階に紐付いて見える。
-- **マルチプレイ表示**: 階詳細はプレイヤータブで切り替えた人視点。HP グラフは `playerIds.length > 1` 時のみ filter 適用。
-- **`room_type` 不明**な合成 floor (Neow 等で `room_entered` が無い場合) は `room_type=""` で表示される。アイコン / 色はデフォルト。
+- **v1 形式のセッション** (2026-10 以前) は表示できない (DB を空にして v2 から取り直す方針、2026-10-01 確定)
+- **Event の選択肢**はタイトルだけ。結果 (HP・カード・レリック等) は同じ階の各欄に出る
+- **ライブ表示**: 今いる階の内容は送信の区切り (ターン終了・戦闘終了・報酬・購入・休憩所・イベント選択) ごとに更新される

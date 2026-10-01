@@ -148,10 +148,10 @@ WasFullyBlocked / Receiver` がそのまま入っている。HP の前後比較�
 | ヘッダー | ラン結果 (勝利 / 死亡 / 放棄)・最終階 | `RunManager.OnEnded` + `IsAbandoned` | `run_end` |
 | ヘッダー | キャラ・アセンション・シード・参加者 | ラン開始時の `RunState` | `run_start` |
 | 戦闘統計 | 戦闘の開始・勝敗 | `BeforeCombatStart` / `AfterCombatEnd` (=勝利) / `OnEnded`・全滅 (=敗北) | `combat_start` / `combat_end` |
-| 戦闘統計 | 与ダメ・被ダメ (1 つの event に統合) | `Hook.AfterDamageGiven` (全ヒットで必ず呼ばれる唯一の点。§1.3) | `damage` |
-| 戦闘統計 | ブロック・カード使用・ドロー・エナジー・ポーション | 戦闘記録 (`CombatHistory.Add`) 1 か所 | `block_gained` / `card_played` / `card_drawn` / `energy_spent` / `potion_used` |
+| 戦闘統計 | 与ダメ・被ダメ | `Hook.AfterDamageGiven` (全ヒットで必ず呼ばれる唯一の点。§1.3)。受けた側が敵なら与ダメ、プレイヤーなら被ダメとして送る | `damage_dealt` / `damage_received` |
+| 戦闘統計 | ブロック・カード使用・ドロー・エナジー・ポーション | 現行の Hook (`AfterBlockGained` / `AfterCardPlayed` / `AfterCardDrawn` / `AfterEnergySpent` / `AfterPotionUsed`) | `block_gained` / `card_played` / `card_drawn` / `energy_spent` / `potion_used` |
 | 戦闘統計 | パワーの増減 (付与者・カード付き) | `Hook.AfterPowerAmountChanged` (戦闘記録にはカードが無いため) | `power_changed` |
-| 戦闘統計 | Doom による撃破 | `Hook.AfterDiedToDoom` | `doom_kill` |
+| 戦闘統計 | Doom による撃破 | Doom の実行中 (§2.4-2) の `Hook.AfterCurrentHpChanged` (敵の HP 減少) | `damage_dealt` (`is_doom_kill: true`) |
 | 戦闘統計 | ターン区切り | `Hook.AfterSideTurnEnd(side=Player)` | (送信の区切りのみ) |
 
 **原則**: 1 つのデータは 1 つのソースからだけ取る。web 側の重複除去は無くす。
@@ -159,26 +159,26 @@ WasFullyBlocked / Receiver` がそのまま入っている。HP の前後比較�
 ### 2.2 event 一覧 (v2)
 
 全 event 共通: `event_uuid`, `event_type`, `occurred_at`, `player_id` (§1.1 で正規化済み。
-プレイヤーに属さない event だけ空), `floor`, `combat_key`, `turn_number`, `sequence`。
+プレイヤーに属さない event だけ空), `floor`, `combat_index` (戦闘中のみ。= 階番号), `turn_number`, `sequence`。
 
 | event | いつ | 主な中身 |
 |---|---|---|
-| `run_start` | ラン開始 / 再開時 | 各プレイヤーの ID・名前・キャラ、アセンション、シード、ゲームモード |
+| `run_start` | ラン開始 (最初の部屋) | 各プレイヤーの ID・名前・キャラ・開始時の HP / 最大 HP / ゴールド、アセンション、シード、ゲームモード |
 | `floor_snapshot` | 階の確定時 (`UpdatePlayerStatsInMapPointHistory` の後) と、ライブ表示用に送信の区切りごと (現在の階) | §2.3 |
 | `item_purchased` | ショップ購入時 | 品物の ID・名前・値段、購入者 |
-| `combat_start` | 戦闘開始 | `combat_key`、遭遇 (encounter) の ID・名前、部屋の種類、敵の ID 一覧 |
-| `combat_end` | 戦闘終了 | `combat_key`、`result` (`victory` / `defeat`)、ターン数 |
-| `damage` | `Hook.AfterDamageGiven` | 受けた側・与えた側 (どちらもプレイヤー ID または敵の識別子)、カード / 出どころタグ、ブロック量・HP 減少量・超過分・撃破、双方の付与中パワー一覧 |
+| `combat_start` | 戦闘開始 | `combat_index`、遭遇 (encounter) の ID・名前、部屋の種類 |
+| `combat_end` | 勝利 = `AfterCombatEnd`、敗北 = 戦闘中のラン終了 (`OnEnded`) | `combat_index`、`victory` (true / false) |
+| `damage_dealt` | `Hook.AfterDamageGiven` (受けた側が敵) / Doom による撃破 | 与えた人、対象、カード / 出どころ、ブロック量・HP 減少量・超過分・撃破、双方の付与中パワー一覧、ダメージ補正の記録 (`ModifyDamage`)、`is_doom_kill` |
+| `damage_received` | `Hook.AfterDamageGiven` (受けた側がプレイヤー。**致死の一撃を含む**) | 受けた人、攻撃者、ブロック量・HP 減少量、双方の付与中パワー一覧 |
 | `block_gained` | `BlockGainedEntry` | 受けた人、付与した人、量、カード / 出どころタグ |
 | `card_played` | `CardPlayStartedEntry` | 使用者、カード (ID・名前・種類・強化段階)、対象、自動使用か、連続使用の何回目か |
 | `card_drawn` | `CardDrawnEntry` | プレイヤー、カード、手札補充か |
 | `energy_spent` | `EnergySpentEntry` | プレイヤー、量 |
 | `potion_used` | `PotionUsedEntry` | 使用者、ポーション、対象 |
 | `power_changed` | `Hook.AfterPowerAmountChanged` | 対象、付与者、カード、パワー ID・名前、増減量、付与後の量 |
-| `doom_kill` | `Hook.AfterDiedToDoom` | 撃破された敵、撃破時の HP、Doom の付与者ごとの量 |
 | `run_end` | `RunManager.OnEnded` (最初の 1 回だけ) | `outcome` (`victory` / `death` / `abandoned`)、最終階、各プレイヤーの `final_hp` (§2.3) |
 
-v1 から **廃止** する event: `damage_dealt` / `damage_received` (→ `damage` に統合)、`room_entered`、
+v1 から **廃止** する event: `room_entered`、
 `hp_changed`、`gold_changed`、`act_entered`、`rest_action`、`reward_taken`、`card_obtained`、`card_upgraded`、
 `card_enchanted`、`card_removed`、`relic_obtained`、`potion_obtained`、`potion_discarded`、`event_choice`
 (→ すべて `floor_snapshot` に含まれる)。
@@ -237,18 +237,20 @@ card = { id, name, rarity, type, upgrade_level, enchantment_id? }
    - 攻撃者が空のダメージは、出どころのパワーの `Applier` (付与者) をそのダメージの与え手とする。
      複数人が同じパワーを重ねた場合の配分は、v1 と同じく `power_changed` の付与履歴から web が行う。
    - 現行の `IndirectDamagePatches` (毒・Doom・雷・トゲ等の手書き patch) は廃止する。
-3. **Doom**: `doom_kill` として送り、撃破時の HP をダメージ相当として Doom の付与者に配分する
-   (貢献スコアでの扱いは §5 の要判断事項)。
-4. **エナジーの付与**: `PlayerCmd.GainEnergy` を patch し、出どころ (カード使用中ならその使用者、
-   モデル実行中ならそのモデルの持ち主) を付与者として送る (spec「既知の制約」の解消)。
+3. **Doom**: Doom の実行中に敵の HP が減ったら、減った量を `damage_dealt` (`is_doom_kill: true`、出どころ `DOOM_POWER`) として送る。
+   貢献スコアでは、その量を Doom の付与者に付与量の比で配分する (§5 #3 で確定)。
+4. **エナジーの付与** (今回の実装範囲外。後続): `PlayerCmd.GainEnergy` を patch し、出どころ (カード使用中ならその使用者、
+   モデル実行中ならそのモデルの持ち主) を付与者として送る。戦闘画面に表示欄が無いため、画面側の仕様と合わせて別途行う。
 
 ### 2.5 戦闘の識別と中断・再開
 
-- `combat_key` = `"{floor}-{部屋の番号}-{試行回数}"`。部屋の番号は階の記録の `Rooms` の位置。
-  試行回数は、同じ階・同じ部屋で戦闘開始を見た回数 (mod のセッション保存に記録)。
-- web は同じ「階・部屋」に複数の試行があれば **最後の試行だけ** を使う
-  (中断前の戦闘はゲーム上無かったことになっているため)。
-- `turn_number` は `ICombatState.RoundNumber` (ゲームのラウンド番号) を使う。mod 独自のカウンタは廃止。
+- 戦闘の識別は現行どおり `combat_index` = その戦闘の階番号。1 つの階で戦闘は高々 1 回
+  (「？」マスのイベントから戦闘になる場合も 1 回)。
+- 中断→再開で同じ階の戦闘をやり直した場合、`combat_start` が同じ `combat_index` で再び届く。
+  web は各 `combat_index` について **最後の `combat_start` より後の event だけ** を使う
+  (中断前の戦闘はゲーム上無かったことになっているため)。mod 側の変更は不要。
+- `turn_number` は現行どおり mod のカウンタ (プレイヤー側のターン終了ごとに +1)。ゲームのラウンド番号とは
+  追加ターンのときだけずれるが、「プレイヤーが行動したターン」単位のほうが集計の意味に合うため。
 
 ### 2.6 mod の構成
 
@@ -258,14 +260,15 @@ mod/src/
   Identity.cs           プレイヤー ID の正規化 (§1.1)、名前の解決
   SourceContext.cs      出どころの自動追跡 (§2.4-2)
   Lifecycle.cs          run_start / run_end / combat_start / combat_end / ターン区切り
-  CombatRecorder.cs     damage (AfterDamageGiven) / CombatHistory.Add からの戦闘 event / power_changed / doom_kill
+  CombatRecorder.cs     戦闘 event (damage_dealt / damage_received / block_gained / card_played /
+                        card_drawn / energy_spent / potion_used / power_changed)
   FloorRecorder.cs      floor_snapshot と item_purchased
   ModelInfo.cs          ID → 名前・レアリティ・種類の解決 (ModelDb)
   (送信まわり: EventBuffer / HttpSender / ApiClient / SessionManager / RunSessionStore は流用)
 ```
 
 - patch 対象はすべて **型付きで参照** する (`nameof` / `typeof`)。名前の文字列によるリフレクションは、
-  private メンバー (`CombatHistory.Add`, `UpdatePlayerStatsInMapPointHistory`, `IsAbandoned` 等) に限り、
+  private メンバー (`UpdatePlayerStatsInMapPointHistory` 等) に限り、
   起動時に存在を確認して見つからなければエラーログを出す (黙って空文字を返すことはしない)。
 
 ### 2.7 web の変更
@@ -273,8 +276,8 @@ mod/src/
 - ラン全体 (`runOverview.ts`): `floor_snapshot` を階ごとに最新 1 件選び、その中のプレイヤー分を表示する
   だけにする。v1 の推測ロジック (休憩所の HP、宝箱、ショップの重複除去、エンチャントの重複除去、
   ラン終了後の HP 除外、プレイヤー ID が空の event を全員に配る処理) はすべて削除。
-- 戦闘統計 (`aggregate.ts`, `rdps.ts`, `rmit.ts`): `damage` を受けた側で与ダメ / 被ダメに振り分ける。
-  `combat_key` ごとに最後の試行だけ使う。戦闘の勝敗を表示する (spec §3.1)。
+- 戦闘統計 (`aggregate.ts`, `rdps.ts`, `rmit.ts`): 各 `combat_index` の最後の `combat_start` 以降だけ使う。
+  出どころの名前が合成タグ (`(poison)` 等) からモデル ID (`POISON_POWER` 等) に変わるのに合わせる。戦闘の勝敗を表示する (spec §3.1)。
 - ヘッダー: 結果に「放棄」を追加。終了済みのセッションでは定期的な取り直しを止める。
 - `SessionView` の "1" → ホストの読み替えは削除 (mod で正規化済みのため)。
 - 既存の型エラー (`svelte-check` の 10 件) もこの機会に解消する。
@@ -302,11 +305,11 @@ mod/src/
 | ダブルボスで誤勝利 | `OnEnded(isVictory)` を使う |
 | 戦闘の勝敗が全部「負け」 | `AfterCombatEnd` = 勝利と判定 |
 | 放棄が「進行中」のまま | `OnEnded` + `IsAbandoned` |
-| 毒ダメージ 0 件 / Doom 0 件 | 出どころの自動追跡 + `doom_kill` |
+| 毒ダメージ 0 件 / Doom 0 件 | 出どころの自動追跡 + Doom による撃破を `damage_dealt` として送る |
 | Osty | `PetOwner` |
 | 致死の一撃の被ダメ抜け | 与ダメ・被ダメとも `AfterDamageGiven` から取る (致死の一撃でも呼ばれる) |
-| 中断→再開で戦闘重複 | `combat_key` の試行回数で最後だけ使う |
-| 戦闘外の event で空の戦闘ができる | 戦闘中 (`combat_key` がある間) に起きたものだけを戦闘 event として送る。戦闘外のパワー変化は送らない |
+| 中断→再開で戦闘重複 | web が各戦闘の最後の `combat_start` 以降だけ使う |
+| 戦闘外の event で空の戦闘ができる | 戦闘中 (`CombatManager.IsInProgress`) に起きたものだけを戦闘 event として送る。戦闘外のパワー変化は送らない |
 | 宝箱のレリックが出ないことがある | 階の記録の `relic_choices` を表示 (宝箱を開けなかった場合は本当に空) |
 | カタログ不足でチップの名前が出ない | mod が名前・レアリティを付けて送る |
 
@@ -326,7 +329,7 @@ mod/src/
 
 ---
 
-## 5. 要判断事項 (実装前に決めてほしいこと)
+## 5. 判断事項 (2026-10-01 にすべて推奨どおりで確定)
 
 | # | 内容 | 推奨 |
 |---|---|---|
@@ -354,3 +357,21 @@ mod/src/
 - 勝利・全滅・放棄の 3 通りで `run_end.outcome` が正しいこと (アセンション 10 以上のダブルボスを含む)
 - 毒・Doom・オーブ・トゲ・Osty の与ダメが正しいプレイヤーに付くこと
 - 出どころの自動追跡で patch した件数と、起動時間への影響 (ログに件数と所要時間を出す)
+
+---
+
+## 7. 変更履歴
+
+- 2026-10-01: 初版。
+- 2026-10-01: 実機確認の結果を反映 (§1.8、放棄・勝利時の HP)。
+- 2026-10-01: 実装着手前の見直し。web の既存集計を読んだ結果、次の 4 点を変更した。
+  1. 与ダメ・被ダメは `damage` に統合せず、`damage_dealt` / `damage_received` の名前のまま両方
+     `AfterDamageGiven` 1 か所から送る (データ源は 1 つに絞れる。web の戦闘集計・貢献スコア・
+     タイムラインの書き直しを避ける)。
+  2. ブロック・カード使用・ドロー・エナジー・ポーションは、戦闘記録 (`CombatHistory`) に切り替えず
+     現行の Hook のまま (正しく取れている。戦闘記録はカード使用がダメージより前に来るため、
+     最大単発ダメージの集計方式と合わない)。
+  3. 戦闘の識別は `combat_key` を新設せず `combat_index` (= 階番号) のまま。中断→再開は web 側の
+     「最後の `combat_start` 以降だけ使う」で解決する。
+  4. Doom は新しい `doom_kill` にせず、`damage_dealt` に `is_doom_kill` を付けて送る。
+
