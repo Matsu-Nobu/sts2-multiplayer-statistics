@@ -14,7 +14,7 @@
  */
 
 import type { EventRecord, DamageDealtPayload, PowerSnapshot } from './types';
-import { latestCombatEvents, splitByStacks } from './aggregate';
+import { latestCombatEvents, splitByStacks, sharedAppliers } from './aggregate';
 
 export interface RdpsBreakdown {
   total: number;          // self + to の合計
@@ -58,8 +58,9 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
 
     // 1. 相手に付けたデバフ (毒・Doom 等) によるダメージ: source_appliers の付与者にスタック比で 100%
     //    (与ダメージ集計 aggregate.splitSharedDamage と同じ按分 → 欄によって数字がずれない)
-    if (p.source_appliers && p.source_appliers.length > 0) {
-      for (const s of splitByStacks(effective, p.source_appliers)) credit(s.player_id, s.player_id, p.is_doom_kill ? 'doom' : (p.source_card_id ?? 'debuff').replace(/_POWER$/i, '').toLowerCase(), s.share);
+    const shared = sharedAppliers(p);
+    if (shared && shared.length > 0) {
+      for (const s of splitByStacks(effective, shared)) credit(s.player_id, s.player_id, p.is_doom_kill ? 'doom' : (p.source_card_id ?? 'debuff').replace(/_POWER$/i, '').toLowerCase(), s.share);
       continue;
     }
     // (旧データ: source_appliers が無い毒・Doom は active_on_target の内訳で按分)

@@ -66,16 +66,33 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
   const out: EventRecord[] = [];
   for (const ev of events) {
     const p = ev.payload as DamageDealtPayload;
-    if (ev.event_type !== 'damage_dealt' || !p?.source_appliers || p.source_appliers.length === 0) { out.push(ev); continue; }
+    const appliers = ev.event_type === 'damage_dealt' ? sharedAppliers(p) : null;
+    if (!appliers || appliers.length === 0) { out.push(ev); continue; }
     const fields = ['amount', 'total_damage', 'blocked_damage', 'overkill_damage'] as const;
-    const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, p.source_appliers!));
-    p.source_appliers.forEach((a, i) => {
+    const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, appliers));
+    appliers.forEach((a, i) => {
       const payload: DamageDealtPayload = { ...p };
       fields.forEach((f, fi) => { (payload as any)[f] = parts[fi][i]?.share ?? 0; });
       out.push({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload });
     });
   }
   return out;
+}
+
+/**
+ * 按分に使う付与者の内訳。source_appliers があればそれ。
+ * 無い旧データ (2026-10-02 以前の mod) の毒・Doom は、記録済みのパワー一覧 (active_on_target) の内訳を使う
+ * (rdps.ts の旧データ用の按分と同じ)。
+ */
+export function sharedAppliers(p: DamageDealtPayload | undefined): { player_id: string; stacks: number }[] | null {
+  if (!p) return null;
+  if (p.source_appliers && p.source_appliers.length > 0) return p.source_appliers;
+  const powerId = p.source_card_id === 'POISON_POWER' ? 'POISON_POWER'
+                : (p.source_card_id === 'DOOM_POWER' || p.is_doom_kill) ? 'DOOM_POWER' : null;
+  if (!powerId) return null;
+  const snap = (p.active_on_target ?? []).find(s => s.power_id === powerId);
+  const ap = (snap?.appliers ?? []).filter(a => a.stacks > 0);
+  return ap.length > 0 ? ap : null;
 }
 
 export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {
