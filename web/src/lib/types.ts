@@ -215,6 +215,8 @@ export interface DamageDealtPayload {
   overkill_damage?: number;           // HP を超えた分
   was_target_killed?: boolean;
   is_doom_kill?: boolean;             // Doom による撃破 (source_card_id = DOOM_POWER)
+  // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md §4)
+  source_appliers?: { player_id: string; stacks: number }[];
   target_creature_id: string | null;
   target_player_id?: string | null;
   source_card_id?: string | null;

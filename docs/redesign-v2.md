@@ -227,15 +227,27 @@ card = { id, name, rarity, type, upgrade_level, enchantment_id? }
 
 1. **ペット**: 与えた側が `PetOwner` を持つなら持ち主のプレイヤーに付ける。受けた側では付けない
    (ペットの被ダメは持ち主の被ダメに数えない)。
-2. **出どころの自動追跡**: 起動時に、パワー・レリック・オーブ・エンチャントの全具象クラスを列挙し、
-   上書きしている Hook メソッドのうち、本体 (非同期メソッドの実体 `MoveNext`) で
-   `CreatureCmd.Damage` / `CreatureCmd.GainBlock` / `PowerCmd.Apply` / `PlayerCmd.GainEnergy` /
-   `CreatureCmd.Kill` を呼ぶものだけを自動で選んで patch する。patch は「今このモデルが実行中」を
-   非同期でも引き継がれる変数 (`AsyncLocal`) に積むだけ。
+2. **出どころの自動追跡 (呼ばれる側に目印を付ける)**: 起動時に、パワー・レリック・オーブ・エンチャント・ポーションの
+   全具象クラスを列挙し、**そのクラスが宣言している全メソッド** (Hook の上書きに限らない。static も含む) のうち、
+   本体 (非同期メソッドの実体 `MoveNext`、同じクラス内のヘルパーを 3 段まで) で
+   `CreatureCmd.Damage` / `GainBlock` / `Kill`、`DamageCmd.Attack`、`PowerCmd.Apply`、`PlayerCmd.GainEnergy`
+   を呼ぶものを自動で選んで patch する。patch は「今このモデルの処理中」を非同期でも引き継がれる変数
+   (`AsyncLocal`) に積むだけ。
+   - **呼ぶ側 (カード・レリック・別のパワー) を個別に扱わない。** 例えば毒の本体 `PoisonPower.Trigger` に目印を付けるので、
+     ターン開始時の発動でも、カード効果 (`Outbreak`) からの発動でも、今後追加される何かからの発動でも、同じ「毒の処理中」になる
+     (2026-10-02 確定。調査時点で外から呼ばれる処理: `PoisonPower.Trigger` / `DoomPower.DoomKill` /
+     `BlackHolePower.DealDamageToAllEnemies` / `RollingBoulderPower.DoDamage` / `LightningOrb.ApplyLightningDamage`、
+     呼ぶカード: `Outbreak` / `EndOfDays`)。
+   - static メソッド (`DoomPower.DoomKill` 等) はインスタンスが無いので **型だけ** を積む。どのパワーかは、
+     ダメージを受けた creature に付いている同じ型のパワーで決める。
+   - 優先順位: カードが自分を出どころとして渡している (`cardSource`) ならカード。目印が重なったら一番内側。
    - これで、ダメージやブロックにカードが無いとき、出どころ (例: `POISON_POWER`, `LIGHTNING_ORB`,
      `BURNING_BLOOD` …) が **クラスを個別に書かなくても** 自動で付く。新しいコンテンツにも追従する。
-   - 攻撃者が空のダメージは、出どころのパワーの `Applier` (付与者) をそのダメージの与え手とする。
-     複数人が同じパワーを重ねた場合の配分は、v1 と同じく `power_changed` の付与履歴から web が行う。
+   - **ダメージを受けた creature 自身に付いているパワー** (毒・Doom・絞殺など、相手に付けたデバフ) が出どころなら、
+     そのダメージは付与した人たちのもの。付与者ごとのスタック数 (`PowerOriginRegistry`) を `source_appliers` として送り、
+     web は **与ダメージ・カード別の表・貢献スコアのすべてで、スタック数の比で按分** する (2026-10-02 確定)。
+     `player_id` には最大スタックの人を入れる (表示の都合。集計は `source_appliers` を使う)。
+   - それ以外 (自分に付いたバフ・レリック・オーブ等) は、その持ち主の行為。
    - 現行の `IndirectDamagePatches` (毒・Doom・雷・トゲ等の手書き patch) は廃止する。
 3. **Doom**: Doom の実行中に敵の HP が減ったら、減った量を `damage_dealt` (`is_doom_kill: true`、出どころ `DOOM_POWER`) として送る。
    貢献スコアでは、その量を Doom の付与者に付与量の比で配分する (§5 #3 で確定)。

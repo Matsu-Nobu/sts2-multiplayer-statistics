@@ -61,14 +61,19 @@ internal static class CombatRecorder
             int overkill = results.OverkillDamage;
             if (total <= 0 && overkill <= 0) return;
 
-            CardInfo? source = cardSource != null ? CardInfoOf(cardSource) : SourceContext.CurrentInfo();
+            CardInfo? source = cardSource != null ? CardInfoOf(cardSource) : SourceContext.CurrentInfo(receiver);
             string sourceKind = cardSource != null ? "card" : SourceContext.CurrentKind();
 
             if (receiver.Side == CombatSide.Enemy)
             {
-                // 与え手: プレイヤー (ペットは持ち主)。攻撃者が空 (毒など) は出どころパワーの付与者。
-                string? dealerId = Identity.OfCreature(dealer, includePets: true)
-                                ?? (dealer == null ? SourceContext.CurrentActorPlayerId() : null);
+                // 相手に付けたデバフ (毒など) が出どころなら、そのダメージは付与者全員のもの (スタック比で按分。
+                // spec combat-stats.md §4)。player_id は最大スタックの人、内訳は source_appliers。
+                // 毒はターン開始時の発動でも、カード効果 (Outbreak 等) からの発動でも同じ扱い (SourceContext)。
+                var appliers = cardSource == null ? SourceContext.DebuffAppliers(receiver) : null;
+                // それ以外の与え手: プレイヤー (ペットは持ち主)。攻撃者が空なら実行中モデルの持ち主。
+                string? dealerId = appliers?.FirstOrDefault().PlayerId
+                                ?? Identity.OfCreature(dealer, includePets: true)
+                                ?? (dealer == null ? SourceContext.CurrentActorPlayerId(receiver) : null);
                 if (dealerId == null) return;   // 敵 → 敵
 
                 // 直近の ModifyDamage 群のうち post が total と一致するものを実ヒット由来として採用 (同内容は 1 件に)
@@ -87,6 +92,7 @@ internal static class CombatRecorder
                     overkill_damage    = overkill,
                     was_target_killed  = results.WasTargetKilled,
                     is_doom_kill       = false,
+                    source_appliers    = ApplierList(appliers),
                     target_creature_id = CreatureId(receiver),
                     source_card_id     = source?.CardId,
                     source_card_name   = source?.CardName,
@@ -125,9 +131,11 @@ internal static class CombatRecorder
         try
         {
             if (creature == null || delta >= 0m || !Lifecycle.InCombat) return;
-            if (SourceContext.Current is not DoomPower) return;
+            // Doom の処理中か (DoomPower のインスタンスか、static の DoomKill なら対象に付いた DoomPower)
+            if (SourceContext.ResolveModel(creature) is not DoomPower) return;
             if (creature.Side != CombatSide.Enemy) return;
-            string? dealerId = SourceContext.CurrentActorPlayerId();
+            var appliers = SourceContext.DebuffAppliers(creature);
+            string? dealerId = appliers?.FirstOrDefault().PlayerId ?? SourceContext.CurrentActorPlayerId(creature);
             if (dealerId == null) return;
             int lost = (int)(-delta);
             EventBuffer.EmitTurnEvent("damage_dealt", dealerId, new
@@ -138,9 +146,10 @@ internal static class CombatRecorder
                 overkill_damage    = 0,
                 was_target_killed  = true,
                 is_doom_kill       = true,
+                source_appliers    = ApplierList(appliers),
                 target_creature_id = CreatureId(creature),
                 source_card_id     = "DOOM_POWER",
-                source_card_name   = SourceContext.CurrentInfo()?.CardName ?? "DOOM_POWER",
+                source_card_name   = SourceContext.CurrentInfo(creature)?.CardName ?? "DOOM_POWER",
                 source_card_type   = "Power",
                 source_kind        = "power",
                 active_on_target   = ActivePowersSnapshot.ForCreature(creature),
@@ -160,9 +169,9 @@ internal static class CombatRecorder
             if (creature == null || amount <= 0m || !Lifecycle.InCombat) return;
             if (creature.Player == null) return;    // プレイヤー本人のブロックのみ
             string receiverId = Identity.Of(creature.Player);
-            CardInfo? source = cardSource != null ? CardInfoOf(cardSource) : SourceContext.CurrentInfo();
+            CardInfo? source = cardSource != null ? CardInfoOf(cardSource) : SourceContext.CurrentInfo(creature);
             string sourceKind = cardSource != null ? "card" : SourceContext.CurrentKind();
-            string? giverId = cardSource != null ? Identity.Of(cardSource.Owner) : SourceContext.CurrentActorPlayerId();
+            string? giverId = cardSource != null ? Identity.Of(cardSource.Owner) : SourceContext.CurrentActorPlayerId(creature);
 
             EventBuffer.EmitTurnEvent("block_gained", receiverId, new
             {
@@ -274,6 +283,11 @@ internal static class CombatRecorder
     }
 
     // === ヘルパー ================================================================
+
+    /// <summary>source_appliers の形 ([{ player_id, stacks }])。按分しないダメージは null (送らない)。</summary>
+    private static List<object>? ApplierList(List<(string PlayerId, int Stacks)>? appliers) =>
+        appliers == null || appliers.Count == 0 ? null
+            : appliers.Select(a => (object)new { player_id = a.PlayerId, stacks = a.Stacks }).ToList();
 
     public static CardInfo CardInfoOf(CardModel card) =>
         new(card.Id.Entry, ModelInfo.SafeTitle(card), card.Type.ToString());

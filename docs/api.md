@@ -224,7 +224,7 @@ Content-Type: application/json
 |-----------|---------|-----------|
 | `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?` | 使用者 |
 | `card_drawn` | `card_id`, `card_name?`, `from_hand_draw?` | ドローした人 |
-| `damage_dealt` | `amount` (敵HPに通った分), `total_damage` (ブロック込み), `blocked_damage`, `overkill_damage`, `was_target_killed`, `is_doom_kill`, `target_creature_id`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `active_on_target[]`, `active_on_dealer[]`, `modifications[]` | 与えた人 (ペットは持ち主。攻撃者が空なら出どころパワーの付与者) |
+| `damage_dealt` | `amount` (敵HPに通った分), `total_damage` (ブロック込み), `blocked_damage`, `overkill_damage`, `was_target_killed`, `is_doom_kill`, `source_appliers?`, `target_creature_id`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `active_on_target[]`, `active_on_dealer[]`, `modifications[]` | 与えた人 (ペットは持ち主。攻撃者が空なら出どころパワーの付与者) |
 | `damage_received` | `amount` (自HPに受けた分), `total_damage`, `blocked_damage` (=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]` | 受けた人 (**致死の一撃を含む**) |
 | `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `from_player?` | 受けた人 |
 | `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | 付与者 |
@@ -241,6 +241,9 @@ Content-Type: application/json
 カードかどうかは `source_kind` (`card` / `power` / `relic` / `orb` / `enchantment` / `potion` / `unknown`) で判定する
 (`source_card_type` の `Power` はカードの種類「パワー」と同じ文字列なので判定に使わない)。`damage_dealt` / `block_gained` に付く。
 mod が起動時に対象メソッドを自動で列挙して追跡する (`redesign-v2.md` §2.4)。v1 の合成タグ (`(poison)` 等) は廃止。
+
+`source_appliers` (`[{ "player_id", "stacks" }]`): 出どころが **ダメージを受けた敵自身に付いているパワー** (毒・Doom・絞殺など) のとき、
+そのパワーの付与者ごとのスタック数。web は与ダメージ・カード別の表・rDPS をこの比で按分する。`player_id` は最大スタックの人。
 
 #### power snapshot（`active_on_target` / `active_on_dealer` の中身）
 

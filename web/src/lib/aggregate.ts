@@ -45,8 +45,41 @@ export function latestCombatEvents(events: EventRecord[]): EventRecord[] {
   });
 }
 
+/**
+ * 整数 amount を stacks の比で按分する (端数は先頭から 1 ずつ配る。合計は必ず amount)。
+ * rDPS (rdps.ts) と与ダメージ集計の両方でこれを使い、欄によって数字がずれないようにする。
+ */
+export function splitByStacks(amount: number, appliers: { player_id: string; stacks: number }[]): { player_id: string; share: number }[] {
+  const total = appliers.reduce((s, a) => s + Math.max(0, a.stacks), 0);
+  if (appliers.length === 0 || total <= 0) return [];
+  const base = appliers.map(a => ({ player_id: a.player_id, share: Math.floor(amount * Math.max(0, a.stacks) / total), rem: (amount * Math.max(0, a.stacks)) % total }));
+  let left = amount - base.reduce((s, b) => s + b.share, 0);
+  for (const b of [...base].sort((x, y) => y.rem - x.rem)) { if (left <= 0) break; b.share++; left--; }
+  return base.map(({ player_id, share }) => ({ player_id, share }));
+}
+
+/**
+ * 相手に付けたデバフ (毒・Doom 等) によるダメージ (source_appliers あり) を、付与者ごとの event に分ける。
+ * 与ダメージ・カード別の表・最大単発の集計用 (spec combat-stats.md §4)。
+ */
+export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
+  const out: EventRecord[] = [];
+  for (const ev of events) {
+    const p = ev.payload as DamageDealtPayload;
+    if (ev.event_type !== 'damage_dealt' || !p?.source_appliers || p.source_appliers.length === 0) { out.push(ev); continue; }
+    const fields = ['amount', 'total_damage', 'blocked_damage', 'overkill_damage'] as const;
+    const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, p.source_appliers!));
+    p.source_appliers.forEach((a, i) => {
+      const payload: DamageDealtPayload = { ...p };
+      fields.forEach((f, fi) => { (payload as any)[f] = parts[fi][i]?.share ?? 0; });
+      out.push({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload });
+    });
+  }
+  return out;
+}
+
 export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {
-  const events = latestCombatEvents(doc.events);
+  const events = splitSharedDamage(latestCombatEvents(doc.events));
   // 1. combat_start / combat_end からメタ情報を集める
   const startByIdx = new Map<number, CombatStartPayload>();
   const endByIdx   = new Map<number, CombatEndPayload>();

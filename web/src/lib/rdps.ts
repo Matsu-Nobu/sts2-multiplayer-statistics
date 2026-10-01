@@ -1,20 +1,20 @@
 /**
  * Skada 風 rDPS（ダメージ貢献度）算出。
  *
- * 基準は「有効ダメージ」= 敵 HP に通った分 + 敵 block を削った分（total - overkill）。
+ * 基準は「有効ダメージ」= 敵 HP に通った分 + 敵 block を削った分（amount + blocked_damage）。
  * シールド削りも貢献として扱う。
  *
  * 各 damage_dealt イベントについて:
  *   - 通常ダメ + Vulnerable on target → 1/3 を Vulnerable applier に stacks 加重で配分
- *   - 間接ダメ source_card_id="POISON_POWER" (毒) → 100% を POISON_POWER の applier 群に stacks 加重で配分
- *   - 間接ダメ source_card_id="DOOM_POWER" (Doom による撃破) → 100% を DOOM_POWER の applier 群に stacks 加重で配分
+ *   - 相手に付けたデバフ (毒・Doom 等) によるダメージ (source_appliers あり) → 100% を付与者にスタック比で配分
+ *     (毒はターン開始時の発動もカード効果からの発動も同じ。与ダメージ集計と同じ splitByStacks で按分)
  *
  * 複数プレイヤーが同じデバフを撒いた場合、各 applier の stacks 比で按分する。
  * stacks 情報が無い旧 payload では `applier` 単独に全額を帰属（後方互換）。
  */
 
 import type { EventRecord, DamageDealtPayload, PowerSnapshot } from './types';
-import { latestCombatEvents } from './aggregate';
+import { latestCombatEvents, splitByStacks } from './aggregate';
 
 export interface RdpsBreakdown {
   total: number;          // self + to の合計
@@ -48,16 +48,21 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
     const p = ev.payload as DamageDealtPayload;
     const dealer = ev.player_id;
     if (!dealer) continue;
-    // 「有効ダメージ」基準で計算: HP に通った分 + 敵 block を削った分（= total - overkill）
-    // 旧 payload (total_damage 無し) では amount にフォールバック
+    // 「有効ダメージ」基準で計算: HP に通った分 + 敵 block を削った分 (= amount + blocked = total_damage)。
+    // ゲームの DamageResult.TotalDamage は BlockedDamage + UnblockedDamage で、超過分 (overkill) を含まない
+    // (デコンパイル確認済 v0.111.0)。以前は total - overkill としていて、とどめの一撃で超過分を二重に引いていた。
     const amount = p.amount ?? 0;
     const blocked = p.blocked_damage ?? 0;
-    const effective = (p.total_damage != null)
-      ? Math.max(0, p.total_damage - (p.overkill_damage ?? 0))
-      : (amount + blocked);
+    const effective = amount + blocked;
     if (effective <= 0) continue;
 
-    // 1. 間接ダメ: poison / doom の applier に 100%（stacks 加重で按分）
+    // 1. 相手に付けたデバフ (毒・Doom 等) によるダメージ: source_appliers の付与者にスタック比で 100%
+    //    (与ダメージ集計 aggregate.splitSharedDamage と同じ按分 → 欄によって数字がずれない)
+    if (p.source_appliers && p.source_appliers.length > 0) {
+      for (const s of splitByStacks(effective, p.source_appliers)) credit(s.player_id, s.player_id, p.is_doom_kill ? 'doom' : (p.source_card_id ?? 'debuff').replace(/_POWER$/i, '').toLowerCase(), s.share);
+      continue;
+    }
+    // (旧データ: source_appliers が無い毒・Doom は active_on_target の内訳で按分)
     if (p.source_card_id === 'POISON_POWER') {
       distributeByStacks(p.active_on_target, 'POISON_POWER', effective, dealer, 'poison', credit);
       continue;

@@ -46,8 +46,8 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 |---|---|
 | プレイヤー ID | `Identity.Normalize(Player)`: `NetId == 1` (シングルプレイ・LAN ホスト) ならローカルの Steam ID、それ以外は `NetId` |
 | ペット (Osty) | 与え手・付与者の側でだけ `Creature.PetOwner` の持ち主に解決 (受けた側では解決しない) |
-| カードが無いダメージ・ブロックの出どころ | `SourceContext`: 起動時に自動で patch した「パワー・レリック・オーブ・エンチャントの Hook メソッド」の実行中モデル (`AsyncLocal`) |
-| 攻撃者が空のダメージの与え手 | 出どころパワーの付与者 (`PowerOriginRegistry` の stacks 内訳。最大の人を `player_id` に) |
+| カードが無いダメージ・ブロックの出どころ | `SourceContext`: 起動時に自動で patch した「パワー・レリック・オーブ・エンチャント・ポーションが宣言する、ダメージ等を起こす全メソッド」(Hook の上書きに限らない。static は型だけ) の一番内側の実行中モデル (`AsyncLocal`)。呼ぶ側 (カード等) は個別に扱わない |
+| 受けた敵自身に付いたデバフ (毒・Doom 等) によるダメージの与え手 | そのデバフの付与者全員。スタック数の内訳を `source_appliers` で送り、web が全欄でスタック比で按分 (`player_id` は最大スタックの人) |
 
 ---
 
@@ -84,7 +84,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | カード使用・ドロー・エナジー・ポーション | `card_played` / `card_drawn` / `energy_spent` / `potion_used` |
 | デバフ付与 | `power_changed` |
 | 戦闘の勝敗 | `combat_end.victory` |
-| rDPS の毒・Doom 帰属 | `damage_dealt.source_card_id` が `POISON_POWER` / `DOOM_POWER` |
+| 相手に付けたデバフによるダメージの按分 (与ダメ・カード別・rDPS) | `damage_dealt.source_appliers` |
 
 ---
 

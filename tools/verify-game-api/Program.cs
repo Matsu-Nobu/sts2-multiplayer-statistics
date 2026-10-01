@@ -135,5 +135,36 @@ foreach (var raw in File.ReadAllLines(membersFile))
     if (found) Ok($"{kind} {typeName} {member}"); else Fail($"{kind} {typeName} {member}: 見つからない");
 }
 
+// === 3) 出どころの自動追跡で選ばれるメソッド (SourceContext.SelectTargets) ====================
+// ゲームと同じ選び方を本物の sts2.dll に対して実行する (読み込むだけで実行はしない)。
+// 毒など「カード効果からも呼ばれる処理」に目印が付くことを確認する (docs/redesign-v2.md §2.4-2)。
+Console.WriteLine("== 出どころの自動追跡 (SourceContext.SelectTargets)");
+try
+{
+    System.Runtime.Loader.AssemblyLoadContext.Default.Resolving += (ctx, name) =>
+    {
+        foreach (var dir in new[] { dataDir, Path.GetDirectoryName(Path.GetFullPath(modDll))! })
+        {
+            var p = Path.Combine(dir, name.Name + ".dll");
+            if (File.Exists(p)) return ctx.LoadFromAssemblyPath(p);
+        }
+        return null;
+    };
+    var liveGame = System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(dataDir, "sts2.dll"));
+    var liveMod  = System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(modDll));
+    var select = liveMod.GetType("StsStats.SourceContext")!.GetMethod("SelectTargets", BindingFlags.Static | BindingFlags.NonPublic)!;
+    var selected = ((System.Collections.IList)select.Invoke(null, new object[] { liveGame })!).Cast<MethodInfo>().ToList();
+    var direct = selected.Where(x => x.IsStatic || x.GetBaseDefinition().DeclaringType == x.DeclaringType)
+                         .Select(x => $"{x.DeclaringType!.Name}.{x.Name}{(x.IsStatic ? "(static)" : "")}").OrderBy(x => x).ToList();
+    Console.WriteLine($"  選ばれたメソッド {selected.Count} 個、うち Hook の上書きではないもの {direct.Count} 個: {string.Join(", ", direct)}");
+    // 必ず入っていてほしいもの (これが外れたら、毒・Doom 等の帰属が壊れる)
+    foreach (var must in new[] { "PoisonPower.Trigger", "PoisonPower.AfterSideTurnStart", "DoomPower.DoomKill", "LightningOrb.Evoke", "ThornsPower.BeforeDamageReceived" })
+    {
+        if (selected.Any(x => $"{x.DeclaringType!.Name}.{x.Name}" == must)) Ok($"選ばれている: {must}");
+        else Fail($"選ばれていない: {must} (ゲーム側の実装が変わった可能性。デコンパイルで確認すること)");
+    }
+}
+catch (Exception ex) { Fail($"SourceContext.SelectTargets を実行できなかった: {ex.GetBaseException().Message}"); }
+
 Console.WriteLine(fail == 0 ? "\n結果: すべて OK" : $"\n結果: {fail} 件の問題");
 return fail == 0 ? 0 : 1;

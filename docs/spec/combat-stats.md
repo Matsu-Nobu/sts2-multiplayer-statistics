@@ -113,7 +113,9 @@ power × applier の行列:
 | ポーション使用 | `potion_used` |
 | 最大単発 | `damage_dealt.payload.amount` の max + `source_card_id` |
 | オーバーキル | `damage_dealt.payload.overkill_damage` |
-| rDPS | `damage_dealt` の `active_on_dealer` / `active_on_target`。`source_card_id` が `POISON_POWER` / `DOOM_POWER` (Doom による撃破、`is_doom_kill`) のものは 100% をそのパワーの付与者に stacks 比で配分 |
+| rDPS | `damage_dealt` の `active_on_dealer` / `active_on_target`。`source_appliers` があるもの (毒・Doom など相手に付けたデバフによるダメージ) は 100% を付与者にスタック比で配分 |
+
+**相手に付けたデバフによるダメージ (`source_appliers` あり) は、与ダメージ・カード別の表・最大単発も、付与者ごとにスタック比で按分して数える** (rDPS と同じ数字になる)。毒はターン開始時の発動も、カード効果 (`Outbreak` 等) からの発動も同じ扱い。
 
 mod 側で patch している hook と event_type の対応は [`spec/data-sources.md`](./data-sources.md) 参照。
 
