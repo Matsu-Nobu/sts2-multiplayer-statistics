@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EventRecord } from '../lib/types';
-  import type { CombatInfo } from '../lib/aggregate';
+  import { latestCombatEvents, type CombatInfo } from '../lib/aggregate';
   import { buildFloorSummaries, roomVisual, type FloorSummary } from '../lib/runOverview';
   import { formatPowerName } from '../lib/powers';
   import { renderCardDescription, type CatalogLookup } from '../lib/catalog';
@@ -58,14 +58,8 @@
     }
   });
 
-  // 単一プレイヤーセッションでは player_id でフィルタしない:
-  // mod が emit する player_id (Player.NetId) は SP で "1" のような値になり、
-  // session.players の steam_id とフォーマットが異なるため、一致しない event が
-  // 全部除外されて報酬等が tooltip に出ない問題が発生する。
-  let floors = $derived(buildFloorSummaries(
-    events,
-    playerIds.length > 1 ? (activePlayer || undefined) : undefined,
-  ));
+  // 選んでいるプレイヤーの視点 (単一プレイでも同じ。player_id は mod が正規化済み)
+  let floors = $derived(buildFloorSummaries(events, activePlayer));
   let selectedFloor: number | null = $state(null);
   let selected = $derived(
     selectedFloor != null ? floors.find(f => f.floor === selectedFloor) ?? null : null
@@ -87,12 +81,12 @@
   );
   let selectedCombatEvents = $derived(
     selected?.combat_index != null
-      ? events.filter(e => e.combat_index === selected!.combat_index)
+      ? latestCombatEvents(events).filter(e => e.combat_index === selected!.combat_index)
       : []
   );
 
   let hasAcq     = $derived(!!selected && (selected.cards_obtained.length + selected.relics_obtained.length + selected.potions_obtained.length > 0));
-  let hasDeckMod = $derived(!!selected && (selected.cards_upgraded.length + selected.cards_enchanted.length + selected.cards_removed.length > 0));
+  let hasDeckMod = $derived(!!selected && (selected.cards_upgraded.length + selected.cards_enchanted.length + selected.cards_transformed.length + selected.cards_removed.length > 0));
   let hasShop    = $derived(!!selected && selected.shop_purchases.length > 0);
   let hasChoice  = $derived(!!selected && (selected.rest_options.length + selected.event_choices.length + selected.card_choices.length > 0));
 
@@ -100,15 +94,6 @@
     return cardNames[id] ?? id;
   }
 
-  function itemKindLabel(kind: string): string {
-    switch (kind) {
-      case 'MerchantCardEntry':         return 'カード';
-      case 'MerchantPotionEntry':       return 'ポーション';
-      case 'MerchantRelicEntry':        return 'レリック';
-      case 'MerchantCardRemovalEntry':  return 'カード除去';
-      default:                          return kind;
-    }
-  }
 
 </script>
 
@@ -116,7 +101,7 @@
 
   {#if floors.length === 0}
     <div class="bg-bg-1 border border-bg-3 rounded-lg p-6 text-center text-slate-500">
-      このセッションはラン全体ビュー未対応の旧形式です。最新 mod でプレイすればここに HP 推移が表示されます。
+      このセッションには階ごとの記録がありません (旧形式のセッションか、まだ 1 階目の記録が届いていません)。
     </div>
   {:else}
 
@@ -199,16 +184,16 @@
             Curse / Status / Token / Basic / 等 → デフォルト (グレー)
           generic chip: rarity 概念なし
         -->
-        {#snippet genericChip(label: string, sub: string = '', tip: { title: string; html: string } | null = null)}
+        {#snippet genericChip(label: string, sub: string = '', tip: { title: string; html: string } | null = null, subClass: string = 'text-slate-400')}
           {#if tip && tip.html}
             <CardTooltip descriptionHtml={tip.html}>
               <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200 cursor-help">
-                {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
+                {label}{#if sub}<span class="{subClass} ml-1">{sub}</span>{/if}
               </span>
             </CardTooltip>
           {:else}
             <span class="px-2 py-0.5 rounded text-sm border bg-bg-2 border-bg-3 text-slate-200">
-              {label}{#if sub}<span class="text-slate-400 ml-1">{sub}</span>{/if}
+              {label}{#if sub}<span class="{subClass} ml-1">{sub}</span>{/if}
             </span>
           {/if}
         {/snippet}
@@ -287,8 +272,20 @@
                   {@render kvRow('エンチャント')}
                   <div class="flex flex-wrap gap-1.5">
                     {#each selected.cards_enchanted as e}
-                      {@const enchName = catalog?.enchantment(e.enchantment_id)?.name ?? e.enchantment_id}
+                      {@const enchName = e.enchantment_name ?? catalog?.enchantment(e.enchantment_id)?.name ?? e.enchantment_id}
                       {@render genericChip(e.card_name ?? cardLabel(e.card_id), `← ${enchName}`, enchantmentTip(e.enchantment_id))}
+                    {/each}
+                  </div>
+                {/if}
+                {#if selected.cards_transformed.length > 0}
+                  {@render kvRow('変化')}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each selected.cards_transformed as t}
+                      <span class="inline-flex items-center gap-1">
+                        {@render cardChip(t.from.card_name ?? cardLabel(t.from.card_id), t.from.card_rarity, t.from.is_upgraded, '', false, cardTip(t.from.card_id, !!t.from.is_upgraded))}
+                        <span class="text-slate-500">→</span>
+                        {@render cardChip(t.to.card_name ?? cardLabel(t.to.card_id), t.to.card_rarity, t.to.is_upgraded, '', false, cardTip(t.to.card_id, !!t.to.is_upgraded))}
+                      </span>
                     {/each}
                   </div>
                 {/if}
@@ -308,14 +305,13 @@
               {@render groupHeader('ショップ購入')}
               <div class="flex flex-wrap gap-1.5">
                 {#each selected.shop_purchases as p}
-                  {#if p.card_id}
-                    {@render cardChip(p.card_name ?? cardLabel(p.card_id), (p as any).card_rarity, (p as any).is_upgraded, `${p.gold_spent}G`, false, cardTip(p.card_id, !!(p as any).is_upgraded))}
-                  {:else if p.relic_id}
-                    {@render genericChip(p.relic_name ?? p.relic_id, `${p.gold_spent} ゴールド`, relicTip(p.relic_id))}
-                  {:else if p.potion_id}
-                    {@render genericChip(p.potion_name ?? p.potion_id, `${p.gold_spent} ゴールド`, potionTip(p.potion_id))}
+                  {@const price = p.gold_spent != null ? `${p.gold_spent}G` : ''}
+                  {#if p.kind === 'card'}
+                    {@render cardChip(p.name || cardLabel(p.id), p.rarity, p.is_upgraded, price, false, cardTip(p.id, !!p.is_upgraded))}
+                  {:else if p.kind === 'relic'}
+                    {@render genericChip(p.name || p.id, price, relicTip(p.id), 'text-yellow-400')}
                   {:else}
-                    {@render genericChip(itemKindLabel(p.item_kind), `${p.gold_spent} ゴールド`)}
+                    {@render genericChip(p.name || p.id, price, potionTip(p.id), 'text-yellow-400')}
                   {/if}
                 {/each}
               </div>
@@ -336,7 +332,7 @@
                 {#if selected.event_choices.length > 0}
                   {@render kvRow('イベント')}
                   <div class="flex flex-wrap gap-1.5">
-                    {#each selected.event_choices as c}{@render genericChip(c.title || c.history_name || c.text_key)}{/each}
+                    {#each selected.event_choices as c}{@render genericChip(c.title)}{/each}
                   </div>
                 {/if}
                 {#if selected.card_choices.length > 0}

@@ -84,11 +84,11 @@
                 lines.push(`ゴールド ${f.gold_in} → ${f.gold_out} (${goldDelta >= 0 ? '+' : ''}${goldDelta})`);
                 if (f.cards_obtained.length > 0)
                   lines.push(`カード入手: ${f.cards_obtained.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
-                // shop で買った card は cards_obtained から dedup されてるので別途追加
-                const shopCards = f.shop_purchases.filter(p => p.card_id);
+                // ショップの階で入手したものは購入品として別に出す (spec run-overview.md §3.5)
+                const shopCards = f.shop_purchases.filter(p => p.kind === 'card');
                 if (shopCards.length > 0)
-                  lines.push(`購入カード: ${shopCards.map(p => p.card_name ?? nameCard(p.card_id!)).join(', ')}`);
-                if (f.rest_options.includes('smith') && f.cards_upgraded.length > 0)
+                  lines.push(`購入カード: ${shopCards.map(p => p.name || nameCard(p.id)).join(', ')}`);
+                if (f.rest_options.includes('SMITH') && f.cards_upgraded.length > 0)
                   lines.push(`鍛治: ${f.cards_upgraded.map(c => c.card_name ?? nameCard(c.card_id)).join(', ')}`);
                 if (f.relics_obtained.length > 0)
                   lines.push(`レリック入手: ${f.relics_obtained.map(r => r.relic_name ?? r.relic_id).join(', ')}`);
@@ -99,7 +99,7 @@
                 if (f.cards_enchanted && f.cards_enchanted.length > 0)
                   lines.push(`エンチャント: ${f.cards_enchanted.map(e => `${e.card_name ?? nameCard(e.card_id)}←${nameEnchant(e.enchantment_id)}`).join(', ')}`);
                 if (f.event_choices && f.event_choices.length > 0)
-                  lines.push(`イベント選択: ${f.event_choices.map(c => c.title || c.history_name || c.text_key).join(', ')}`);
+                  lines.push(`イベント選択: ${f.event_choices.map(c => c.title).join(', ')}`);
                 return lines;
               },
             },

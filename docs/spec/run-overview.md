@@ -172,7 +172,7 @@ interface FloorSummary {
   cards_transformed: { from: Card, to: Card }[]
   cards_removed:     { card_id, card_name? }[]
   rest_options:      string[]
-  shop_purchases:    ItemPurchasedPayload[]
+  shop_purchases:    { kind: 'card' | 'relic' | 'potion', id, name, rarity?, is_upgraded?, gold_spent? }[]  // gold_spent はホスト自身の購入のみ
   event_choices:     { title }[]
   card_choices:      { picked_card_id, choices: { card_id, card_name, card_rarity?, is_upgraded?, was_picked }[] }[]  // 0 か 1 件
 }

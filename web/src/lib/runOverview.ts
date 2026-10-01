@@ -1,23 +1,26 @@
 /**
- * events から「階ごとのサマリ」を導出するユーティリティ。
+ * events から「階ごとのサマリ」を導出する (docs/spec/run-overview.md §3、data-sources.md §2.1)。
  *
- * 入力: doc.events 全体（戦闘内 + 戦闘外イベント）
- * 出力: FloorSummary[] — 階番号順（room_entered で観測された階のみ）
- *
- * 各階の境界は `room_entered` の floor を使う:
- *   - 階入場時の HP / max_hp / gold は room_entered.payload から取る
- *   - 階内の events は floor フィールドで紐づける
- *   - 退出時 HP は次階の room_entered.hp（最後の階は session.final / run_end から）
+ * v2: ゲーム自身の階ごとの記録 (floor_snapshot) を、階ごとに最後に受け取った 1 件だけ使う。
+ * HP・ゴールド・入手物・選択などの推測や重複除去は行わない。
  */
 
 import type {
   EventRecord,
-  RoomEnteredPayload, HpChangedPayload,
-  RestActionPayload, ItemPurchasedPayload, RewardTakenPayload,
-  PotionObtainedPayload, CardUpgradedPayload, CardRemovedPayload,
-  DamageDealtPayload, DamageReceivedPayload,
+  FloorSnapshotPayload, FloorSnapshotPlayer, SnapshotCard,
+  ItemPurchasedPayload, RunStartPayload, RunEndPayload,
   CombatStartPayload, CombatEndPayload,
 } from './types';
+import { latestCombatEvents } from './aggregate';
+
+export interface ShopPurchase {
+  kind: 'card' | 'relic' | 'potion';
+  id: string;
+  name: string;
+  rarity?: string;
+  is_upgraded?: boolean;
+  gold_spent?: number;          // ホスト自身の購入だけ分かる (item_purchased)
+}
 
 export interface FloorSummary {
   floor: number;
@@ -35,322 +38,141 @@ export interface FloorSummary {
   gold_in: number;
   gold_out: number;
   damage_taken: number;
-  damage_dealt: number;
-  cards_obtained: { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean }[];
-  relics_obtained: { relic_id: string; relic_name?: string }[];
-  potions_obtained: { potion_id: string; potion_name?: string }[];
-  cards_removed:   { card_id: string; card_name?: string }[];
-  cards_upgraded:  { card_id: string; card_name?: string; card_rarity?: string }[];
-  cards_enchanted: { card_id: string; card_name?: string; enchantment_id: string; amount: number }[];
-  rest_options:    string[];          // "heal" / "smith" 等
-  shop_purchases:  ItemPurchasedPayload[];
-  event_choices:   { title: string; history_name: string; text_key: string }[];
-  // 階で提示された CardReward の選択肢（pick した / skip した両方）。1 階に複数 reward あり得る。
-  card_choices:    { picked_card_id: string; choices: { card_id: string; card_name: string; was_picked: boolean }[] }[];
+  cards_obtained:    { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean }[];
+  relics_obtained:   { relic_id: string; relic_name?: string }[];
+  potions_obtained:  { potion_id: string; potion_name?: string }[];
+  cards_removed:     { card_id: string; card_name?: string }[];
+  cards_upgraded:    { card_id: string; card_name?: string; card_rarity?: string }[];
+  cards_enchanted:   { card_id: string; card_name?: string; enchantment_id: string; enchantment_name?: string }[];
+  cards_transformed: { from: ChipCard; to: ChipCard }[];
+  rest_options:      string[];          // ゲームの OptionId ("SMITH" / "HEAL" 等)
+  shop_purchases:    ShopPurchase[];
+  event_choices:     { title: string }[];
+  // 提示されたカードの選択肢 (選んだ / 選ばなかった)。ゲームの記録は階ごとに 1 本なので 0 か 1 件。
+  card_choices:      { picked_card_id: string; choices: { card_id: string; card_name: string; card_rarity?: string; is_upgraded?: boolean; was_picked: boolean }[] }[];
 }
 
+export interface ChipCard { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean }
+
+const chip = (c: SnapshotCard): ChipCard => ({
+  card_id: c.id, card_name: c.name || undefined, card_rarity: c.rarity || undefined, is_upgraded: (c.upgrade_level ?? 0) > 0,
+});
+
 /**
- * 特定プレイヤーの視点で集計する場合は filterPlayerId を指定。
- * - player_id 付き event はその player のものだけ通す（global は常に通す）
- * - hp_in / max_hp_in / gold_in は (a) そのプレイヤーの hp_changed / gold_changed が
- *   一定数あればそれから推定、(b) なければ room_entered.payload の値（= local プレイヤー値）を使う
+ * playerId のプレイヤーの視点で階の一覧を作る。
  */
-export function buildFloorSummaries(events: EventRecord[], filterPlayerId?: string): FloorSummary[] {
-  // 全イベント（per-player HP 推定に使うため filter 前のものを保持）
-  const allEvents = events;
-  if (filterPlayerId) {
-    events = events.filter(e => !e.player_id || e.player_id === filterPlayerId);
+export function buildFloorSummaries(events: EventRecord[], playerId: string): FloorSummary[] {
+  // 1. 階ごとに最後の floor_snapshot
+  const snapByFloor = new Map<number, FloorSnapshotPayload>();
+  const sorted = events.slice().sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
+  for (const ev of sorted) {
+    if (ev.event_type !== 'floor_snapshot') continue;
+    const p = ev.payload as FloorSnapshotPayload;
+    snapByFloor.set(p.floor, p);
   }
-  // room_entered で各階のスケルトンを作る
-  const byFloor = new Map<number, FloorSummary>();
-  const orderedFloors: number[] = [];
-  const makeEmpty = (floor: number, partial: Partial<FloorSummary> = {}): FloorSummary => ({
-    floor,
-    act_index: partial.act_index ?? 0,
-    room_type: partial.room_type ?? '',
-    room_class: partial.room_class ?? '',
-    hp_in: partial.hp_in ?? 0,
-    hp_out: partial.hp_out ?? 0,
-    max_hp_in: partial.max_hp_in ?? 0,
-    max_hp_out: partial.max_hp_out ?? 0,
-    gold_in: partial.gold_in ?? 0,
-    gold_out: partial.gold_out ?? 0,
-    damage_taken: 0,
-    damage_dealt: 0,
-    cards_obtained: [],
-    relics_obtained: [],
-    potions_obtained: [],
-    cards_removed: [],
-    cards_upgraded: [],
-    cards_enchanted: [],
-    rest_options: [],
-    shop_purchases: [],
-    event_choices: [],
-    card_choices: [],
-  });
-  for (const ev of events) {
-    if (ev.event_type !== 'room_entered') continue;
-    const p = ev.payload as RoomEnteredPayload;
-    if (byFloor.has(p.floor)) continue;
-    orderedFloors.push(p.floor);
-    byFloor.set(p.floor, makeEmpty(p.floor, {
-      act_index: p.act_index,
-      room_type: p.room_type,
-      room_class: p.room_class,
-      hp_in: p.hp,
-      hp_out: p.hp,
-      max_hp_in: p.max_hp,
-      max_hp_out: p.max_hp,
-      gold_in: p.gold,
-      gold_out: p.gold,
+  const floors = [...snapByFloor.keys()].sort((a, b) => a - b);
+  if (floors.length === 0) return [];
+
+  // 2. 戦闘 (中断→再開でやり直した戦闘は最後の試行だけ) と、その他の付帯 event
+  const combatEvents = latestCombatEvents(events);
+  const combatStartByFloor = new Map<number, CombatStartPayload>();
+  const combatEndByFloor = new Map<number, CombatEndPayload>();
+  for (const ev of combatEvents) {
+    if (ev.event_type === 'combat_start') combatStartByFloor.set((ev.payload as CombatStartPayload).combat_index, ev.payload as CombatStartPayload);
+    if (ev.event_type === 'combat_end')   combatEndByFloor.set((ev.payload as CombatEndPayload).combat_index, ev.payload as CombatEndPayload);
+  }
+  const runStart = sorted.find(e => e.event_type === 'run_start' && e.player_id === playerId)?.payload as RunStartPayload | undefined;
+  const runEnd = sorted.find(e => e.event_type === 'run_end')?.payload as RunEndPayload | undefined;
+  const purchasesByFloor = new Map<number, ItemPurchasedPayload[]>();
+  for (const ev of sorted) {
+    if (ev.event_type !== 'item_purchased' || ev.player_id !== playerId || ev.floor == null) continue;
+    if (!purchasesByFloor.has(ev.floor)) purchasesByFloor.set(ev.floor, []);
+    purchasesByFloor.get(ev.floor)!.push(ev.payload as ItemPurchasedPayload);
+  }
+
+  const result: FloorSummary[] = [];
+  let prev: { hp: number; max: number; gold: number } | null =
+    runStart && runStart.hp != null ? { hp: runStart.hp, max: runStart.max_hp ?? 0, gold: runStart.gold ?? 0 } : null;
+  const lastFloor = floors[floors.length - 1];
+
+  for (const f of floors) {
+    const snap = snapByFloor.get(f)!;
+    const me: FloorSnapshotPlayer | undefined = snap.players.find(p => p.player_id === playerId);
+    const room = snap.rooms[snap.rooms.length - 1];
+    const start = combatStartByFloor.get(f);
+    const end = combatEndByFloor.get(f);
+
+    let hpOut = me?.hp.current ?? 0;
+    // 勝利・放棄のランの最後の階: ゲームは全員を倒してから記録を確定するので HP は 0。終了直前の HP を使う
+    if (f === lastFloor && runEnd && runEnd.outcome !== 'death' && runEnd.final_hp?.[playerId] != null) {
+      hpOut = runEnd.final_hp[playerId];
+    }
+    const sum: FloorSummary = {
+      floor: f,
+      act_index: snap.act_index,
+      room_type: room?.room_type ?? '',
+      room_class: snap.map_point_type ?? '',
+      encounter_id: start?.encounter_id ?? room?.model_id ?? undefined,
+      encounter_name: start?.encounter_name ?? (room?.model_name || undefined),
+      combat_index: start ? f : undefined,
+      victory: end?.victory,
+      hp_in: prev?.hp ?? hpOut,
+      max_hp_in: prev?.max ?? (me?.hp.max ?? 0),
+      gold_in: prev?.gold ?? (me?.gold.current ?? 0),
+      hp_out: hpOut,
+      max_hp_out: me?.hp.max ?? 0,
+      gold_out: me?.gold.current ?? 0,
+      damage_taken: me?.hp.damage_taken ?? 0,
+      cards_obtained: [], relics_obtained: [], potions_obtained: [],
+      cards_removed: [], cards_upgraded: [], cards_enchanted: [], cards_transformed: [],
+      rest_options: [], shop_purchases: [], event_choices: [], card_choices: [],
+    };
+    prev = { hp: sum.hp_out, max: sum.max_hp_out, gold: sum.gold_out };
+    if (!me) { result.push(sum); continue; }
+
+    const gainedCards = me.cards_gained.map(chip);
+    const pickedRelics = me.relic_choices.filter(r => r.was_picked);
+    const pickedPotions = me.potion_choices.filter(p => p.was_picked);
+
+    if (sum.room_type === 'Shop') {
+      // ショップの階で入手したものは全部購入品 (spec §3.5)。値段はホスト自身の購入だけ分かる
+      const priced = (purchasesByFloor.get(f) ?? []).slice();
+      const takePrice = (key: 'card_id' | 'relic_id' | 'potion_id', id: string): number | undefined => {
+        const i = priced.findIndex(p => p[key] === id);
+        if (i < 0) return undefined;
+        return priced.splice(i, 1)[0].gold_spent;
+      };
+      for (const c of gainedCards) sum.shop_purchases.push({ kind: 'card', id: c.card_id, name: c.card_name ?? c.card_id, rarity: c.card_rarity, is_upgraded: c.is_upgraded, gold_spent: takePrice('card_id', c.card_id) });
+      for (const r of pickedRelics) sum.shop_purchases.push({ kind: 'relic', id: r.id, name: r.name || r.id, gold_spent: takePrice('relic_id', r.id) });
+      for (const p of pickedPotions) sum.shop_purchases.push({ kind: 'potion', id: p.id, name: p.name || p.id, gold_spent: takePrice('potion_id', p.id) });
+    } else {
+      sum.cards_obtained = gainedCards;
+      sum.relics_obtained = pickedRelics.map(r => ({ relic_id: r.id, relic_name: r.name || undefined }));
+      sum.potions_obtained = pickedPotions.map(p => ({ potion_id: p.id, potion_name: p.name || undefined }));
+      const choices = me.card_choices.map(c => ({ ...chip(c.card), card_name: c.card.name || c.card.id, was_picked: c.was_picked }));
+      if (choices.length > 0) {
+        sum.card_choices.push({ picked_card_id: choices.find(c => c.was_picked)?.card_id ?? '', choices });
+      }
+    }
+
+    sum.cards_removed = me.cards_removed.map(c => ({ card_id: c.id, card_name: c.name || undefined }));
+    sum.cards_upgraded = me.cards_upgraded.map(c => ({ card_id: c.id, card_name: c.name || undefined, card_rarity: c.rarity || undefined }));
+    sum.cards_enchanted = me.cards_enchanted.map(e => ({
+      card_id: e.card.id, card_name: e.card.name || undefined,
+      enchantment_id: e.enchantment_id ?? '', enchantment_name: e.enchantment_name || undefined,
     }));
-  }
-  // room_entered が無い floor (= STS2 の Neow/初期フロアは Hook.AfterRoomEntered が
-  // 発火しないことがある) を、他 event から floor 番号だけ拾って補完。
-  // → これにより「reward_taken / card_obtained / event_choice 等が floor=1 で
-  //   記録されていれば 1 階が表示される」が、events が全く無い場合 (resume mid-run 等)
-  //   は floor 1 を作らない。空の floor 1 をグラフに描くと「情報が正しく表示されない」
-  //   と見えるため、events が実在する floor のみ表示する。
-  for (const ev of events) {
-    if (ev.floor == null) continue;
-    if (byFloor.has(ev.floor)) continue;
-    orderedFloors.push(ev.floor);
-    byFloor.set(ev.floor, makeEmpty(ev.floor));
-  }
-  // 旧実装は「1 階から最小観測 floor まで」を強制 backfill していたが、events 0 件の
-  // 空 floor がグラフに紛れて誤情報に見えるため廃止。events を持たない floor は出さない。
-  if (false && orderedFloors.length > 0) {
-    const minFloor = Math.min(...orderedFloors);
-    for (let f = 1; f < minFloor; f++) {
-      if (!byFloor.has(f)) {
-        orderedFloors.push(f);
-        byFloor.set(f, makeEmpty(f));
-      }
-    }
-  }
-  orderedFloors.sort((a, b) => a - b);
+    sum.cards_transformed = me.cards_transformed.map(t => ({ from: chip(t.from), to: chip(t.to) }));
+    sum.rest_options = me.rest_site_choices.slice();
+    // ネオウ等の選択 (選んだもの) → イベントの選択肢
+    const ancient = me.ancient_choices.filter(a => a.was_chosen).map(a => ({ title: a.title }));
+    const eventTitles = me.event_choices.map(t => ({ title: t }));
+    sum.event_choices = ancient.length > 0
+      ? [...ancient, ...eventTitles.filter(e => !ancient.some(a => a.title === e.title))]
+      : eventTitles;
 
-  // combat_start / combat_end を encounter 名と victory に紐づける
-  for (const ev of events) {
-    if (ev.event_type === 'combat_start' && ev.floor != null) {
-      const sum = byFloor.get(ev.floor);
-      if (sum) {
-        const p = ev.payload as CombatStartPayload;
-        sum.encounter_id = p.encounter_id;
-        sum.encounter_name = p.encounter_name;
-        sum.combat_index = p.combat_index;
-      }
-    } else if (ev.event_type === 'combat_end' && ev.floor != null) {
-      const sum = byFloor.get(ev.floor);
-      if (sum) sum.victory = (ev.payload as CombatEndPayload).victory;
-    }
+    result.push(sum);
   }
-
-  // 階内 event を集計
-  for (const ev of events) {
-    if (ev.floor == null) continue;
-    const sum = byFloor.get(ev.floor);
-    if (!sum) continue;
-
-    switch (ev.event_type) {
-      case 'damage_dealt': {
-        const p = ev.payload as DamageDealtPayload;
-        sum.damage_dealt += p.amount ?? 0;
-        break;
-      }
-      case 'damage_received': {
-        const p = ev.payload as DamageReceivedPayload;
-        sum.damage_taken += p.amount ?? 0;
-        break;
-      }
-      case 'reward_taken': {
-        const p = ev.payload as RewardTakenPayload;
-        // card は CardModel.FloorAddedToDeck setter (card_obtained) が単一の正規経路。
-        // ここでは「提示された card 選択肢」だけ記録 (CardReward の付帯情報)。
-        if (p.card_choices && p.card_choices.length > 0) {
-          sum.card_choices.push({
-            picked_card_id: p.card_id ?? '',
-            choices: p.card_choices,
-          });
-        }
-        // relic は RelicCmd.Obtain (relic_obtained) が単一の正規経路。
-        // potion は AfterPotionProcured (potion_obtained) が単一の正規経路。
-        break;
-      }
-      case 'card_obtained': {
-        const p = ev.payload as { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean };
-        if (p.card_id) sum.cards_obtained.push({ card_id: p.card_id, card_name: p.card_name, card_rarity: p.card_rarity, is_upgraded: p.is_upgraded });
-        // shop / event 由来 card との二重表示は最終 pass で dedup する (event 順序に依存しないため)
-        break;
-      }
-      case 'item_purchased': {
-        const p = ev.payload as ItemPurchasedPayload;
-        sum.shop_purchases.push(p);
-        // カード / relic / potion は shop_purchases に出るので cards_obtained / relics_obtained /
-        // potions_obtained には追加しない (二重表示防止)。
-        break;
-      }
-      case 'potion_obtained': {
-        const p = ev.payload as PotionObtainedPayload;
-        if (p.potion_id) sum.potions_obtained.push({ potion_id: p.potion_id, potion_name: p.potion_name });
-        break;
-      }
-      case 'relic_obtained': {
-        const p = ev.payload as { relic_id: string; relic_name?: string };
-        if (p.relic_id) sum.relics_obtained.push({ relic_id: p.relic_id, relic_name: p.relic_name });
-        break;
-      }
-      case 'card_upgraded': {
-        const p = ev.payload as CardUpgradedPayload & { card_rarity?: string };
-        sum.cards_upgraded.push({ card_id: p.card_id, card_name: p.card_name, card_rarity: p.card_rarity });
-        break;
-      }
-      case 'card_removed': {
-        const p = ev.payload as CardRemovedPayload;
-        sum.cards_removed.push({ card_id: p.card_id, card_name: p.card_name });
-        break;
-      }
-      case 'rest_action': {
-        const p = ev.payload as RestActionPayload;
-        sum.rest_options.push(p.option);
-        break;
-      }
-      case 'card_enchanted': {
-        const p = ev.payload as { card_id: string; card_name: string; enchantment_id: string; amount: number };
-        // mod 側の dedup は CardModel instance hashcode 単位なので、同じ logical card に対する
-        // 複数 instance (ハンド/master deck/clone 等) が個別に EnchantInternal を呼ぶと素通りする。
-        // floor 単位で (card_id, enchantment_id) が同一なら 1 回扱いにする。
-        const dup = sum.cards_enchanted.some(
-          e => e.card_id === p.card_id && e.enchantment_id === p.enchantment_id,
-        );
-        if (!dup) sum.cards_enchanted.push(p);
-        break;
-      }
-      case 'event_choice': {
-        const p = ev.payload as { text_key: string; title: string; history_name: string };
-        sum.event_choices.push(p);
-        break;
-      }
-    }
-  }
-
-  // 選択プレイヤーの hp/gold を hp_changed / gold_changed から推定（room_entered.hp は local 値なので
-  // MP 他プレイヤー視点では正しくない）。各階の room_entered の occurred_at 直前の最新値を採用。
-  if (filterPlayerId) {
-    const hpChanges = allEvents
-      .filter(e => e.event_type === 'hp_changed' && e.player_id === filterPlayerId)
-      .slice()
-      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
-    const goldChanges = allEvents
-      .filter(e => e.event_type === 'gold_changed' && e.player_id === filterPlayerId)
-      .slice()
-      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
-    const roomEvents = allEvents
-      .filter(e => e.event_type === 'room_entered')
-      .slice()
-      .sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
-
-    if (hpChanges.length > 0) {
-      // 階ごとに room_entered の occurred_at 以前の最新 hp_changed を採用
-      let hpIdx = 0; let lastHp = -1; let lastMax = -1;
-      for (const re of roomEvents) {
-        const reTs = re.occurred_at ?? '';
-        // re より前の hp_changed を消化
-        while (hpIdx < hpChanges.length && (hpChanges[hpIdx].occurred_at ?? '') <= reTs) {
-          const p = hpChanges[hpIdx].payload as HpChangedPayload;
-          lastHp = p.current_hp; lastMax = p.max_hp;
-          hpIdx++;
-        }
-        const floor = (re.payload as RoomEnteredPayload).floor;
-        const sum = byFloor.get(floor);
-        if (sum && lastHp >= 0) {
-          sum.hp_in = lastHp;
-          sum.max_hp_in = lastMax;
-        }
-      }
-    }
-    if (goldChanges.length > 0) {
-      let gIdx = 0; let lastG = -1;
-      for (const re of roomEvents) {
-        const reTs = re.occurred_at ?? '';
-        while (gIdx < goldChanges.length && (goldChanges[gIdx].occurred_at ?? '') <= reTs) {
-          const p = goldChanges[gIdx].payload as { current_gold: number };
-          lastG = p.current_gold; gIdx++;
-        }
-        const floor = (re.payload as RoomEnteredPayload).floor;
-        const sum = byFloor.get(floor);
-        if (sum && lastG >= 0) sum.gold_in = lastG;
-      }
-    }
-  }
-
-  // 各階の hp_out / max_hp_out / gold_out は **その階内で発生した最後の値**
-  // (hp_changed / gold_changed) を使う。次階の hp_in は使わない:
-  //   - 階間の遷移ヒール / 階開始時 relic 効果等が次階へ寄ってしまうため
-  //   - 階内で hp_changed が無ければ hp_out = hp_in (変化なし) として扱う
-  // 全 events を occurred_at 順に並び替えて 1 度だけ走査する。
-  const sortedAll = events.slice().sort((a, b) => (a.occurred_at ?? '').localeCompare(b.occurred_at ?? ''));
-
-  for (const f of orderedFloors) {
-    const sum = byFloor.get(f)!;
-    sum.hp_out = sum.hp_in;
-    sum.max_hp_out = sum.max_hp_in;
-    sum.gold_out = sum.gold_in;
-  }
-  // run_end のタイムスタンプを取る。これ以降の hp_changed は post-run cleanup
-  // (ラスボス勝利後の HP=0 reset 等) として除外する。Burning Blood の +6 等
-  // combat_end 直後の正規 HP 変化は run_end より前にあるので保持される。
-  const runEndTs = sortedAll.find(e => e.event_type === 'run_end')?.occurred_at ?? '';
-
-  // hp_changed event は creature 全般 (敵含む) に対して発火する。playerId=null の
-  // hp_changed は敵の HP 変動 (敵の cur=262 等) なので player の hp_out には使えない。
-  // playerId 付きの hp_changed のみ採用する。
-  for (const ev of sortedAll) {
-    if (ev.floor == null) continue;
-    const sum = byFloor.get(ev.floor);
-    if (!sum) continue;
-    if (ev.event_type === 'hp_changed' && ev.player_id) {
-      if (filterPlayerId != null && ev.player_id !== filterPlayerId) continue;
-      // ラン終了後の post-run cleanup hp_changed は除外
-      if (runEndTs && (ev.occurred_at ?? '') > runEndTs) continue;
-      const p = ev.payload as HpChangedPayload;
-      sum.hp_out = p.current_hp;
-      sum.max_hp_out = p.max_hp;
-    } else if (ev.event_type === 'gold_changed' && (filterPlayerId == null || ev.player_id === filterPlayerId)) {
-      const p = ev.payload as { current_gold: number };
-      sum.gold_out = p.current_gold;
-    }
-  }
-  // 休憩所(heal): silent heal で hp_changed が発火しないため、次階 room_entered.hp との
-  // 差分から hp_out を導出する。
-  const roomByFloor = new Map<number, RoomEnteredPayload>();
-  for (const ev of sortedAll) {
-    if (ev.event_type !== 'room_entered') continue;
-    const p = ev.payload as RoomEnteredPayload;
-    if (!roomByFloor.has(p.floor)) roomByFloor.set(p.floor, p);
-  }
-  for (const ev of sortedAll) {
-    if (ev.event_type !== 'rest_action') continue;
-    if ((ev.payload as RestActionPayload).option !== 'heal') continue;
-    const restFloor = ev.floor;
-    if (restFloor == null) continue;
-    const sum = byFloor.get(restFloor);
-    if (!sum) continue;
-    const next = roomByFloor.get(restFloor + 1);
-    if (next) {
-      sum.hp_out = next.hp;
-      sum.max_hp_out = next.max_hp;
-    }
-  }
-
-  // 最終 pass: shop で買ったカードと cards_obtained の重複を除去 (event 順序に依存しない)。
-  // 同じ card_id が両方に乗ると「ショップ購入」と「カード入手」両方に同じカードが出てしまう。
-  for (const sum of byFloor.values()) {
-    if (sum.shop_purchases.length === 0 || sum.cards_obtained.length === 0) continue;
-    const shopCardIds = new Set(sum.shop_purchases.map(s => s.card_id).filter(Boolean));
-    sum.cards_obtained = sum.cards_obtained.filter(c => !shopCardIds.has(c.card_id));
-  }
-  return orderedFloors.map(f => byFloor.get(f)!);
+  return result;
 }
 
 export const ROOM_TYPE_VISUAL: Record<string, { emoji: string; label: string; color: string }> = {

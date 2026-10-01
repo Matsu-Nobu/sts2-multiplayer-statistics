@@ -25,11 +25,32 @@ export interface CombatInfo {
 
 // === 公開 API ================================================================
 
+/**
+ * 戦闘内 event のうち、各 combat_index の **最後の combat_start 以降** だけを返す (spec combat-stats.md §4)。
+ * 中断→再開で同じ階の戦闘をやり直すと combat_start が再び来る。中断前の分はゲーム上無かったことになっているので捨てる。
+ * combat_start の無い combat_index (戦闘外に紛れた event) も捨てる。combat_index の無い event はそのまま残す。
+ */
+export function latestCombatEvents(events: EventRecord[]): EventRecord[] {
+  const lastStart = new Map<number, string>();
+  for (const ev of events) {
+    if (ev.event_type !== 'combat_start' || ev.combat_index == null) continue;
+    const ts = ev.occurred_at ?? '';
+    const cur = lastStart.get(ev.combat_index);
+    if (cur == null || ts >= cur) lastStart.set(ev.combat_index, ts);
+  }
+  return events.filter(ev => {
+    if (ev.combat_index == null) return true;
+    const start = lastStart.get(ev.combat_index);
+    return start != null && (ev.occurred_at ?? '') >= start;
+  });
+}
+
 export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {
+  const events = latestCombatEvents(doc.events);
   // 1. combat_start / combat_end からメタ情報を集める
   const startByIdx = new Map<number, CombatStartPayload>();
   const endByIdx   = new Map<number, CombatEndPayload>();
-  for (const ev of doc.events) {
+  for (const ev of events) {
     if (ev.event_type === 'combat_start') {
       const p = ev.payload as CombatStartPayload;
       const idx = p?.combat_index ?? ev.combat_index;
@@ -43,7 +64,7 @@ export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {
 
   // 2. combat_index ごとに events をバケット化（戦闘内 event のみ）
   const byCombat = new Map<number, EventRecord[]>();
-  for (const ev of doc.events) {
+  for (const ev of events) {
     if (ev.combat_index == null) continue;
     if (!byCombat.has(ev.combat_index)) byCombat.set(ev.combat_index, []);
     byCombat.get(ev.combat_index)!.push(ev);
@@ -218,7 +239,7 @@ function buildTurnsForCombat(
     //    となる。よって以下のように動かす:
     //      - damage_dealt: 同じ source_card_id が連続している間は一つの play として累積
     //      - card_played:  対応する damage 群の終端なので finalize（card_name/type を上書き）
-    //      - source_card_id が「(...)」で始まる合成タグ (poison/doom/lightning 等) は
+    //      - カード以外の出どころ (source_kind が card 以外: 毒・Doom・オーブ・レリック等) は
     //        1 hit = 1 play 扱いにして個別に finalize（DoT を 1 つの play にまとめないため）
     //    これにより max_single_hit は「カード1枚で与えた最大ダメージ」になる
     //    （Whirlwind のような multi-hit カードはヒット合計、Strike 単発はそのダメ）。
@@ -245,7 +266,8 @@ function buildTurnsForCombat(
         const p = ev.payload as DamageDealtPayload;
         const hpLost = p.amount ?? 0;          // mod 保証で amount = HP loss
         const sid = p.source_card_id ?? '(unknown)';
-        const isSynthetic = sid.startsWith('(');
+        // カード以外 (毒・オーブ・レリック等) は 1 hit = 1 play 扱い (source_kind、api.md「出どころ」)
+        const isSynthetic = (p.source_kind != null && p.source_kind !== 'card') || sid === '(unknown)';
 
         if (isSynthetic) {
           // poison / doom / lightning 等は 1 hit = 1 play 扱い

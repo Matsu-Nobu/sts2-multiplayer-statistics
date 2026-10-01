@@ -23,7 +23,8 @@
     if (!session.outcome) return '進行中';
     if (session.outcome === 'victory') return '勝利';
     if (session.outcome === 'death') return '死亡';
-    return '中断';
+    if (session.outcome === 'abandoned') return '放棄';
+    return session.outcome;
   });
   let outcomeColor = $derived.by(() => {
     if (!session.outcome) return 'text-warn';

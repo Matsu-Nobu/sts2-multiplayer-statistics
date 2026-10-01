@@ -12,6 +12,7 @@
   import RdpsPanel from './RdpsPanel.svelte';
   import RmitPanel from './RmitPanel.svelte';
   import TimelineView from './TimelineView.svelte';
+  import { roomVisual } from '../lib/runOverview';
 
   interface Props {
     combat: CombatInfo;
@@ -37,6 +38,9 @@
 
   let entry = $derived(activePlayer ? combat.finalTurn.players[activePlayer] : null);
   let turnsCount = $derived(combat.turns.length || 1);
+  // spec combat-stats.md §3.1: 結果 (combat_end.victory。まだ届いていなければ進行中)
+  let resultLabel = $derived(combat.victory === true ? '勝利' : combat.victory === false ? '敗北' : '進行中');
+  let resultColor = $derived(combat.victory === true ? 'text-ok' : combat.victory === false ? 'text-bad' : 'text-warn');
 
   // プレイヤー間スタッツ比較用の棒グラフ
   type StatKey = 'effective_damage_dealt' | 'damage_received' | 'effective_block' | 'max_single_hit';
@@ -77,6 +81,13 @@
 </script>
 
 <div class="space-y-6">
+  <!-- メタ情報 (spec combat-stats.md §3.1) -->
+  <div class="text-sm text-slate-300 flex flex-wrap items-center gap-x-2">
+    <span class="font-medium text-slate-100">{combat.encounter_name ?? '不明な遭遇'}</span>
+    {#if combat.room_type}<span class="text-slate-500">·</span><span>{roomVisual(combat.room_type).label}</span>{/if}
+    <span class="text-slate-500">·</span><span class={resultColor}>{resultLabel}</span>
+    <span class="text-slate-500">·</span><span>{turnsCount}ターン</span>
+  </div>
 
   <!-- サマリ／タイムライン切替 -->
   <div class="flex gap-1 bg-bg-2 border border-bg-3 rounded p-0.5 text-xs w-fit">

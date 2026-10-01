@@ -6,14 +6,15 @@
  *
  * 各 damage_dealt イベントについて:
  *   - 通常ダメ + Vulnerable on target → 1/3 を Vulnerable applier に stacks 加重で配分
- *   - 間接ダメ source_card_id="(poison)" → 100% を POISON_POWER の applier 群に stacks 加重で配分
- *   - 間接ダメ source_card_id="(doom)"   → 100% を DOOM_POWER の applier 群に stacks 加重で配分
+ *   - 間接ダメ source_card_id="POISON_POWER" (毒) → 100% を POISON_POWER の applier 群に stacks 加重で配分
+ *   - 間接ダメ source_card_id="DOOM_POWER" (Doom による撃破) → 100% を DOOM_POWER の applier 群に stacks 加重で配分
  *
  * 複数プレイヤーが同じデバフを撒いた場合、各 applier の stacks 比で按分する。
  * stacks 情報が無い旧 payload では `applier` 単独に全額を帰属（後方互換）。
  */
 
 import type { EventRecord, DamageDealtPayload, PowerSnapshot } from './types';
+import { latestCombatEvents } from './aggregate';
 
 export interface RdpsBreakdown {
   total: number;          // self + to の合計
@@ -27,6 +28,7 @@ export interface RdpsTable {
 }
 
 export function computeRdps(events: EventRecord[]): RdpsTable {
+  events = latestCombatEvents(events);
   const byPlayer: Record<string, RdpsBreakdown> = {};
   const ensure = (pid: string): RdpsBreakdown => {
     if (!byPlayer[pid]) byPlayer[pid] = { total: 0, self: 0, from: [], to: [] };
@@ -56,11 +58,11 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
     if (effective <= 0) continue;
 
     // 1. 間接ダメ: poison / doom の applier に 100%（stacks 加重で按分）
-    if (p.source_card_id === '(poison)') {
+    if (p.source_card_id === 'POISON_POWER') {
       distributeByStacks(p.active_on_target, 'POISON_POWER', effective, dealer, 'poison', credit);
       continue;
     }
-    if (p.source_card_id === '(doom)') {
+    if (p.source_card_id === 'DOOM_POWER' || p.is_doom_kill) {
       distributeByStacks(p.active_on_target, 'DOOM_POWER', effective, dealer, 'doom', credit);
       continue;
     }

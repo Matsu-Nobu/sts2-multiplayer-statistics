@@ -33,7 +33,7 @@
 
   let collapsed: Record<number, boolean> = $state({});
   function toggle(t: number) { collapsed = { ...collapsed, [t]: !collapsed[t] }; }
-  function pname(pid: string | undefined): string {
+  function pname(pid: string | null | undefined): string {
     if (!pid) return '—';
     return playerNames[pid] ?? pid;
   }

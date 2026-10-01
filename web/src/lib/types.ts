@@ -1,4 +1,4 @@
-// docs/api.md と一致させること。Phase 3.5 形式（events 統合）。
+// docs/api.md と一致させること。v2 形式 (docs/redesign-v2.md)。
 
 export interface SessionMeta {
   id: string;
@@ -89,7 +89,7 @@ export interface EventRecord<P = unknown> {
   event_type: string;
   occurred_at: string;
   received_at?: string;
-  player_id?: string;
+  player_id?: string | null;
   floor?: number;
   combat_index?: number;
   turn_number?: number;
@@ -97,83 +97,69 @@ export interface EventRecord<P = unknown> {
   payload: P;
 }
 
-// === ラン全体ビュー用 events =================================
+// === ラン全体ビュー用 events (v2: docs/api.md「floor_snapshot」) ==========
 
 export type RoomTypeName = 'Monster' | 'Elite' | 'Boss' | 'Event' | 'Shop' | 'RestSite' | 'Treasure' | string;
 
-export interface RoomEnteredPayload {
+export interface SnapshotCard {
+  id: string;
+  name: string;
+  rarity: string;
+  type?: string;
+  upgrade_level?: number;
+  enchantment_id?: string | null;
+}
+
+export interface SnapshotModel {
+  id: string;
+  name: string;
+  rarity?: string;
+  was_picked?: boolean | null;
+}
+
+export interface FloorSnapshotPlayer {
+  player_id: string;
+  hp:   { current: number; max: number; damage_taken: number; healed: number; max_gained: number; max_lost: number };
+  gold: { current: number; gained: number; spent: number; lost: number; stolen: number };
+  cards_gained:      SnapshotCard[];
+  cards_removed:     SnapshotCard[];
+  cards_transformed: { from: SnapshotCard; to: SnapshotCard }[];
+  cards_upgraded:    SnapshotCard[];
+  cards_downgraded:  SnapshotCard[];
+  cards_enchanted:   { card: SnapshotCard; enchantment_id: string | null; enchantment_name: string }[];
+  card_choices:      { card: SnapshotCard; was_picked: boolean }[];
+  relic_choices:     SnapshotModel[];
+  potion_choices:    SnapshotModel[];
+  potions_used:      SnapshotModel[];
+  potions_discarded: SnapshotModel[];
+  relics_removed:    SnapshotModel[];
+  event_choices:     string[];
+  ancient_choices:   { title: string; was_chosen: boolean }[];
+  rest_site_choices: string[];
+  bought:            { relics: SnapshotModel[]; potions: SnapshotModel[]; colorless: SnapshotCard[] };
+  completed_quests:  SnapshotModel[];
+}
+
+export interface FloorSnapshotPayload {
   floor: number;
   act_index: number;
-  room_type: RoomTypeName;
-  room_class: string;
-  hp: number;
-  max_hp: number;
-  gold: number;
-}
-
-export interface HpChangedPayload {
-  delta: number;
-  current_hp: number;
-  max_hp: number;
-}
-
-export interface GoldChangedPayload {
-  current_gold: number;
-}
-
-export interface RestActionPayload {
-  option: 'heal' | 'smith' | string;
-  is_mimicked?: boolean;
+  is_final: boolean;
+  map_point_type?: string;
+  rooms: { room_type: RoomTypeName; model_id?: string | null; model_name?: string; monster_ids: string[]; turns_taken: number }[];
+  players: FloorSnapshotPlayer[];
 }
 
 export interface ItemPurchasedPayload {
   item_kind: string;
   card_id?: string;
   card_name?: string;
+  card_rarity?: string;
+  is_upgraded?: boolean;
   relic_id?: string;
   relic_name?: string;
   potion_id?: string;
   potion_name?: string;
   gold_spent: number;
-}
-
-export interface RewardTakenPayload {
-  reward_kind: string;
-  gold_amount?: number;
-  card_id?: string;
-  card_name?: string;
-  potion_id?: string;
-  potion_name?: string;
-  relic_id?: string;
-  relic_name?: string;
-  // CardReward の場合、提示された全カード（picked + skipped）
-  card_choices?: { card_id: string; card_name: string; card_rarity?: string; is_upgraded?: boolean; was_picked: boolean }[];
-}
-
-export interface PotionObtainedPayload { potion_id: string; potion_name?: string; }
-export interface PotionDiscardedPayload { potion_id: string; }
-
-export interface CardUpgradedPayload {
-  card_id: string;
-  card_name: string;
-}
-
-export interface CardRemovedPayload {
-  card_id: string;
-  card_name: string;
-}
-
-export interface CardEnchantedPayload {
-  card_id: string;
-  card_name: string;
-  enchantment_id: string;
-  amount: number;
-}
-
-export interface EventChoicePayload {
-  text_key: string;
-  title: string;
-  history_name: string;
 }
 
 // =============================================================
@@ -194,11 +180,17 @@ export interface RunStartPayload {
   character_id: string;
   ascension: number;
   seed: string;
+  game_mode?: string;
+  player_name?: string;
+  hp?: number;            // ラン開始時点 (1 階に入ったときの値)
+  max_hp?: number;
+  gold?: number;
 }
 
 export interface RunEndPayload {
   outcome: 'victory' | 'death' | 'abandoned';
   final_floor: number;
+  final_hp?: Record<string, number>;   // player_id → ラン終了処理の直前の HP
 }
 
 export interface PowerSnapshot {
@@ -222,11 +214,13 @@ export interface DamageDealtPayload {
   blocked_damage?: number;            // 敵 block で吸収された分
   overkill_damage?: number;           // HP を超えた分
   was_target_killed?: boolean;
+  is_doom_kill?: boolean;             // Doom による撃破 (source_card_id = DOOM_POWER)
   target_creature_id: string | null;
   target_player_id?: string | null;
   source_card_id?: string | null;
   source_card_name?: string | null;
   source_card_type?: string | null;
+  source_kind?: string;               // 'card' | 'power' | 'relic' | 'orb' | 'enchantment' | 'potion' | 'unknown'
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
   modifications?: DamageModification[];  // Hook.ModifyDamage で観測した (pre,post,modifier) ログ
@@ -247,6 +241,7 @@ export interface BlockGainedPayload {
   source_card_id?: string | null;
   source_card_name?: string | null;
   source_card_type?: string | null;   // "Attack" / "Skill" / "Power" / "Orb" 等
+  source_kind?: string;
   from_player?: string;
 }
 

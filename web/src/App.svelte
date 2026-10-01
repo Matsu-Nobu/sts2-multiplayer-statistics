@@ -20,6 +20,8 @@
 
   const { id, isDemo } = parsePath();
 
+  let iv: ReturnType<typeof setInterval> | null = null;
+
   async function fetchOnce() {
     try {
       const r = await fetchSession(id, etag);
@@ -27,6 +29,8 @@
         doc = r.doc;
         etag = r.etag;
         live = r.doc.session.outcome ? 'final' : 'live';
+        // 終わったセッション (勝利・死亡・放棄) はもう変わらないので取り直しを止める
+        if (r.doc.session.outcome && iv != null) { clearInterval(iv); iv = null; }
       }
       lastUpdated = new Date();
       error = null;
@@ -45,9 +49,9 @@
       lastUpdated = new Date();
       return;
     }
+    iv = setInterval(fetchOnce, 10_000);
     fetchOnce();
-    const iv = setInterval(fetchOnce, 10_000);
-    return () => clearInterval(iv);
+    return () => { if (iv != null) clearInterval(iv); };
   });
 </script>
 

@@ -110,6 +110,7 @@ function genTurn(ctx: TurnCtx, draws: { player: string; cards: { id: string; nam
           overkill_damage: overkill,
           target_creature_id: 'enemy:0', source_card_id: a.cardId,
           source_card_name: a.cardName, source_card_type: a.cardType,
+          source_kind: a.cardId.endsWith('_POWER') ? 'power' : 'card',
           active_on_target: a.active_on_target ?? [],
           active_on_dealer: [],
         }, true);
@@ -226,7 +227,7 @@ export function mockSession(): SessionDoc {
         { type: 'damage_dealt',    player: HOST, amount: 9, cardId: 'STRIKE_R', cardName: 'ストライク', cardType: 'Attack',
           active_on_target: [{ power_id: 'POISON_POWER', stacks: 6, applier: ALLY }, { power_id: 'VULNERABLE_POWER', stacks: 1, applier: HOST }] },
         // poison tick: ALLY に 100% 帰属
-        { type: 'damage_dealt',    player: ALLY, amount: 6, cardId: '(poison)', cardName: '毒', cardType: 'Power',
+        { type: 'damage_dealt',    player: ALLY, amount: 6, cardId: 'POISON_POWER', cardName: '毒', cardType: 'Power',
           active_on_target: [{ power_id: 'POISON_POWER', stacks: 6, applier: ALLY }] },
       ],
     );
@@ -266,9 +267,9 @@ export function mockSession(): SessionDoc {
     genTurn(ctx,
       [],
       [
-        { type: 'damage_dealt',  player: ALLY, amount: 11, cardId: '(poison)', cardName: '毒', cardType: 'Power',
+        { type: 'damage_dealt',  player: ALLY, amount: 11, cardId: 'POISON_POWER', cardName: '毒', cardType: 'Power',
           active_on_target: [{ power_id: 'POISON_POWER', stacks: 11, applier: ALLY }] },
-        { type: 'damage_dealt',  player: ALLY, amount: 10, cardId: '(poison)', cardName: '毒', cardType: 'Power',
+        { type: 'damage_dealt',  player: ALLY, amount: 10, cardId: 'POISON_POWER', cardName: '毒', cardType: 'Power',
           active_on_target: [{ power_id: 'POISON_POWER', stacks: 10, applier: ALLY }] },
       ],
     );

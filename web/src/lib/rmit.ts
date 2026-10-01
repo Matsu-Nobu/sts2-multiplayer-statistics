@@ -16,6 +16,7 @@
  */
 
 import type { EventRecord, DamageReceivedPayload, PowerSnapshot } from './types';
+import { latestCombatEvents } from './aggregate';
 
 export interface RmitBreakdown {
   total: number;
@@ -29,6 +30,7 @@ export interface RmitTable {
 }
 
 export function computeRmit(events: EventRecord[]): RmitTable {
+  events = latestCombatEvents(events);
   const byPlayer: Record<string, RmitBreakdown> = {};
   const ensure = (pid: string): RmitBreakdown => {
     if (!byPlayer[pid]) byPlayer[pid] = { total: 0, self: 0, from: [], to: [] };
