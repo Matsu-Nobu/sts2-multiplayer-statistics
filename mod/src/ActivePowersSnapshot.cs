@@ -35,16 +35,12 @@ internal static class ActivePowersSnapshot
         if (c == null) return result;
         try
         {
-            var powers = c.GetType().GetProperty("Powers")?.GetValue(c) as IEnumerable;
-            if (powers == null) return result;
-
-            foreach (var p in powers)
+            foreach (var p in c.Powers)
             {
-                var idObj = p.GetType().GetProperty("Id")?.GetValue(p);
-                string? powerId = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString();
-                if (powerId == null || !Whitelist.Contains(powerId)) continue;
+                string powerId = p.Id.Entry;
+                if (!Whitelist.Contains(powerId)) continue;
 
-                int stacks = (int?)p.GetType().GetProperty("Amount")?.GetValue(p) ?? 0;
+                int stacks = p.Amount;
                 if (stacks == 0) continue;
 
                 var appliers = PowerOriginRegistry.LookupAll(c, powerId);

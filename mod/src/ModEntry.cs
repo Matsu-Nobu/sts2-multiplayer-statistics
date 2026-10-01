@@ -1,14 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
-using MegaCrit.Sts2.Core.Models;
-using MegaCrit.Sts2.Core.Models.Orbs;
-using MegaCrit.Sts2.Core.Models.Powers;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace StsStats;
 
@@ -21,11 +21,52 @@ public static class ModEntry
     /// <summary>HTTP クライアント。SessionConfig.HttpEnabled が false の場合 null。</summary>
     internal static IApiClient? ApiClient { get; private set; }
 
-    /// <summary>HTTP送信キュー。SessionConfig.HttpEnabled が false の場合 null。</summary>
+    /// <summary>HTTP 送信キュー。SessionConfig.HttpEnabled が false の場合 null。</summary>
     internal static HttpSender? HttpSender { get; private set; }
 
-    /// <summary>run_key → session 永続化ストア。常に有効（HTTP無効時は使わないだけ）。</summary>
+    /// <summary>run_key → session 永続化ストア。</summary>
     internal static RunSessionStore? SessionStore { get; private set; }
+
+    /// <summary>
+    /// patch の一覧 (docs/spec/data-sources.md §1)。
+    /// 1 行 = 1 patch。tools/verify-game-api がこの表を読み、ゲーム更新後の sts2.dll に対して
+    /// 「対象が存在するか」「postfix の引数がすべて結び付くか」を確認する。書式を崩さないこと:
+    ///   P(typeof(対象の型), "メソッド名", typeof(patch のクラス), "prefix名 or null", "postfix名 or null"[, 引数の型...]);
+    /// </summary>
+    private static void PatchTable()
+    {
+        // ラン・戦闘の始まりと終わり
+        P(typeof(Hook),       "AfterRoomEntered",   typeof(Lifecycle), null, "AfterRoomEnteredPostfix");
+        P(typeof(Hook),       "BeforeCombatStart",  typeof(Lifecycle), null, "BeforeCombatStartPostfix");
+        P(typeof(Hook),       "AfterCombatEnd",     typeof(Lifecycle), null, "AfterCombatEndPostfix");
+        P(typeof(Hook),       "AfterSideTurnEnd",   typeof(Lifecycle), null, "AfterSideTurnEndPostfix");
+        P(typeof(RunManager), "OnEnded",            typeof(Lifecycle), null, "OnEndedPostfix");
+        P(typeof(RunManager), "WinRun",             typeof(Lifecycle), "BeforeRunTerminatedPrefix", null);
+        P(typeof(RunManager), "Abandon",            typeof(Lifecycle), "BeforeRunTerminatedPrefix", null);
+
+        // ラン全体 (階ごとの記録)
+        P(typeof(RunManager), "UpdatePlayerStatsInMapPointHistory", typeof(FloorRecorder), null, "UpdatePlayerStatsPostfix");
+        P(typeof(Hook),       "AfterRewardTaken",   typeof(FloorRecorder), null, "AfterRunActionPostfix");
+        P(typeof(Hook),       "AfterRestSiteHeal",  typeof(FloorRecorder), null, "AfterRunActionPostfix");
+        P(typeof(Hook),       "AfterRestSiteSmith", typeof(FloorRecorder), null, "AfterRunActionPostfix");
+        P(typeof(MerchantCardEntry),        "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
+        P(typeof(MerchantPotionEntry),      "OnTryPurchase", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
+        P(typeof(MerchantRelicEntry),       "OnTryPurchase", typeof(FloorRecorder), null, "MerchantRelicPurchasePostfix");
+        P(typeof(MerchantCardRemovalEntry), "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardRemovalPurchasePostfix", typeof(MerchantInventory), typeof(bool));
+
+        // 戦闘
+        P(typeof(Hook), "ModifyDamage",            typeof(CombatRecorder), null, "ModifyDamagePostfix");
+        P(typeof(Hook), "AfterDamageGiven",        typeof(CombatRecorder), null, "AfterDamageGivenPostfix");
+        P(typeof(Hook), "AfterCurrentHpChanged",   typeof(CombatRecorder), null, "AfterCurrentHpChangedPostfix");
+        P(typeof(Hook), "AfterBlockGained",        typeof(CombatRecorder), null, "AfterBlockGainedPostfix");
+        P(typeof(Hook), "AfterEnergySpent",        typeof(CombatRecorder), null, "AfterEnergySpentPostfix");
+        P(typeof(Hook), "AfterCardPlayed",         typeof(CombatRecorder), null, "AfterCardPlayedPostfix");
+        P(typeof(Hook), "AfterCardDrawn",          typeof(CombatRecorder), null, "AfterCardDrawnPostfix");
+        P(typeof(Hook), "AfterPowerAmountChanged", typeof(CombatRecorder), null, "AfterPowerAmountChangedPostfix");
+        P(typeof(Hook), "AfterPotionUsed",         typeof(CombatRecorder), null, "AfterPotionUsedPostfix");
+    }
+
+    private static int _patchOk, _patchFailed;
 
     public static void Initialize()
     {
@@ -35,135 +76,19 @@ public static class ModEntry
         {
             _harmony = new Harmony(HarmonyId);
 
-            PatchHook(nameof(Hook.BeforeCombatStart),        nameof(HookPatches.BeforeCombatStartPostfix));
-            PatchHook(nameof(Hook.AfterPlayerTurnStart),     nameof(HookPatches.AfterPlayerTurnStartPostfix));
-            PatchHook(nameof(Hook.AfterSideTurnEnd),         nameof(HookPatches.AfterSideTurnEndPostfix));
-            PatchHook(nameof(Hook.AfterCombatEnd),           nameof(HookPatches.AfterCombatEndPostfix));
-            PatchHook(nameof(Hook.ModifyDamage),             nameof(HookPatches.ModifyDamagePostfix));
-            PatchHook(nameof(Hook.BeforeDamageReceived),     nameof(HookPatches.BeforeDamageReceivedPostfix));
-            PatchHook(nameof(Hook.AfterDamageGiven),         nameof(HookPatches.AfterDamageGivenPostfix));
-            PatchHook(nameof(Hook.AfterDamageReceived),      nameof(HookPatches.AfterDamageReceivedPostfix));
-            PatchHook(nameof(Hook.AfterBlockGained),         nameof(HookPatches.AfterBlockGainedPostfix));
-            PatchHook(nameof(Hook.AfterEnergySpent),         nameof(HookPatches.AfterEnergySpentPostfix));
-            PatchHook(nameof(Hook.BeforeCardPlayed),         nameof(HookPatches.BeforeCardPlayedPostfix));
-            PatchHook(nameof(Hook.AfterCardPlayed),          nameof(HookPatches.AfterCardPlayedPostfix));
-            PatchHook(nameof(Hook.AfterCardDrawn),           nameof(HookPatches.AfterCardDrawnPostfix));
-            PatchHook(nameof(Hook.AfterPowerAmountChanged),  nameof(HookPatches.AfterPowerAmountChangedPostfix));
-            PatchHook(nameof(Hook.AfterPotionUsed),          nameof(HookPatches.AfterPotionUsedPostfix));
-            PatchHook(nameof(Hook.AfterCombatVictory),       nameof(HookPatches.AfterCombatVictoryPostfix));
-            PatchHook(nameof(Hook.AfterDeath),               nameof(HookPatches.AfterDeathPostfix));
+            PatchTable();
+            if (FloorRecorder.PlayerField == null) { _patchFailed++; }
+            if (Lifecycle.StateGetter == null)     { _patchFailed++; }
+            Log.Info($"[StsStats] Patch table: {_patchOk} ok, {_patchFailed} failed");
 
-            // === ラン全体ビュー用 events =================================
-            PatchHookGeneric(nameof(Hook.AfterRoomEntered),       nameof(RunOverviewPatches.AfterRoomEnteredPostfix));
-            PatchHookGeneric(nameof(Hook.AfterCurrentHpChanged),  nameof(RunOverviewPatches.AfterCurrentHpChangedPostfix));
-            PatchHookGeneric(nameof(Hook.AfterGoldGained),        nameof(RunOverviewPatches.AfterGoldGainedPostfix));
-            PatchHookGeneric(nameof(Hook.AfterActEntered),        nameof(RunOverviewPatches.AfterActEnteredPostfix));
-            PatchHookGeneric(nameof(Hook.AfterRestSiteHeal),      nameof(RunOverviewPatches.AfterRestSiteHealPostfix));
-            PatchHookGeneric(nameof(Hook.AfterRestSiteSmith),     nameof(RunOverviewPatches.AfterRestSiteSmithPostfix));
-            // Hook.AfterItemPurchased は ClearAfterPurchase 後に fire するため使えない。
-            // 各 MerchantEntry サブクラスの OnTryPurchase に直接 patch する（下記）。
-            PatchHookGeneric(nameof(Hook.AfterRewardTaken),       nameof(RunOverviewPatches.AfterRewardTakenPostfix));
-            PatchHookGeneric(nameof(Hook.AfterPotionProcured),    nameof(RunOverviewPatches.AfterPotionProcuredPostfix));
-            PatchHookGeneric(nameof(Hook.AfterPotionDiscarded),   nameof(RunOverviewPatches.AfterPotionDiscardedPostfix));
-            PatchHookGeneric(nameof(Hook.BeforeCardRemoved),      nameof(RunOverviewPatches.BeforeCardRemovedPostfix));
-
-            // === canonical な単一経路で run-overview のデータを取る patches ===
-            // CardCmd.Upgrade(IEnumerable<CardModel>, CardPreviewStyle): 全アップグレード
-            //   (smith / event / カード効果) の単一経路。pile.Type==Deck のみ実 upgrade。
-            //   +1 報酬カードの生成は pile が Deck 以外なので自動除外される。
-            // CardPreviewStyle は MegaCrit.Sts2.Core.Nodes.CommonUi namespace (デコンパイル確認済)。
-            // MegaCrit.Sts2.Core.Models.CardPreviewStyle と書いてた古い実装は TypeByName が
-            // null を返して "Value cannot be null. (Parameter 'types')" で patch fail してた。
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.CardCmd", "Upgrade",
-                nameof(RunOverviewPatches.CardCmdUpgradePostfix),
-                new Type[] {
-                    typeof(System.Collections.Generic.IEnumerable<>).MakeGenericType(AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardModel")!),
-                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Nodes.CommonUi.CardPreviewStyle")!,
-                });
-            // CardModel.FloorAddedToDeck setter: deck 追加完了時 (= マスターデッキに入った瞬間) に sync で呼ばれる。
-            // CardCmd.Add は async で Postfix の timing が悪いため、setter 経由で確実に拾う。
-            PatchPropertySetter(typeof(CardModel), "FloorAddedToDeck", nameof(RunOverviewPatches.FloorAddedToDeckSetterPostfix));
-            // Player.Gold setter: gain / loss / 任意の reset を全部 sync で捕捉。
-            // Hook.AfterGoldGained は gain にしか発火しないため、event 罰 / shop 購入等の loss が
-            // 取れない問題への対応。
-            PatchPropertySetterByName("MegaCrit.Sts2.Core.Entities.Players.Player", "Gold",
-                nameof(RunOverviewPatches.PlayerGoldSetterPostfix));
-            // RelicModel.FloorAddedToDeck setter: RelicCmd.Obtain 内で必ず set されるため、
-            // STS2 の全レリック取得 (treasure / reward / event / 戦闘ドロップ) を sync で捕捉。
-            // 旧 RelicCmd.Obtain patch は Obtain<T>(Player) との overload 衝突 (Ambiguous match)
-            // で起動時 fail してた → setter patch に置換。
-            PatchPropertySetterByName("MegaCrit.Sts2.Core.Models.RelicModel", "FloorAddedToDeck",
-                nameof(RunOverviewPatches.RelicFloorAddedToDeckSetterPostfix));
-
-            // Merchant***Entry.OnTryPurchase に直接 patch（Hook.AfterItemPurchased では遅すぎるため）
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardEntry",         "OnTryPurchase", nameof(RunOverviewPatches.MerchantCardEntryOnTryPurchasePostfix));
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantPotionEntry",       "OnTryPurchase", nameof(RunOverviewPatches.MerchantPotionEntryOnTryPurchasePostfix));
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantRelicEntry",        "OnTryPurchase", nameof(RunOverviewPatches.MerchantRelicEntryOnTryPurchasePostfix));
-            // MerchantCardRemovalEntry には 2 つの OnTryPurchase オーバーロードがある（cancelable 引数あり/なし）。
-            // 親クラスシグネチャ (MerchantInventory?, bool) を指定して disambiguate
-            PatchInstanceMethodByName(
-                "MegaCrit.Sts2.Core.Entities.Merchant.MerchantCardRemovalEntry",
-                "OnTryPurchase",
-                nameof(RunOverviewPatches.MerchantCardRemovalEntryOnTryPurchasePostfix),
-                new Type[] {
-                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Merchant.MerchantInventory")!,
-                    typeof(bool),
-                });
-
-            // CardCmd.Enchant が「player action としてのエンチャ実行」の単一経路。
-            // EnchantInternal を直接 patch すると deck reload 等でも発火して大量誤検出する。
-            // CardCmd.Enchant は overload (Enchant<T>(card, amount) / Enchant(enchantment, card, amount))
-            // あるが、generic の方は内部で非 generic を呼ぶので非 generic だけ patch すれば足りる。
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Commands.CardCmd", "Enchant",
-                nameof(RunOverviewPatches.CardCmdEnchantPostfix),
-                new Type[] {
-                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.EnchantmentModel")!,
-                    AccessTools.TypeByName("MegaCrit.Sts2.Core.Models.CardModel")!,
-                    typeof(decimal),
-                });
-            // EventOption.Chosen でランダムイベントの選択肢を補足
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Events.EventOption", "Chosen", nameof(RunOverviewPatches.EventOptionChosenPostfix));
-
-            // CardReward.OnSkipped: skip 時 Hook.AfterRewardTaken は発火しないので
-            // OnSkipped を patch して synthetic reward_taken を emit する。
-            PatchInstanceMethodByName("MegaCrit.Sts2.Core.Rewards.CardReward", "OnSkipped",
-                nameof(RunOverviewPatches.CardRewardOnSkippedPostfix));
-
-            // 間接ダメージのソース帰属（Hook では識別できないため、ゲーム本体メソッドを直接 patch）
-            PatchPower<PoisonPower>(nameof(PoisonPower.AfterSideTurnStart),
-                nameof(IndirectDamagePatches.PoisonPrefix), nameof(IndirectDamagePatches.PoisonPostfix));
-            // Doom は v0.111.0 で敵側 = BeforeSideTurnEnd / player 側 = AfterSideTurnEnd に分割 (デコンパイル確認済)。
-            // DoomKill は CreatureCmd.Kill で damage hook を通らないため、現状 (doom) の damage_dealt は出ない
-            // (docs/game-api-inventory.md P1-3)。context の push だけは維持する。
-            PatchPower<DoomPower>(nameof(DoomPower.BeforeSideTurnEnd),
-                nameof(IndirectDamagePatches.DoomPrefix), nameof(IndirectDamagePatches.DoomPostfix));
-            PatchPower<DoomPower>(nameof(DoomPower.AfterSideTurnEnd),
-                nameof(IndirectDamagePatches.DoomPrefix), nameof(IndirectDamagePatches.DoomPostfix));
-            PatchOrb<LightningOrb>(nameof(LightningOrb.Evoke),
-                nameof(IndirectDamagePatches.LightningEvokePrefix), nameof(IndirectDamagePatches.LightningEvokePostfix));
-            PatchOrb<LightningOrb>(nameof(LightningOrb.Passive),
-                nameof(IndirectDamagePatches.LightningPassivePrefix), nameof(IndirectDamagePatches.LightningPassivePostfix));
-
-            // 反射ダメ（Thorns / FlameBarrier）
-            PatchPower<ThornsPower>("BeforeDamageReceived",
-                nameof(IndirectDamagePatches.ThornsPrefix), nameof(IndirectDamagePatches.ThornsPostfix));
-            PatchPower<FlameBarrierPower>("AfterDamageReceived",
-                nameof(IndirectDamagePatches.FlameBarrierPrefix), nameof(IndirectDamagePatches.FlameBarrierPostfix));
-
-            // パワー由来ブロック（Rampart / BlockNextTurn / MockGainBlockOnAttack）
-            PatchPower<RampartPower>("AfterSideTurnStart",
-                nameof(IndirectDamagePatches.RampartPrefix), nameof(IndirectDamagePatches.RampartPostfix));
-            PatchPower<BlockNextTurnPower>("AfterBlockCleared",
-                nameof(IndirectDamagePatches.BlockNextTurnPrefix), nameof(IndirectDamagePatches.BlockNextTurnPostfix));
+            SourceContext.AutoPatch(_harmony);
 
             StatsLogger.Initialize();
 
-            // run_key → session 永続化ストア
             string sessionDir = Path.Combine(SafeUserDataDir(), "sts_stats_sessions");
             SessionStore = new RunSessionStore(sessionDir);
             Log.Info($"[StsStats] Session store: {sessionDir}");
 
-            // Backend URL を解決し、有効なら HTTP クライアントとキューを起動
             SessionConfig.Load();
             if (SessionConfig.HttpEnabled)
             {
@@ -178,15 +103,36 @@ public static class ModEntry
 
             Log.Info("[StsStats] Initialized successfully");
 
-            // catalog dump を最早 trigger で試す。ModelDb がまだ populated されてなければ
-            // CatalogDumper 内で no-op になる (_dumped を立てない) → 後続の AfterRoomEntered /
-            // BeforeCombatStart で再試行される。理想的にはここ (mod Initialize) で成功して
-            // ユーザは新規ラン開始すら不要、ゲーム起動するだけで dump 完了する。
+            // ModelDb が準備済みなら起動直後にカタログを書き出す (未準備なら部屋に入ったときに再試行)
             try { CatalogDumper.DumpOnce(); } catch { }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error($"[StsStats] Initialization failed: {ex}");
+        }
+    }
+
+    /// <summary>patch を 1 件当てる。見つからない・当たらない場合はエラーログを出して数える (黙って続けない)。</summary>
+    private static void P(Type target, string method, Type patchClass, string? prefix, string? postfix, params Type[] args)
+    {
+        string label = $"{target.Name}.{method}";
+        try
+        {
+            MethodBase? original = args.Length > 0
+                ? AccessTools.Method(target, method, args)
+                : AccessTools.Method(target, method);
+            if (original == null) throw new MissingMethodException(target.Name, method);
+
+            HarmonyMethod? pre  = prefix  != null ? new HarmonyMethod(AccessTools.Method(patchClass, prefix)  ?? throw new MissingMethodException(patchClass.Name, prefix))  : null;
+            HarmonyMethod? post = postfix != null ? new HarmonyMethod(AccessTools.Method(patchClass, postfix) ?? throw new MissingMethodException(patchClass.Name, postfix)) : null;
+            _harmony!.Patch(original, prefix: pre, postfix: post);
+            _patchOk++;
+            Log.Info($"[StsStats] Patched: {label}");
+        }
+        catch (Exception ex)
+        {
+            _patchFailed++;
+            Log.Error($"[StsStats] PATCH FAILED: {label}: {ex.Message}");
         }
     }
 
@@ -194,158 +140,5 @@ public static class ModEntry
     {
         try { return OS.GetUserDataDir(); }
         catch { return "/tmp"; }
-    }
-
-    private static void PatchHook(string hookName, string postfixName)
-    {
-        MethodInfo original = AccessTools.Method(typeof(Hook), hookName)
-            ?? throw new MissingMethodException(nameof(Hook), hookName);
-        MethodInfo postfix = AccessTools.Method(typeof(HookPatches), postfixName)
-            ?? throw new MissingMethodException(nameof(HookPatches), postfixName);
-        _harmony!.Patch(original, postfix: new HarmonyMethod(postfix));
-        Log.Info($"[StsStats] Patched: {hookName}");
-    }
-
-    /// <summary>名前空間付き型名で型を特定して instance method を patch する。</summary>
-    private static void PatchInstanceMethodByName(string fullTypeName, string methodName, string postfixName, Type[]? paramTypes = null)
-    {
-        try
-        {
-            var type = AccessTools.TypeByName(fullTypeName);
-            if (type == null)
-            {
-                Log.Error($"[StsStats] Type not found: {fullTypeName}");
-                return;
-            }
-            // overload 解決のためのパラメータ型指定対応
-            MethodInfo? method = paramTypes != null
-                ? AccessTools.Method(type, methodName, paramTypes)
-                : AccessTools.Method(type, methodName);
-            if (method == null)
-            {
-                Log.Error($"[StsStats] Method not found: {type.Name}.{methodName}");
-                return;
-            }
-            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
-                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
-            _harmony!.Patch(method, postfix: new HarmonyMethod(postfix));
-            Log.Info($"[StsStats] Patched: {type.Name}.{methodName}");
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] PatchInstanceMethodByName({fullTypeName}.{methodName}) failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>名前空間付き型名で property setter を patch する。</summary>
-    private static void PatchPropertySetterByName(string fullTypeName, string propertyName, string postfixName)
-    {
-        try
-        {
-            var type = AccessTools.TypeByName(fullTypeName);
-            if (type == null) { Log.Error($"[StsStats] Type not found: {fullTypeName}"); return; }
-            PatchPropertySetter(type, propertyName, postfixName);
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] PatchPropertySetterByName({fullTypeName}.{propertyName}) failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>property setter を patch する（postfix で value/__instance を受け取れる）。</summary>
-    private static void PatchPropertySetter(Type ownerType, string propertyName, string postfixName)
-    {
-        try
-        {
-            var setter = AccessTools.PropertySetter(ownerType, propertyName);
-            if (setter == null)
-            {
-                Log.Error($"[StsStats] Property setter not found: {ownerType.Name}.{propertyName}");
-                return;
-            }
-            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
-                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
-            _harmony!.Patch(setter, postfix: new HarmonyMethod(postfix));
-            Log.Info($"[StsStats] Patched setter: {ownerType.Name}.{propertyName}");
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] PatchPropertySetter({ownerType.Name}.{propertyName}) failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>任意の type の instance method を patch する（public/non-public 両対応）。</summary>
-    private static void PatchInstanceMethod(Type ownerType, string methodName, string postfixName)
-    {
-        try
-        {
-            var method = AccessTools.Method(ownerType, methodName);
-            if (method == null)
-            {
-                Log.Error($"[StsStats] Method not found: {ownerType.Name}.{methodName}");
-                return;
-            }
-            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
-                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
-            _harmony!.Patch(method, postfix: new HarmonyMethod(postfix));
-            Log.Info($"[StsStats] Patched: {ownerType.Name}.{methodName}");
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] PatchInstanceMethod({ownerType.Name}.{methodName}) failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>RunOverviewPatches 等、HookPatches 以外の class からの patch を登録する用。</summary>
-    private static void PatchHookGeneric(string hookName, string postfixName)
-    {
-        try
-        {
-            MethodInfo original = AccessTools.Method(typeof(Hook), hookName)
-                ?? throw new MissingMethodException(nameof(Hook), hookName);
-            MethodInfo postfix = AccessTools.Method(typeof(RunOverviewPatches), postfixName)
-                ?? throw new MissingMethodException(nameof(RunOverviewPatches), postfixName);
-            _harmony!.Patch(original, postfix: new HarmonyMethod(postfix));
-            Log.Info($"[StsStats] Patched: {hookName}");
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats] PatchHookGeneric({hookName}) failed: {ex.Message}");
-        }
-    }
-
-    /// <summary>PoisonPower / DoomPower 等の Power メソッドを patch。Prefix/Postfix を IndirectDamagePatches から取る。</summary>
-    private static void PatchPower<T>(string methodName, string prefixName, string postfixName) =>
-        PatchInternal(typeof(T), methodName, prefixName, postfixName);
-
-    /// <summary>LightningOrb 等の Orb メソッドを patch。</summary>
-    private static void PatchOrb<T>(string methodName, string prefixName, string postfixName) =>
-        PatchInternal(typeof(T), methodName, prefixName, postfixName);
-
-    private static void PatchInternal(Type ownerType, string methodName, string prefixName, string postfixName)
-    {
-        try
-        {
-            MethodInfo? original = AccessTools.Method(ownerType, methodName);
-            if (original == null)
-            {
-                Log.Error($"[StsStats] Method not found: {ownerType.Name}.{methodName}");
-                return;
-            }
-            MethodInfo? prefix  = AccessTools.Method(typeof(IndirectDamagePatches), prefixName);
-            MethodInfo? postfix = AccessTools.Method(typeof(IndirectDamagePatches), postfixName);
-            if (prefix == null || postfix == null)
-            {
-                Log.Error($"[StsStats] Patch methods not found: {prefixName}/{postfixName}");
-                return;
-            }
-            _harmony!.Patch(original, prefix: new HarmonyMethod(prefix), postfix: new HarmonyMethod(postfix));
-            Log.Info($"[StsStats] Patched: {ownerType.Name}.{methodName}");
-        }
-        catch (Exception ex)
-        {
-            // 1個失敗しても他の patch / Hook は続行
-            Log.Error($"[StsStats] PatchInternal({ownerType.Name}.{methodName}) failed: {ex.Message}");
-        }
     }
 }

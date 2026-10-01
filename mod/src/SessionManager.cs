@@ -106,7 +106,8 @@ internal static class SessionManager
             ShareUrl             = result.ShareUrl;
             CurrentRunKey        = runKey;
             CurrentLastSeenFloor = currentTotalFloor;
-            RunStartAlreadyEmitted = false;
+            // run_start はセッション作成を待たずに送る (pending に積まれ、作成後に流れる)。
+            // ここで false に戻すと 2 回目の run_start が出るので、既に送っていればそのまま保存する。
 
             store.Save(new StoredSession(
                 LookupKey:       lookupKey,
@@ -121,7 +122,7 @@ internal static class SessionManager
                 HostSteamId:     runMeta.HostSteamId,
                 StartedAt:       startedAt,
                 LastSeenFloor:   currentTotalFloor,
-                RunStartEmitted: false
+                RunStartEmitted: RunStartAlreadyEmitted
             ));
 
             CopyToClipboard(result.ShareUrl);

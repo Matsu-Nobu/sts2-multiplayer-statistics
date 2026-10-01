@@ -1,0 +1,44 @@
+# mod が「名前の文字列」で参照しているゲームのメンバー (型付きで書けないもの)。
+# 書式: <prop|field|method|type|enum> <型の完全名> <メンバー名> [pub]
+#   pub を付けると public のみを探す。mod のコードで新たに名前参照を足したら、ここにも足すこと。
+
+# FloorRecorder: ショップの購入者
+field  MegaCrit.Sts2.Core.Entities.Merchant.MerchantEntry _player
+
+# Lifecycle: 今のラン (private)
+prop   MegaCrit.Sts2.Core.Runs.RunManager State
+
+# CatalogDumper (開発用のカタログ書き出し)
+type   MegaCrit.Sts2.Core.Models.ModelDb
+prop   MegaCrit.Sts2.Core.Models.ModelDb AllCards pub
+prop   MegaCrit.Sts2.Core.Models.ModelDb AllRelics pub
+prop   MegaCrit.Sts2.Core.Models.ModelDb AllPotions pub
+prop   MegaCrit.Sts2.Core.Models.AbstractModel Id pub
+prop   MegaCrit.Sts2.Core.Models.ModelId Entry pub
+prop   MegaCrit.Sts2.Core.Models.CardModel Title pub
+prop   MegaCrit.Sts2.Core.Models.CardModel Rarity pub
+prop   MegaCrit.Sts2.Core.Models.CardModel MaxUpgradeLevel pub
+prop   MegaCrit.Sts2.Core.Models.CardModel IsUpgradable pub
+prop   MegaCrit.Sts2.Core.Models.CardModel DynamicVars pub
+prop   MegaCrit.Sts2.Core.Models.CardModel Description
+prop   MegaCrit.Sts2.Core.Models.CardModel UpgradePreviewType pub
+method MegaCrit.Sts2.Core.Models.CardModel MutableClone pub
+method MegaCrit.Sts2.Core.Models.CardModel UpgradeInternal pub
+method MegaCrit.Sts2.Core.Models.CardModel AddExtraArgsToDescription
+prop   MegaCrit.Sts2.Core.Models.RelicModel Title pub
+prop   MegaCrit.Sts2.Core.Models.RelicModel Rarity pub
+prop   MegaCrit.Sts2.Core.Models.RelicModel DynamicDescription pub
+prop   MegaCrit.Sts2.Core.Models.PotionModel Title pub
+prop   MegaCrit.Sts2.Core.Models.PotionModel Rarity pub
+prop   MegaCrit.Sts2.Core.Models.PotionModel DynamicDescription pub
+prop   MegaCrit.Sts2.Core.Models.EnchantmentModel Title pub
+prop   MegaCrit.Sts2.Core.Models.EnchantmentModel DynamicDescription pub
+method MegaCrit.Sts2.Core.Localization.LocString GetFormattedText pub
+method MegaCrit.Sts2.Core.Localization.LocString Add pub
+method MegaCrit.Sts2.Core.Localization.DynamicVars.DynamicVarSet AddTo pub
+type   MegaCrit.Sts2.Core.Localization.DynamicVars.IfUpgradedVar
+enum   MegaCrit.Sts2.Core.Localization.UpgradeDisplay Upgraded
+enum   MegaCrit.Sts2.Core.Entities.Cards.CardUpgradePreviewType Deck
+
+# PowerNameResolver (パワーの表示名)
+prop   MegaCrit.Sts2.Core.Models.PowerModel Title pub

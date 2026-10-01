@@ -61,6 +61,22 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
 
 ---
 
+## ゲーム更新時の手順
+
+Slay the Spire 2 が更新されたら、mod が依存する内部実装が変わっていないかを **実装に触る前に** 確認する。
+
+1. `make verify-game-api` を実行する。
+   - mod を新しい `sts2.dll` に対してビルドする (型付きで参照している箇所はここでコンパイルエラーになる)
+   - `mod/src/ModEntry.cs` の patch 一覧表の全行について、当て先が存在し、prefix / postfix の引数が名前・型とも
+     結び付くかを確認する
+   - `tools/verify-game-api/members.txt` に書いた「名前で参照しているメンバー」が存在するかを確認する
+2. NG が出たら、デコンパイル (`ilspycmd -p <sts2.dll> -o <出力先>`) で新しいシグネチャ・呼び出し元を読んでから直す
+   (CLAUDE.md §2.1)。呼ばれるタイミングの変化は検証ツールでは分からないので、NG になった箇所は中身も読む。
+3. ゲームを起動し、ログ (`~/Library/Application Support/SlayTheSpire2/logs/godot.log`) で次を確認する:
+   - `[StsStats] Patch table: N ok, 0 failed`
+   - `[StsStats] SourceContext: ... patched N ..., failed 0`
+4. カタログを作り直す (`make dump-catalog`)。新しいカード・レリック等が増えている。
+
 ## 関連ドキュメント
 
 - `architecture.md` — 全体アーキテクチャ

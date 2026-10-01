@@ -75,15 +75,7 @@ internal static class DamageModificationLog
         {
             if (m == null) continue;
             types.Add(m.GetType().Name);
-            // power_id / relic_id は m.Id.Entry に入っていることが多いので reflection で試す
-            string id = "";
-            try
-            {
-                var idObj = m.GetType().GetProperty("Id")?.GetValue(m);
-                id = idObj?.GetType().GetProperty("Entry")?.GetValue(idObj)?.ToString() ?? "";
-            }
-            catch { }
-            ids.Add(id);
+            ids.Add(m.Id.Entry);   // power_id / relic_id 等
         }
         return (types, ids);
     }

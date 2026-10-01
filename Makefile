@@ -21,7 +21,7 @@ LOG_PATH       := $(HOME)/Library/Application Support/SlayTheSpire2/sts_stats.js
 DOCKER_IMAGE   := sts2stats
 DOCKER_DATA_DIR := $(PWD)/.docker-data
 
-.PHONY: help all test build install log \
+.PHONY: help all test build install log verify-game-api \
         mod-use-local mod-use-public \
         backend-dev backend-test \
         web-dev \
@@ -36,6 +36,7 @@ help:
 	@echo "make all              mod テスト → ビルド → インストール"
 	@echo "make test             mod のユニットテスト"
 	@echo "make log              JSONL ログを tail -f"
+	@echo "make verify-game-api  ゲーム更新後: mod が依存する sts2.dll のメンバー・patch 引数を確認"
 	@echo ""
 	@echo "make mod-use-local    mod を localhost:8080 に向ける"
 	@echo "make mod-use-public   mod を公開バックエンドに戻す"
@@ -69,6 +70,11 @@ install: build
 
 log:
 	tail -f "$(LOG_PATH)"
+
+# ゲーム更新時: mod が依存する sts2.dll のメンバーと patch の引数の結び付きを確認する (docs/operations.md)
+verify-game-api: build
+	@set -e; . ./$(ENV_FILE); \
+	cd tools/verify-game-api && dotnet run -v q -- "$$STS2_DATA_DIR" ../../$(MOD_DIR)/dist/StsStats.dll ../../$(MOD_DIR)/src/ModEntry.cs members.txt
 
 # --- mod 接続先切替（config.json の有無で制御） ------------------------------
 

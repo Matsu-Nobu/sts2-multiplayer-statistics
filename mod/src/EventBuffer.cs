@@ -10,7 +10,7 @@ namespace StsStats;
 /// すべての StsStats event の発行点（戦闘内・外いずれも）。
 ///
 /// 戦闘内 event は (combat_index, turn_number, sequence) で順序付ける。
-/// HookPatches は BeginCombat / BeginTurn / UpdateFloor で context を更新し、
+/// Lifecycle は BeginCombat / BeginTurn / UpdateFloor で context を更新し、
 /// EmitTurnEvent / EmitCombatEvent / EmitGlobalEvent で event を発行する。
 ///
 /// 各 Emit は:
@@ -106,6 +106,8 @@ internal static class EventBuffer
 
         StatsLogger.LogEvent(ev);
 
+        // マルチプレイの非ホストは送信しない (ホストが全員分を送る。docs/architecture.md)
+        if (!Identity.ShouldSend) return;
         var sender = ModEntry.HttpSender;
         if (sender == null) return;
 

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ゲーム更新時の検証ツール (docs/operations.md「ゲーム更新時の手順」)。
+    sts2.dll を実行せずに読み込み (MetadataLoadContext)、mod が依存しているものが揃っているかを確認する。
+    実行: make verify-game-api
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="9.0.0" />
+  </ItemGroup>
+</Project>
