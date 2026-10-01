@@ -18,7 +18,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 各階の内容 (入手・除去・強化・ダウングレード・エンチャント・変化・選択・購入品・HP・ゴールド・被ダメ・部屋・ターン数) | ゲーム自身の階ごとの記録 `RunState.CurrentMapPointHistoryEntry` (`MapPointHistoryEntry` / `PlayerMapPointHistoryEntry`) | `floor_snapshot` |
 | 階の確定 | `RunManager.UpdatePlayerStatsInMapPointHistory()` (private、同期) の Postfix。次の階に入る直前とラン終了時に呼ばれる | `floor_snapshot` (`is_final: true`) |
 | 階の途中経過 (ライブ表示) | 送信の区切り (ターン終了・戦闘終了・報酬取得・ショップ購入・休憩所・イベント選択) | `floor_snapshot` (`is_final: false`) |
-| ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchase` | `item_purchased` |
+| ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchase`。**購入処理は買った人の手元でしか動かない** (ホストには `RewardSynchronizer` で結果だけ届く) ので、取れるのはホスト自身の購入だけ | `item_purchased` |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` の Postfix (最初の 1 回だけ)。放棄は `RunManager.IsAbandoned` | `run_end` |
 | ラン終了直前の HP | `RunManager.WinRun()` / `RunManager.Abandon()` の Prefix (この後ゲームが全員を倒すため) | `run_end.final_hp` |
 
@@ -66,7 +66,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | デッキ改造 / エンチャント | `cards_enchanted` |
 | デッキ改造 / 変化 | `cards_transformed` |
 | デッキ改造 / 除去 | `cards_removed` |
-| ショップ購入 | `item_purchased` (その階・そのプレイヤー) |
+| ショップ購入 | ショップの階で入手したもの (`cards_gained` / 選んだ `relic_choices` / 選んだ `potion_choices`)。値段は同じ階・同じ品物の `item_purchased` (ホスト自身の購入のみ取れる) |
 | 選択 / 休憩所 | `rest_site_choices` |
 | 選択 / イベント | `ancient_choices` (選んだもの) と `event_choices` |
 | 選択 / カード選択肢 | `card_choices` (ショップの階では出さない) |
