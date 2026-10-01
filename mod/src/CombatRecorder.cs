@@ -62,6 +62,7 @@ internal static class CombatRecorder
             if (total <= 0 && overkill <= 0) return;
 
             CardInfo? source = cardSource != null ? CardInfoOf(cardSource) : SourceContext.CurrentInfo();
+            string sourceKind = cardSource != null ? "card" : SourceContext.CurrentKind();
 
             if (receiver.Side == CombatSide.Enemy)
             {
@@ -90,6 +91,7 @@ internal static class CombatRecorder
                     source_card_id     = source?.CardId,
                     source_card_name   = source?.CardName,
                     source_card_type   = source?.CardType,
+                    source_kind        = sourceKind,
                     active_on_target   = ActivePowersSnapshot.ForCreature(receiver),
                     active_on_dealer   = ActivePowersSnapshot.ForCreature(dealer),
                     modifications      = modList,
@@ -140,6 +142,7 @@ internal static class CombatRecorder
                 source_card_id     = "DOOM_POWER",
                 source_card_name   = SourceContext.CurrentInfo()?.CardName ?? "DOOM_POWER",
                 source_card_type   = "Power",
+                source_kind        = "power",
                 active_on_target   = ActivePowersSnapshot.ForCreature(creature),
                 active_on_dealer   = new List<object>(),
                 modifications      = new List<object>(),
@@ -158,6 +161,7 @@ internal static class CombatRecorder
             if (creature.Player == null) return;    // プレイヤー本人のブロックのみ
             string receiverId = Identity.Of(creature.Player);
             CardInfo? source = cardSource != null ? CardInfoOf(cardSource) : SourceContext.CurrentInfo();
+            string sourceKind = cardSource != null ? "card" : SourceContext.CurrentKind();
             string? giverId = cardSource != null ? Identity.Of(cardSource.Owner) : SourceContext.CurrentActorPlayerId();
 
             EventBuffer.EmitTurnEvent("block_gained", receiverId, new
@@ -166,6 +170,7 @@ internal static class CombatRecorder
                 source_card_id   = source?.CardId,
                 source_card_name = source?.CardName,
                 source_card_type = source?.CardType,
+                source_kind      = sourceKind,
                 from_player      = giverId ?? receiverId,
             });
         }

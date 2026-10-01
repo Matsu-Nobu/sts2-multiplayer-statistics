@@ -43,6 +43,18 @@ internal static class SourceContext
         _current.Value = __state;
     }
 
+    /// <summary>出どころの種類 (payload の source_kind)。カード以外は小文字のモデル種別。</summary>
+    public static string CurrentKind() => _current.Value switch
+    {
+        PowerModel       => "power",
+        RelicModel       => "relic",
+        OrbModel         => "orb",
+        EnchantmentModel => "enchantment",
+        PotionModel      => "potion",
+        null             => "unknown",
+        _                => "other",
+    };
+
     /// <summary>カードが無いダメージ・ブロックの出どころとして使う情報。</summary>
     public static CardInfo? CurrentInfo()
     {
