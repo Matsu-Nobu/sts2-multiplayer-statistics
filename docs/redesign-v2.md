@@ -116,6 +116,25 @@ WasFullyBlocked / Receiver` がそのまま入っている。HP の前後比較�
   (`AfterSideTurnStart` 等。パワー 253 / レリック 227 / オーブ 14 個) の中にある。共通の
   「実行中のモデル」記録はゲームに無い (`PushModel` は一部の Hook だけ)。
 
+### 1.8 実機で確認済みの事実 (2026-10-01、修正版 mod でシングルプレイ 3 階 → 放棄)
+
+ゲームが保存したラン履歴 (`saves/history/1790859445.run`) と、mod のログで確認した:
+
+| 確認項目 | 結果 |
+|---|---|
+| mod の読み込み | patch 47 本 (patch 44 + setter 3) すべて成功、エラー 0 件 |
+| シングルプレイのプレイヤー ID | 履歴でも `player_id: 1`。mod の event も一部が `"1"`、一部が Steam ID で混在 (§1.1 の正規化が必要なことを確認) |
+| 1 階 (ネオウ) | 履歴の 1 件目が `type=ancient`、`EVENT.NEOW`。`ancient_choice` に 3 択と選んだもの、`relic_choices` に入手したレリック |
+| カード報酬 | `card_choices` に選んだ 1 枚と選ばなかった 2 枚、`cards_gained` に入手カード |
+| ポーション | `potion_choices` の `was_picked: true` |
+| 部屋 | `rooms` に遭遇 ID・敵 ID 一覧・ターン数。「？」マスで戦闘になった階は `type=unknown` で部屋が `monster` |
+| 放棄 | 履歴に `was_abandoned: true` / `win: false`。ゲームのログでは放棄 → 全員死亡 → 「ラン履歴を作成」の順。**mod は `run_end` を送っておらず、サーバでは「進行中」のまま** (§0 の問題を新しいゲームでも再現) |
+| 放棄時の最後の階の HP | **0 になる** (全員を倒してから記録を確定するため)。→ §2.3 の注記で対応 |
+| 毒ダメージ | 修正版で `(poison)` の与ダメが正しいプレイヤーに付いた (1 件) |
+| 戦闘の勝敗 | 2 戦とも勝ったのに `victory: false` (§0 の問題を再現) |
+
+未確認のまま残っているもの: マルチプレイ、戦闘中の中断→再開、勝利 (ダブルボスを含む)。
+
 ---
 
 ## 2. 全体設計
@@ -157,7 +176,7 @@ WasFullyBlocked / Receiver` がそのまま入っている。HP の前後比較�
 | `potion_used` | `PotionUsedEntry` | 使用者、ポーション、対象 |
 | `power_changed` | `Hook.AfterPowerAmountChanged` | 対象、付与者、カード、パワー ID・名前、増減量、付与後の量 |
 | `doom_kill` | `Hook.AfterDiedToDoom` | 撃破された敵、撃破時の HP、Doom の付与者ごとの量 |
-| `run_end` | `RunManager.OnEnded` (最初の 1 回だけ) | `outcome` (`victory` / `death` / `abandoned`)、最終階 |
+| `run_end` | `RunManager.OnEnded` (最初の 1 回だけ) | `outcome` (`victory` / `death` / `abandoned`)、最終階、各プレイヤーの `final_hp` (§2.3) |
 
 v1 から **廃止** する event: `damage_dealt` / `damage_received` (→ `damage` に統合)、`room_entered`、
 `hp_changed`、`gold_changed`、`act_entered`、`rest_action`、`reward_taken`、`card_obtained`、`card_upgraded`、
@@ -199,6 +218,10 @@ card = { id, name, rarity, type, upgrade_level, enchantment_id? }
 - 同じ階の `floor_snapshot` は何度送ってもよい。**web は階ごとに最後に受け取ったものだけを使う**
   (中断→再開で階が作り直されても、最新の記録で上書きされて正しくなる)。
 - 階に入ったときの HP・ゴールドは「1 つ前の階の確定値」。1 階は `run_start` の値。
+- **ラン終了時の HP**: 勝利・放棄のどちらでも、ゲームは全員を倒してから最後の階を確定させるので、
+  最後の階の HP は必ず 0 になる (実機で確認、§1.8)。そこで `RunManager.WinRun` と
+  `RunManager.Abandon` の **直前** (Prefix) に各プレイヤーの HP を記録し、`run_end` に
+  `final_hp` として入れる。web は勝利・放棄のランでは最後の階の HP にこの値を使う。全滅の場合は 0 が正しい。
 
 ### 2.4 誰の行為か (帰属)
 
@@ -324,9 +347,9 @@ mod/src/
 
 デコンパイルだけでは断定できず、実際のゲームで確かめる項目:
 
-- シングルプレイ / Steam マルチプレイの両方で、全 event の `player_id` が Steam ID になっていること
+- シングルプレイ / Steam マルチプレイの両方で、全 event の `player_id` が Steam ID になっていること (正規化前の値はシングルプレイで `1` と確認済み)
 - マルチプレイで、相手プレイヤー分の階の記録 (入手・購入・選択) がホスト上で埋まっていること
-- 1 階 (ネオウ) の `floor_snapshot` に、ネオウの選択 (`ancient_choices`) が入っていること
+- 1 階 (ネオウ) の `floor_snapshot` に、ネオウの選択 (`ancient_choices`) が入っていること (ゲームの記録に入ることは確認済み)
 - 戦闘中に中断→再開したとき、web で戦闘が 1 回分だけ表示されること
 - 勝利・全滅・放棄の 3 通りで `run_end.outcome` が正しいこと (アセンション 10 以上のダブルボスを含む)
 - 毒・Doom・オーブ・トゲ・Osty の与ダメが正しいプレイヤーに付くこと
