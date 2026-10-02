@@ -200,6 +200,9 @@ export interface RunEndPayload {
   badges?: Record<string, Badge[]>;     // player_id → ゲームオーバー画面のバッジ
 }
 
+/** パワーのスタックを付けた持ち物 (api.md「origin」)。 */
+export interface Origin { id: string; name: string; type: string; kind: string }
+
 export interface Badge { id: string; name: string; description: string; rarity: 'Bronze' | 'Silver' | 'Gold' | string }
 
 export interface PowerSnapshot {
@@ -225,7 +228,8 @@ export interface DamageDealtPayload {
   was_target_killed?: boolean;
   is_doom_kill?: boolean;             // Doom による撃破 (source_card_id = DOOM_POWER)
   // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md §4)
-  source_appliers?: { player_id: string; stacks: number }[];
+  source_appliers?: { player_id: string; stacks: number; origin?: Origin | null }[];
+  source_origin?: Origin | null;      // 自分側のパワーが出どころのとき、そのパワーを付けた持ち物 (api.md)
   target_creature_id: string | null;
   target_player_id?: string | null;
   source_card_id?: string | null;
@@ -255,6 +259,7 @@ export interface BlockGainedPayload {
   source_card_name?: string | null;
   source_card_type?: string | null;   // "Attack" / "Skill" / "Power" / "Orb" 等
   source_kind?: string;
+  source_origin?: Origin | null;
   from_player?: string;
 }
 

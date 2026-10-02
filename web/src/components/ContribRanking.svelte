@@ -1,10 +1,10 @@
 <script lang="ts">
-  // 貢献ランキング (spec ui.md §3.1): 合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit) の大きい順。
+  // 貢献度スコア (spec ui.md §3.1): 合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit) の大きい順。
   import { useSession } from '../lib/session';
   import { computeRdps } from '../lib/rdps';
   import { computeRmit } from '../lib/rmit';
   import { playerColor } from '../lib/players';
-  import { RDPS_HELP, RMIT_HELP } from '../lib/contribHelp';
+  import { SCORE_HELP } from '../lib/contribHelp';
   import Panel from './ui/Panel.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
@@ -19,16 +19,9 @@
   let max = $derived(Math.max(1, ...rows.map(r => r.total)));
   let sum = $derived(rows.reduce((a, r) => a + r.total, 0) || 1);
 
-  const HELP = `合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit)。ラン全体の全戦闘の合計。
-
-【与ダメ貢献 (rDPS)】
-${RDPS_HELP}
-
-【被ダメ軽減貢献 (rMit)】
-${RMIT_HELP}`;
 </script>
 
-<Panel title="貢献ランキング" scope="全員・ラン全体" help={HELP}>
+<Panel title="貢献度スコア" scope="全員・ラン全体" help={SCORE_HELP}>
   {#snippet actions()}
     <div class="hidden sm:flex items-center gap-3 text-xs text-slate-400">
       <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-ok"></span>与ダメ貢献</span>

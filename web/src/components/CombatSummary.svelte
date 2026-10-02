@@ -68,8 +68,8 @@
 
   {#if me}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-      <div class="lg:col-span-2 min-w-0"><CardTable cards={me.card_stats} title={`カード別 (${rangeLabel})`} scope={who} powerNames={s.powerNames} /></div>
-      <DebuffTable debuffs={me.debuffs_applied} title={`デバフ付与 (${rangeLabel})`} scope={who} powerNames={s.powerNames} />
+      <div class="lg:col-span-2 min-w-0"><CardTable cards={me.card_stats} title="カード別" scope={who} powerNames={s.powerNames} /></div>
+      <DebuffTable debuffs={me.debuffs_applied} title="デバフ付与" scope={who} powerNames={s.powerNames} />
     </div>
   {/if}
 </div>

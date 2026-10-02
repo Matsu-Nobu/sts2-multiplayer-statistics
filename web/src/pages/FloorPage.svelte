@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 階の詳細 (spec ui.md §3.3)。パンくず・前後の階・戦闘詳細へのリンク・run-overview.md §2.4 の内容。
+  // 階 (spec ui.md §3.2): 階セレクタ + 1 階分の詳細 (run-overview.md §2.4)。floor が null なら最初の階。
   import { useSession } from '../lib/session';
   import { buildFloorSummaries, roomVisual } from '../lib/runOverview';
   import { link, href } from '../lib/router.svelte';
@@ -7,39 +7,24 @@
   import Badge from '../components/ui/Badge.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
   import FloorDetail from '../components/FloorDetail.svelte';
+  import FloorSelector from '../components/FloorSelector.svelte';
 
-  interface Props { floor: number }
+  interface Props { floor: number | null }
   let { floor }: Props = $props();
   const s = useSession();
 
   let floors = $derived(buildFloorSummaries(s.doc.events, s.player));
-  let idx = $derived(floors.findIndex(f => f.floor === floor));
-  let f = $derived(idx >= 0 ? floors[idx] : null);
-  let prev = $derived(idx > 0 ? floors[idx - 1] : null);
-  let next = $derived(idx >= 0 && idx < floors.length - 1 ? floors[idx + 1] : null);
+  let f = $derived(floor == null ? floors[0] ?? null : floors.find(x => x.floor === floor) ?? floors[0] ?? null);
   const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 </script>
 
-<nav aria-label="パンくず" class="flex flex-wrap items-center justify-between gap-2 text-sm mb-4">
-  <ol class="flex items-center gap-1.5 text-slate-400">
-    <li><a class="link" href={href({ name: 'floors' })} use:link={{ name: 'floors' }}>階</a></li>
-    <li aria-hidden="true">›</li>
-    <li class="text-slate-200" aria-current="page">{floor} 階</li>
-  </ol>
-  <div class="flex items-center gap-3">
-    {#if prev}<a class="link" href={href({ name: 'floor', floor: prev.floor })} use:link={{ name: 'floor', floor: prev.floor }}>‹ {prev.floor} 階</a>{:else}<span class="text-slate-600">‹ 前の階</span>{/if}
-    {#if next}<a class="link" href={href({ name: 'floor', floor: next.floor })} use:link={{ name: 'floor', floor: next.floor }}>{next.floor} 階 ›</a>{:else}<span class="text-slate-600">次の階 ›</span>{/if}
-  </div>
-</nav>
-
 {#if !f}
-  <div class="bg-bg-1 border border-bg-3 rounded-lg">
-    <EmptyState title={`${floor} 階の記録がありません`} hint="階の一覧から選んでください。" />
-  </div>
-  <div class="mt-3 text-sm"><a class="link" href={href({ name: 'floors' })} use:link={{ name: 'floors' }}>階の一覧へ</a></div>
+  <div class="bg-bg-1 border border-bg-3 rounded-lg"><EmptyState title="階ごとの記録がありません" hint="1 階目を出ると表示されます。" /></div>
 {:else}
   {@const v = roomVisual(f.room_type)}
   <div class="space-y-4">
+    <FloorSelector {floors} current={f.floor} />
+
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-2 min-w-0">
         <h1 class="text-xl font-semibold text-slate-100">{f.encounter_name ?? v.label}</h1>

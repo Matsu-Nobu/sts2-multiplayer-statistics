@@ -144,6 +144,62 @@ internal static class SourceContext
     }
 
     /// <summary>
+    /// DebuffAppliers と同じ条件で、(付与者, スタック, 付けた持ち物) ごとの内訳 (多い順)。カード別の表用 (api.md「origin」)。
+    /// </summary>
+    public static List<(string PlayerId, int Stacks, Origin? Origin)>? DebuffOrigins(Creature? target)
+    {
+        if (target == null) return null;
+        try
+        {
+            if (ResolveModel(target) is not PowerModel p || !ReferenceEquals(p.Owner, target)) return null;
+            var list = PowerOriginRegistry.LookupOrigins(target, p.Id.Entry)
+                .Where(a => a.Stacks > 0)
+                .OrderByDescending(a => a.Stacks)
+                .Select(a => (a.Applier, a.Stacks, a.Origin))
+                .ToList();
+            if (list.Count > 0) return list;
+            string? applier = Identity.OfCreature(p.Applier, includePets: true);
+            return applier != null ? new List<(string, int, Origin?)> { (applier, Math.Max(1, p.Amount), null) } : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// 今パワーを付けている (カード以外の) 持ち物。実行中のレリック・ポーション・オーブ・エンチャントはそれ自身、
+    /// パワーなら「そのパワーを付けた持ち物」(1 段だけさかのぼる。例: 有毒ガスのパワー → カード「有毒ガス」)。
+    /// 何も実行中でなければ null。<paramref name="target"/> は static メソッドの枠でパワーを探す相手。
+    /// </summary>
+    public static Origin? CurrentOrigin(Creature? target)
+    {
+        if (_current.Value == null) return null;
+        try
+        {
+            var m = ResolveModel(target);
+            if (m is PowerModel p) return OriginOfPower(p) ?? AsOrigin(CurrentInfo(target), "power");
+            return AsOrigin(CurrentInfo(target), CurrentKind());
+        }
+        catch { return null; }
+    }
+
+    /// <summary>パワーのスタックを最も多く付けた持ち物 (分からなければ null)。</summary>
+    public static Origin? OriginOfPower(PowerModel? p)
+    {
+        if (p?.Owner == null) return null;
+        try
+        {
+            return PowerOriginRegistry.LookupOrigins(p.Owner, p.Id.Entry)
+                .Where(a => a.Origin != null && a.Stacks != 0)
+                .OrderByDescending(a => Math.Abs(a.Stacks))
+                .Select(a => a.Origin)
+                .FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    private static Origin? AsOrigin(CardInfo? i, string kind) =>
+        i == null ? null : new Origin(i.CardId, i.CardName, i.CardType, kind);
+
+    /// <summary>
     /// 実行中モデルが「誰の行為か」。相手に付けたデバフは付与者 (最大スタックの人)、
     /// 自分のパワーは付与者か持ち主、レリック・オーブ・ポーションは持ち主、エンチャントはカードの持ち主。
     /// </summary>

@@ -94,7 +94,10 @@ internal static class CombatRecorder
                 // 相手に付けたデバフ (毒など) が出どころなら、そのダメージは付与者全員のもの (スタック比で按分。
                 // spec combat-stats.md §4)。player_id は最大スタックの人、内訳は source_appliers。
                 // 毒はターン開始時の発動でも、カード効果 (Outbreak 等) からの発動でも同じ扱い (SourceContext)。
-                var appliers = cardSource == null ? SourceContext.DebuffAppliers(receiver) : null;
+                var appliers = cardSource == null ? SourceContext.DebuffOrigins(receiver) : null;
+                // 自分側のパワー (トゲ等) が出どころなら、そのパワーを付けた持ち物 (カード別の表用)
+                var sourceOrigin = appliers == null && cardSource == null && SourceContext.ResolveModel(receiver) is PowerModel ownPower
+                    ? SourceContext.OriginOfPower(ownPower) : null;
                 // それ以外の与え手: プレイヤー (ペットは持ち主)。攻撃者が空なら実行中モデルの持ち主。
                 string? dealerId = appliers?.FirstOrDefault().PlayerId
                                 ?? Identity.OfCreature(dealer, includePets: true)
@@ -110,6 +113,7 @@ internal static class CombatRecorder
                     was_target_killed  = results.WasTargetKilled,
                     is_doom_kill       = false,
                     source_appliers    = ApplierList(appliers),
+                    source_origin      = OriginPayload(sourceOrigin),
                     target_creature_id = CreatureId(receiver),
                     source_card_id     = source?.CardId,
                     source_card_name   = source?.CardName,
@@ -158,7 +162,7 @@ internal static class CombatRecorder
             // Doom の処理中か (DoomPower のインスタンスか、static の DoomKill なら対象に付いた DoomPower)
             if (SourceContext.ResolveModel(creature) is not DoomPower) return;
             if (creature.Side != CombatSide.Enemy) return;
-            var appliers = SourceContext.DebuffAppliers(creature);
+            var appliers = SourceContext.DebuffOrigins(creature);
             string? dealerId = appliers?.FirstOrDefault().PlayerId ?? SourceContext.CurrentActorPlayerId(creature);
             if (dealerId == null) return;
             int lost = (int)(-delta);
@@ -197,6 +201,10 @@ internal static class CombatRecorder
             string sourceKind = cardSource != null ? "card" : SourceContext.CurrentKind();
             string? giverId = cardSource != null ? Identity.Of(cardSource.Owner) : SourceContext.CurrentActorPlayerId(creature);
 
+            // パワー (プレート等) が出どころなら、そのパワーを付けた持ち物 (カード別の表用)
+            var sourceOrigin = cardSource == null && SourceContext.ResolveModel(creature) is PowerModel ownPower
+                ? SourceContext.OriginOfPower(ownPower) : null;
+
             BlockLedger.Add(creature, giverId ?? receiverId, amount);
             EventBuffer.EmitTurnEvent("block_gained", receiverId, new
             {
@@ -205,6 +213,7 @@ internal static class CombatRecorder
                 source_card_name = source?.CardName,
                 source_card_type = source?.CardType,
                 source_kind      = sourceKind,
+                source_origin    = OriginPayload(sourceOrigin),
                 from_player      = giverId ?? receiverId,
             });
         }
@@ -275,7 +284,14 @@ internal static class CombatRecorder
             // 付与者ごとの stacks 内訳 (rDPS / rMit の按分用)
             if (power.Owner != null)
             {
-                if (applierId != null) PowerOriginRegistry.RecordApply(power.Owner, powerId, applierId, delta);
+                if (applierId != null)
+                {
+                    // 付けた持ち物: カードならそのカード、無ければ実行中のレリック・ポーション等 (パワーならそれを付けた持ち物)
+                    Origin? origin = cardSource != null
+                        ? new Origin(cardSource.Id.Entry, ModelInfo.SafeTitle(cardSource), cardSource.Type.ToString(), "card")
+                        : SourceContext.CurrentOrigin(power.Owner);
+                    PowerOriginRegistry.RecordApply(power.Owner, powerId, applierId, origin, delta);
+                }
                 else if (delta < 0)    PowerOriginRegistry.RecordDecay(power.Owner, powerId, delta);
             }
             if (applier == null) return;   // 付与者のいない増減 (自然減衰等) は送らない (v1 と同じ)
@@ -309,10 +325,13 @@ internal static class CombatRecorder
 
     // === ヘルパー ================================================================
 
-    /// <summary>source_appliers の形 ([{ player_id, stacks }])。按分しないダメージは null (送らない)。</summary>
-    private static List<object>? ApplierList(List<(string PlayerId, int Stacks)>? appliers) =>
+    /// <summary>source_appliers の形 ([{ player_id, stacks, origin? }])。按分しないダメージは null (送らない)。</summary>
+    private static List<object>? ApplierList(List<(string PlayerId, int Stacks, Origin? Origin)>? appliers) =>
         appliers == null || appliers.Count == 0 ? null
-            : appliers.Select(a => (object)new { player_id = a.PlayerId, stacks = a.Stacks }).ToList();
+            : appliers.Select(a => (object)new { player_id = a.PlayerId, stacks = a.Stacks, origin = OriginPayload(a.Origin) }).ToList();
+
+    private static object? OriginPayload(Origin? o) =>
+        o == null ? null : new { id = o.Id, name = o.Name, type = o.Type, kind = o.Kind };
 
     public static CardInfo CardInfoOf(CardModel card) =>
         new(card.Id.Entry, ModelInfo.SafeTitle(card), card.Type.ToString());

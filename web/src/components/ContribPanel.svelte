@@ -14,7 +14,7 @@
   let max = $derived(rows.reduce((m, r) => Math.max(m, r.total), 0) || 1);
 
   // 出どころの表示名: ゲーム内のパワー名 (events から) を優先
-  const FALLBACK: Record<string, string> = { self: '自力', vulnerable: '弱体', weak: '脱力', strength_down: '筋力低下', poison: '毒' };
+  const FALLBACK: Record<string, string> = { self: '自力', vulnerable: '弱体', weak: '脱力', strength_down: '筋力', poison: '毒', doom: '破滅' };
   function label(src: string): string {
     return s.powerNames[`${src.toUpperCase()}_POWER`] ?? s.powerNames[src] ?? FALLBACK[src] ?? src;
   }

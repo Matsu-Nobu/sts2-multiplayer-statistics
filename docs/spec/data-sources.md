@@ -89,6 +89,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | デバフ付与 | `power_changed` |
 | 戦闘の勝敗 | `combat_end.victory` |
 | 相手に付けたデバフによるダメージの按分 (与ダメ・カード別・rDPS) | `damage_dealt.source_appliers` |
+| パワーによるダメージ・ブロックのカード別の行 | 付与時の `Hook.AfterPowerAmountChanged` の `cardSource` (無ければ実行中のレリック・ポーション等、パワーならそのパワーを付けた持ち物) を `PowerOriginRegistry` に「誰が・何で」の内訳として記録 → `source_appliers[].origin` / `source_origin` |
 
 ---
 

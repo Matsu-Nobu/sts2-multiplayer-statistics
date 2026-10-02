@@ -8,7 +8,6 @@
   import { playerColor } from '../lib/players';
   import Badge from './ui/Badge.svelte';
   import RunPage from '../pages/RunPage.svelte';
-  import FloorsPage from '../pages/FloorsPage.svelte';
   import FloorPage from '../pages/FloorPage.svelte';
   import CombatsPage from '../pages/CombatsPage.svelte';
   import CombatPage from '../pages/CombatPage.svelte';
@@ -139,7 +138,7 @@
   {#if route.page.name === 'run'}
     <RunPage />
   {:else if route.page.name === 'floors'}
-    <FloorsPage />
+    <FloorPage floor={null} />
   {:else if route.page.name === 'floor'}
     <FloorPage floor={route.page.floor} />
   {:else if route.page.name === 'combats'}

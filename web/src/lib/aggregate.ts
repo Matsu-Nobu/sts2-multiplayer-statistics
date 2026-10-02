@@ -6,6 +6,7 @@
  */
 
 import type {
+  Origin,
   SessionDoc, EventRecord, TurnPayload, PlayerEntry, CardStats,
   PlayerTurnSummary, PlayerCombatSummary,
   CombatStartPayload, CombatEndPayload,
@@ -66,17 +67,27 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
   const out: EventRecord[] = [];
   for (const ev of events) {
     const p = ev.payload as DamageDealtPayload;
+    if (ev.event_type === 'block_gained') { out.push(withOrigin(ev, (ev.payload as { source_origin?: Origin | null })?.source_origin)); continue; }
     const appliers = ev.event_type === 'damage_dealt' ? sharedAppliers(p) : null;
-    if (!appliers || appliers.length === 0) { out.push(ev); continue; }
+    if (!appliers || appliers.length === 0) { out.push(withOrigin(ev, (p as { source_origin?: Origin | null })?.source_origin)); continue; }
     const fields = ['amount', 'total_damage', 'blocked_damage', 'overkill_damage'] as const;
     const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, appliers));
     appliers.forEach((a, i) => {
       const payload: DamageDealtPayload = { ...p };
       fields.forEach((f, fi) => { (payload as any)[f] = parts[fi][i]?.share ?? 0; });
-      out.push({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload });
+      out.push(withOrigin({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload }, (a as { origin?: Origin | null }).origin));
     });
   }
   return out;
+}
+
+/**
+ * パワーによるダメージ・ブロックを、そのパワーを付けた持ち物 (カード・レリック・ポーション等) の行に付け替える
+ * (spec combat-stats.md §3.3)。分からなければそのまま (パワー名の行)。
+ */
+function withOrigin(ev: EventRecord, origin: Origin | null | undefined): EventRecord {
+  if (!origin) return ev;
+  return { ...ev, payload: { ...(ev.payload as object), source_card_id: origin.id, source_card_name: origin.name, source_card_type: origin.type } };
 }
 
 /**
