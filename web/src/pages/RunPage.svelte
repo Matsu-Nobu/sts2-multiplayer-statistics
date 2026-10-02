@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ラン全体 (spec ui.md §3.1): ランの結果、HP 推移 (全員)、プレイヤーごとのデッキ・レリック・ポーション・ゴールド・バッジ。
+  // ラン全体 (spec ui.md §3.1): 貢献ランキング、HP 推移 (全員)、プレイヤーごとのデッキ・レリック・ポーション・ゴールド・バッジ。
   import { useSession } from '../lib/session';
   import { buildFloorSummaries, buildPlayerFinalState } from '../lib/runOverview';
   import { navigate } from '../lib/router.svelte';
@@ -12,6 +12,7 @@
   import Chip from '../components/ui/Chip.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
   import HpRunChart from '../components/HpRunChart.svelte';
+  import ContribRanking from '../components/ContribRanking.svelte';
   import CardTooltip from '../components/CardTooltip.svelte';
 
   const s = useSession();
@@ -53,7 +54,10 @@
 </script>
 
 <div class="space-y-6">
-  <!-- 1. HP 推移 -->
+  <!-- 1. 貢献ランキング -->
+  <ContribRanking />
+
+  <!-- 2. HP 推移 -->
   <Panel title="HP 推移" scope="全員" help="各階を出た時点の HP。点を押すとその階の詳細を開きます。">
     {#if anyFloors}
       <HpRunChart series={perPlayer.filter(p => p.floors.length > 0)} highlight={s.player}
@@ -63,7 +67,7 @@
     {/if}
   </Panel>
 
-  <!-- 2. プレイヤーごとのカード -->
+  <!-- 3. プレイヤーごとのカード -->
   <div class="grid grid-cols-1 {perPlayer.length > 1 ? 'lg:grid-cols-2 xl:grid-cols-3' : ''} gap-4 items-start">
     {#each perPlayer as p (p.pid)}
       {@const selected = s.playerIds.length > 1 && p.pid === s.player}
