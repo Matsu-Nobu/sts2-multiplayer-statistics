@@ -230,6 +230,8 @@ export interface DamageDealtPayload {
   // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md §4)
   source_appliers?: { player_id: string; stacks: number; origin?: Origin | null }[];
   source_origin?: Origin | null;      // 自分側のパワーが出どころのとき、そのパワーを付けた持ち物 (api.md)
+  triggered_by?: { player_id: string; id: string; name: string; type: string } | null;   // カードのプレイ中に発動したデバフのダメージ (api.md)
+  card_amount?: number;              // web 内部: カード別の表の行に足す値 (splitSharedDamage が付ける)
   target_creature_id: string | null;
   target_player_id?: string | null;
   source_card_id?: string | null;

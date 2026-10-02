@@ -90,6 +90,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 戦闘の勝敗 | `combat_end.victory` |
 | 相手に付けたデバフによるダメージの按分 (与ダメ・カード別・rDPS) | `damage_dealt.source_appliers` |
 | パワーによるダメージ・ブロックのカード別の行 | 付与時の `Hook.AfterPowerAmountChanged` の `cardSource` (無ければ実行中のレリック・ポーション等、パワーならそのパワーを付けた持ち物) を `PowerOriginRegistry` に「誰が・何で」の内訳として記録 → `source_appliers[].origin` / `source_origin` |
+| カードがその場で発動させたデバフのダメージ (感染爆発の毒等) | `CardModel.OnPlayWrapper` の Prefix / Postfix で「プレイ中のカード」を AsyncLocal に持ち、その中で起きた `source_appliers` 付きのダメージに `triggered_by` を付ける |
 
 ---
 

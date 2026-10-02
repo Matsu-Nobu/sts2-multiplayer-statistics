@@ -114,6 +114,7 @@ internal static class CombatRecorder
                     is_doom_kill       = false,
                     source_appliers    = ApplierList(appliers),
                     source_origin      = OriginPayload(sourceOrigin),
+                    triggered_by       = TriggeredBy(appliers),
                     target_creature_id = CreatureId(receiver),
                     source_card_id     = source?.CardId,
                     source_card_name   = source?.CardName,
@@ -329,6 +330,18 @@ internal static class CombatRecorder
     private static List<object>? ApplierList(List<(string PlayerId, int Stacks, Origin? Origin)>? appliers) =>
         appliers == null || appliers.Count == 0 ? null
             : appliers.Select(a => (object)new { player_id = a.PlayerId, stacks = a.Stacks, origin = OriginPayload(a.Origin) }).ToList();
+
+    /// <summary>
+    /// 相手に付けたデバフのダメージがカードのプレイ中に起きたら、そのカードと使った人 (api.md「triggered_by」)。
+    /// 例: 感染爆発が毒をその場で発動させたダメージ。ターン開始時の毒はプレイ中でないので null。
+    /// </summary>
+    private static object? TriggeredBy(List<(string PlayerId, int Stacks, Origin? Origin)>? appliers)
+    {
+        if (appliers == null || appliers.Count == 0) return null;
+        var card = CardPlayScope.Current;
+        if (card?.Owner == null) return null;
+        return new { player_id = Identity.Of(card.Owner), id = card.Id.Entry, name = ModelInfo.SafeTitle(card), type = card.Type.ToString() };
+    }
 
     private static object? OriginPayload(Origin? o) =>
         o == null ? null : new { id = o.Id, name = o.Name, type = o.Type, kind = o.Kind };

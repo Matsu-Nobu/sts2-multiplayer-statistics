@@ -280,6 +280,10 @@ web は与ダメージ・カード別の表・rDPS をこの比で按分する�
 `origin` (`{ "id", "name", "type", "kind" }`): そのスタックを付けたカード・レリック・ポーション。`kind` は `card` / `relic` / `potion` / `orb` / `enchantment` / `power`。
 パワーが付けた場合 (例: 有毒ガスのパワーが毎ターン毒を付ける) は、そのパワーを付けたカード等までさかのぼる (1 段まで)。分からなければ無し。
 
+`triggered_by` (`{ "player_id", "id", "name", "type" }`, damage_dealt): `source_appliers` があるダメージ (相手に付けたデバフ) が、
+**カードのプレイ中** (`CardModel.OnPlayWrapper` の実行中) に起きたときの、そのカードと使った人。例: 感染爆発が毒をその場で発動させたダメージ。
+web はカード別の表でだけ使う (combat-stats.md §3.3)。
+
 `source_origin` (`{ "id", "name", "type", "kind" }`, damage_dealt / block_gained): 出どころが **自分側に付いているパワー** (トゲ・プレート等) のとき、
 そのパワーを付けたカード・レリック・ポーション。カード別の表はこれで集計する。分からなければ無し。
 

@@ -62,6 +62,7 @@ public static class ModEntry
 
         // 戦闘
         P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<Creature>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay));
+        P(typeof(CardModel), "OnPlayWrapper",      typeof(CardPlayScope), "Prefix", "Postfix", typeof(PlayerChoiceContext), typeof(Creature), typeof(bool), typeof(ResourceInfo), typeof(bool));
         P(typeof(Hook), "ModifyDamage",            typeof(CombatRecorder), null, "ModifyDamagePostfix");
         P(typeof(Hook), "AfterDamageGiven",        typeof(CombatRecorder), null, "AfterDamageGivenPostfix");
         P(typeof(Hook), "AfterCurrentHpChanged",   typeof(CombatRecorder), null, "AfterCurrentHpChangedPostfix");
