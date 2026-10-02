@@ -169,13 +169,14 @@ Content-Type: application/json
 | `run_start` | `character_id`, `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
 | `floor_snapshot` | §floor_snapshot | 空 | floor のみ |
 | `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
-| `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`) | 空 | floor のみ |
+| `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`), `badges` (`{ player_id: [{ id, name, description, rarity }] }`) | 空 | floor のみ |
 | `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 空 | floor + combat_index |
 | `combat_end` | `combat_index`, `victory` (bool) | 空 | floor + combat_index |
 
 - `combat_index` = 戦闘の階番号。中断→再開で同じ `combat_index` の `combat_start` が再び来たら、
   それより前の同じ `combat_index` の event は無効 (web が捨てる)。
 - `run_end` はラン 1 回につき 1 件。`final_hp` は勝利・放棄ではラン終了処理 (全員を倒す) の直前の HP、全滅では 0。
+- `badges`: ゲームオーバー画面のバッジ。ゲームと同じ判定 (`ScoreUtility.GetBadges(run, playerId, won)`) をラン終了時に行う。`rarity` は `Bronze` / `Silver` / `Gold`。
 
 #### floor_snapshot
 
@@ -205,7 +206,10 @@ Content-Type: application/json
     "ancient_choices":   [{ "title": "轟音のほら貝", "was_chosen": true }],
     "rest_site_choices": ["SMITH"],
     "bought":            { "relics": [model], "potions": [model], "colorless": [model] },
-    "completed_quests":  [model]
+    "completed_quests":  [model],
+    "deck":    [card],                  // その時点のデッキ (Player.Deck)
+    "relics":  [{ "id", "name", "rarity" }],
+    "potions": [model]
   }]
 }
 ```

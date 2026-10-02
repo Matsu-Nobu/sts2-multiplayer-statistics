@@ -21,6 +21,8 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchase`。**購入処理は買った人の手元でしか動かない** (ホストには `RewardSynchronizer` で結果だけ届く) ので、取れるのはホスト自身の購入だけ | `item_purchased` |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` の Postfix (最初の 1 回だけ)。放棄は `RunManager.IsAbandoned` | `run_end` |
 | ラン終了直前の HP | `RunManager.WinRun()` / `RunManager.Abandon()` の Prefix (この後ゲームが全員を倒すため) | `run_end.final_hp` |
+| デッキ・レリック・ポーション | 階の確定・途中経過の送信時に `Player.Deck.Cards` / `Player.Relics` / `Player.Potions` | `floor_snapshot.players[].deck` / `relics` / `potions` |
+| バッジ | `RunManager.OnEnded` の Postfix で、戻り値の `SerializableRun` に対して `ScoreUtility.GetBadges(run, playerId, isVictory)`。名前は翻訳 `badges` の `{ID}.{bronze\|silver\|gold}Title` (無ければ `{ID}.title`) | `run_end.badges` |
 
 ### 1.2 戦闘
 

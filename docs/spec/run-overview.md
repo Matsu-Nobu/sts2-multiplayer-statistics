@@ -204,6 +204,12 @@ interface FloorSummary {
 
 ---
 
+### 3.6 プレイヤーの最終状態 (ラン全体の画面)
+
+- デッキ・レリック・ポーション: 最後の `floor_snapshot` の `players[].deck` / `relics` / `potions` (その階を出た時点。ラン終了時は終了時点)
+- 最終 HP / ゴールド: §3.4 の最後の階の `hp_out` / `gold_out`
+- バッジ: `run_end.badges[player_id]`。`run_end` が無い (ラン中) ときは出さない
+
 ## 4. 既知の制約
 
 - **v1 形式のセッション** (2026-10 以前) は表示できない (DB を空にして v2 から取り直す方針、2026-10-01 確定)
