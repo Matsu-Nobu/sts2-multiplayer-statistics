@@ -158,7 +158,10 @@ try
                          .Select(x => $"{x.DeclaringType!.Name}.{x.Name}{(x.IsStatic ? "(static)" : "")}").OrderBy(x => x).ToList();
     Console.WriteLine($"  選ばれたメソッド {selected.Count} 個、うち Hook の上書きではないもの {direct.Count} 個: {string.Join(", ", direct)}");
     // 必ず入っていてほしいもの (これが外れたら、毒・Doom 等の帰属が壊れる)
-    foreach (var must in new[] { "PoisonPower.Trigger", "PoisonPower.AfterSideTurnStart", "DoomPower.DoomKill", "LightningOrb.Evoke", "ThornsPower.BeforeDamageReceived" })
+    foreach (var must in new[] { "PoisonPower.Trigger", "PoisonPower.AfterSideTurnStart", "DoomPower.DoomKill", "LightningOrb.Evoke", "ThornsPower.BeforeDamageReceived",
+        // カードを渡さずに毒を付ける処理 (付けた持ち物を実行中のモデルから求める。api.md「origin」)
+        "PoisonPotion.OnUse", "NoxiousFumesPower.AfterSideTurnStart", "EnvenomPower.AfterDamageGiven", "CorrosiveWavePower.AfterCardDrawn", "ConcoctPower.AfterDamageGiven", "TwistedFunnel.BeforeSideTurnStart",
+        "PlatingPower.BeforeSideTurnEndEarly" })
     {
         if (selected.Any(x => $"{x.DeclaringType!.Name}.{x.Name}" == must)) Ok($"選ばれている: {must}");
         else Fail($"選ばれていない: {must} (ゲーム側の実装が変わった可能性。デコンパイルで確認すること)");
