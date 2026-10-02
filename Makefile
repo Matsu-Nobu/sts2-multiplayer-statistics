@@ -24,7 +24,7 @@ DOCKER_DATA_DIR := $(PWD)/.docker-data
 .PHONY: help all test build install log verify-game-api \
         mod-use-local mod-use-public \
         backend-dev backend-test \
-        web-dev \
+        web-dev web-dev-prod \
         app-build app-run \
         docker-build docker-run \
         dump-catalog
@@ -44,6 +44,7 @@ help:
 	@echo "make backend-dev      Go 開発サーバ起動 (:8080)"
 	@echo "make backend-test     Go ユニットテスト"
 	@echo "make web-dev          Vite dev server (:5173)"
+	@echo "make web-dev-prod     上記 + 本番のデータを読む (http://localhost:5173/s/<セッションID>)"
 	@echo ""
 	@echo "make app-build        web → backend embed → 単一バイナリ"
 	@echo "make app-run          上記 + 起動"
@@ -98,6 +99,9 @@ backend-test:
 
 web-dev:
 	cd $(WEB_DIR) && npm run dev
+
+web-dev-prod:
+	cd $(WEB_DIR) && API_TARGET=https://sts2stats.fly.dev npm run dev
 
 # --- 統合バイナリ -------------------------------------------------------------
 # web をビルドして backend の embed 配下に同期、go build で単一バイナリ生成。
