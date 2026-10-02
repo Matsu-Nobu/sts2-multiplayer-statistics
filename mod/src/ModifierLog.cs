@@ -19,6 +19,11 @@ namespace StsStats;
 /// 補正計算 (Modify*) は値を返すだけの関数で、状態の変更は別の Hook (AfterModifying*) で行われる。
 ///
 /// 記録は直後の Hook.AfterDamageGiven で、同じ対象・攻撃者のものを取り出して payload に入れる。
+///
+/// **記録するのは CreatureCmd.Damage の実行中だけ** (実行中のダメージ処理ごとの枠 = Scope を AsyncLocal で持つ)。
+/// 敵の攻撃予告 (AttackIntent) や手札のダメージ表示 (DamageVar) も Hook.ModifyDamage を呼ぶが、
+/// それらは画面更新から来るので枠の外になり、記録に混ざらない
+/// (2026-10-03 の実機確認で、被ダメ側の記録が攻撃予告の計算と取り違えられていたため導入)。
 /// </summary>
 internal static class ModifierLog
 {
@@ -26,20 +31,30 @@ internal static class ModifierLog
 
     internal sealed record Record(bool IsHpLost, Creature? Target, Creature? Dealer, decimal Base, decimal Final, List<Step> Steps);
 
-    private static readonly List<Record> _records = new();
-    private static readonly object _lock = new();
-    private const int MaxRecords = 64;
+    internal sealed class Scope { public readonly List<Record> Records = new(); }
+
+    private static readonly System.Threading.AsyncLocal<Scope?> _scope = new();
+
+    /// <summary>CreatureCmd.Damage (全経路が通る本体) の Prefix: この処理専用の記録の枠を作る。</summary>
+    public static void DamageScopePrefix(out Scope? __state)
+    {
+        __state = _scope.Value;
+        _scope.Value = new Scope();
+    }
+
+    public static void DamageScopePostfix(Scope? __state)
+    {
+        _scope.Value = __state;
+    }
 
     private static void Add(Record r)
     {
-        lock (_lock)
-        {
-            _records.Add(r);
-            if (_records.Count > MaxRecords) _records.RemoveRange(0, _records.Count - MaxRecords);
-        }
+        var scope = _scope.Value;
+        if (scope == null) return;   // CreatureCmd.Damage の外 (攻撃予告・カード表示等) は記録しない
+        lock (scope) scope.Records.Add(r);
     }
 
-    public static void Clear() { lock (_lock) _records.Clear(); }
+    public static void Clear() { }
 
     // === 記録 =====================================================================
 
@@ -150,24 +165,24 @@ internal static class ModifierLog
     // === 取り出し =====================================================================
 
     /// <summary>
-    /// AfterDamageGiven で呼ぶ。同じ対象・攻撃者の最後のダメージ補正と、その後の <paramref name="hpTarget"/> の HP 減少補正を返し、
-    /// それより前の記録は捨てる。
+    /// AfterDamageGiven で呼ぶ。今のダメージ処理の枠の中で、同じ対象・攻撃者について **最初に** 記録された
+    /// ダメージ補正 (CreatureCmd.Damage は対象ごとに最初に本物の補正計算をする) と、その後の
+    /// <paramref name="hpTarget"/> の HP 減少補正を返す。枠の中身は次の対象のために空にする。
     /// </summary>
     public static (Record? Damage, List<Record> HpLost) Take(Creature? target, Creature? dealer, Creature? hpTarget)
     {
-        lock (_lock)
+        var scope = _scope.Value;
+        if (scope == null) return (null, new List<Record>());
+        lock (scope)
         {
-            int idx = _records.FindLastIndex(r => !r.IsHpLost && ReferenceEquals(r.Target, target) && ReferenceEquals(r.Dealer, dealer));
-            var dmg = idx >= 0 ? _records[idx] : null;
+            var recs = scope.Records;
+            int idx = recs.FindIndex(r => !r.IsHpLost && ReferenceEquals(r.Target, target) && ReferenceEquals(r.Dealer, dealer));
+            var dmg = idx >= 0 ? recs[idx] : null;
             var hp = new List<Record>();
             if (hpTarget != null)
-                for (int i = Math.Max(idx, 0); i < _records.Count; i++)
-                    if (_records[i].IsHpLost && ReferenceEquals(_records[i].Target, hpTarget)) hp.Add(_records[i]);
-            if (idx >= 0)
-            {
-                foreach (var r in hp) _records.Remove(r);
-                _records.RemoveRange(0, idx + 1);
-            }
+                for (int i = Math.Max(idx, 0); i < recs.Count; i++)
+                    if (recs[i].IsHpLost && ReferenceEquals(recs[i].Target, hpTarget)) hp.Add(recs[i]);
+            recs.Clear();
             return (dmg, hp);
         }
     }

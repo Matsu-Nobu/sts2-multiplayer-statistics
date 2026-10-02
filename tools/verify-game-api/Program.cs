@@ -75,7 +75,7 @@ foreach (Match m in rx.Matches(File.ReadAllText(modEntry)))
     if (target == null) { Fail($"{label}: 型 {targetName} が見つからない (または同名が複数)"); continue; }
     var candidates = MethodsInHierarchy(target, method);
     if (argTypes.Count > 0)
-        candidates = candidates.Where(c => c.GetParameters().Select(p => p.ParameterType.Name).SequenceEqual(argTypes.Select(a => CsName(a.Split('.').Last())))).ToList();
+        candidates = candidates.Where(c => c.GetParameters().Select(p => p.ParameterType.Name.Split('`')[0]).SequenceEqual(argTypes.Select(a => CsName(a.Split('<')[0].Split('.').Last())))).ToList();
     if (candidates.Count == 0) { Fail($"{label}: メソッドが見つからない"); continue; }
     if (candidates.Count > 1) { Fail($"{label}: 同名のメソッドが {candidates.Count} 個 (引数の型を指定すること)"); continue; }
     var original = candidates[0];
