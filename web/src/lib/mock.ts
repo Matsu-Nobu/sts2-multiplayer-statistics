@@ -289,12 +289,43 @@ export function mockSession(): SessionDoc {
     );
   });
 
+  // floor_snapshot (デッキ・レリック・ポーションの表示確認用。spec run-overview.md §3.6)
+  const card = (id: string, name: string, type: string, rarity: string, up = 0) => ({ id, name: up ? `${name}+` : name, type, rarity, upgrade_level: up });
+  const snapPlayer = (pid: string, hp: number, max: number, gold: number, deck: ReturnType<typeof card>[], relics: { id: string; name: string }[], potions: { id: string; name: string }[]) => ({
+    player_id: pid,
+    hp: { current: hp, max, damage_taken: 24, healed: 0, max_gained: 0, max_lost: 0 },
+    gold: { current: gold, gained: 20, spent: 0, lost: 0, stolen: 0 },
+    cards_gained: [deck[deck.length - 1]], cards_removed: [], cards_transformed: [], cards_upgraded: [], cards_downgraded: [],
+    cards_enchanted: [], card_choices: [], relic_choices: [], potion_choices: [], potions_used: [], potions_discarded: [],
+    relics_removed: [], event_choices: [], ancient_choices: [], rest_site_choices: [], bought: { relics: [], potions: [], colorless: [] },
+    completed_quests: [], deck, relics, potions,
+  });
+  const strikes = Array.from({ length: 5 }, () => card('STRIKE_R', 'ストライク', 'Attack', 'Basic'));
+  const defends = Array.from({ length: 4 }, () => card('DEFEND_R', '防御', 'Skill', 'Basic'));
+  events.push({
+    event_uuid: nextUuid(), event_type: 'floor_snapshot',
+    occurred_at: baseTime(timeOffset++), player_id: null, floor: 3,
+    payload: {
+      floor: 3, act_index: 0, is_final: true, map_point_type: 'Monster',
+      rooms: [{ room_type: 'Monster', model_id: 'MOCK', model_name: 'モック戦闘', monster_ids: [], turns_taken: 3 }],
+      players: [
+        snapPlayer(HOST, 0, 80, 120, [...strikes, card('STRIKE_R', 'ストライク', 'Attack', 'Basic', 1), ...defends, card('BASH', '強打', 'Attack', 'Basic', 1), card('INFLAME', '発火', 'Power', 'Uncommon'), card('SHRUG_IT_OFF', '受け流し', 'Skill', 'Common'), card('BLUDGEON', '鈍器', 'Attack', 'Rare'), card('WOUND', '負傷', 'Status', 'Status')],
+          [{ id: 'BURNING_BLOOD', name: 'バーニングブラッド' }, { id: 'ANCHOR', name: 'アンカー' }], [{ id: 'FIRE_POTION', name: 'ファイアポーション' }]),
+        snapPlayer(ALLY, 31, 70, 64, [...strikes, ...defends, card('NEUTRALIZE', '無力化', 'Attack', 'Basic'), card('FOOTWORK', 'フットワーク', 'Power', 'Uncommon', 1)],
+          [{ id: 'RING_OF_THE_SNAKE', name: '蛇の指輪' }], []),
+      ],
+    },
+  });
+
   // run_end
   events.push({
     event_uuid: nextUuid(), event_type: 'run_end',
     occurred_at: baseTime(timeOffset++),
     player_id: HOST, floor: 3,
-    payload: { outcome: 'death', final_floor: 3 } as RunEndPayload,
+    payload: { outcome: 'death', final_floor: 3, badges: {
+      [HOST]: [{ id: 'DAMAGE_LEADER', name: 'ダメージリーダー', description: '最も多くのダメージを与えた。', rarity: 'Bronze' }, { id: 'ELITE_KILLER', name: 'エリートキラー', description: 'エリートを倒した。', rarity: 'Silver' }],
+      [ALLY]: [],
+    } } as RunEndPayload,
   });
 
   const session: SessionMeta = {

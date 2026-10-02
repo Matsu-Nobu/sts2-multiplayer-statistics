@@ -140,6 +140,9 @@ export interface FloorSnapshotPlayer {
   rest_site_choices: string[];
   bought:            { relics: SnapshotModel[]; potions: SnapshotModel[]; colorless: SnapshotCard[] };
   completed_quests:  SnapshotModel[];
+  deck?:    SnapshotCard[];     // その時点のデッキ (新しい mod から)
+  relics?:  SnapshotModel[];
+  potions?: SnapshotModel[];
 }
 
 export interface FloorSnapshotPayload {
@@ -180,6 +183,7 @@ export interface CombatEndPayload {
 
 export interface RunStartPayload {
   character_id: string;
+  character_name?: string;
   ascension: number;
   seed: string;
   game_mode?: string;
@@ -193,7 +197,10 @@ export interface RunEndPayload {
   outcome: 'victory' | 'death' | 'abandoned';
   final_floor: number;
   final_hp?: Record<string, number>;   // player_id → ラン終了処理の直前の HP
+  badges?: Record<string, Badge[]>;     // player_id → ゲームオーバー画面のバッジ
 }
+
+export interface Badge { id: string; name: string; description: string; rarity: 'Bronze' | 'Silver' | 'Gold' | string }
 
 export interface PowerSnapshot {
   power_id: string;

@@ -1,35 +1,33 @@
 <script lang="ts">
+  // デバフ付与 (選んだプレイヤー)。
+  import Panel from './ui/Panel.svelte';
+  import EmptyState from './ui/EmptyState.svelte';
   import { formatPowerName } from '../lib/powers';
-  interface Props {
-    debuffs: Record<string, number>;
-    title?: string;
-    powerNames?: Record<string, string>;
-  }
-  let { debuffs, title, powerNames = {} }: Props = $props();
+  interface Props { debuffs: Record<string, number>; title: string; scope?: string; powerNames?: Record<string, string> }
+  let { debuffs, title, scope, powerNames = {} }: Props = $props();
   let entries = $derived(Object.entries(debuffs).sort((a, b) => b[1] - a[1]));
+  let max = $derived(Math.max(1, ...entries.map(e => e[1])));
 </script>
 
-<div class="bg-bg-1 border border-bg-3 rounded-lg overflow-hidden">
-  {#if title}
-    <div class="px-3 py-2 text-sm uppercase tracking-wide text-slate-400 border-b border-bg-3">{title}</div>
+<Panel {title} {scope} flush>
+  {#if entries.length === 0}
+    <EmptyState title="デバフの付与はありません" />
+  {:else}
+    <div class="dt-wrap">
+      <table class="dt">
+        <thead><tr><th>デバフ</th><th class="num">スタック</th></tr></thead>
+        <tbody>
+          {#each entries as [k, v] (k)}
+            <tr>
+              <td class="w-full">
+                <div class="text-slate-100">{formatPowerName(k, powerNames)}</div>
+                <div class="mt-1 h-1 bg-bg-3 rounded-full overflow-hidden"><div class="h-full bg-accent/70 rounded-full" style:width={`${(v / max) * 100}%`}></div></div>
+              </td>
+              <td class="num">{v}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
-  <table class="w-full text-sm tabular">
-    <thead class="bg-bg-2 text-slate-400 text-xs uppercase">
-      <tr>
-        <th class="text-left py-2 px-3">デバフ種別</th>
-        <th class="text-right py-2 px-3">スタック</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each entries as [k, v] (k)}
-        <tr class="border-t border-bg-3">
-          <td class="py-2 px-3">{formatPowerName(k, powerNames)}</td>
-          <td class="text-right py-2 px-3">{v}</td>
-        </tr>
-      {/each}
-      {#if entries.length === 0}
-        <tr><td colspan="2" class="text-center text-slate-500 py-3">デバフ付与なし</td></tr>
-      {/if}
-    </tbody>
-  </table>
-</div>
+</Panel>

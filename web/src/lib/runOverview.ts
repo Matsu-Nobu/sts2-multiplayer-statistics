@@ -7,7 +7,7 @@
 
 import type {
   EventRecord,
-  FloorSnapshotPayload, FloorSnapshotPlayer, SnapshotCard,
+  FloorSnapshotPayload, FloorSnapshotPlayer, SnapshotCard, SnapshotModel, Badge,
   ItemPurchasedPayload, RunStartPayload, RunEndPayload,
   CombatStartPayload, CombatEndPayload,
 } from './types';
@@ -187,4 +187,35 @@ export const ROOM_TYPE_VISUAL: Record<string, { emoji: string; label: string; co
 
 export function roomVisual(type: string) {
   return ROOM_TYPE_VISUAL[type] ?? { emoji: '·', label: type, color: '#64748b' };
+}
+
+// === プレイヤーの最終状態 (ラン全体の画面。spec run-overview.md §3.6) ===
+
+export interface PlayerFinalState {
+  deck: SnapshotCard[] | null;      // 記録の無い (古い mod の) セッションは null
+  relics: SnapshotModel[] | null;
+  potions: SnapshotModel[] | null;
+  badges: Badge[] | null | 'none';   // run_end がまだ無ければ null、run_end に記録が無い (古い mod) なら 'none'
+}
+
+export function buildPlayerFinalState(events: EventRecord[], playerId: string): PlayerFinalState {
+  let last: FloorSnapshotPlayer | null = null;
+  let lastFloor = -1;
+  let lastAt = '';
+  let runEnd: RunEndPayload | null = null;
+  for (const ev of events) {
+    if (ev.event_type === 'run_end') runEnd = ev.payload as RunEndPayload;
+    if (ev.event_type !== 'floor_snapshot') continue;
+    const p = ev.payload as FloorSnapshotPayload;
+    const me = p.players.find(x => x.player_id === playerId);
+    if (!me || me.deck == null) continue;
+    const at = ev.occurred_at ?? '';
+    if (p.floor > lastFloor || (p.floor === lastFloor && at >= lastAt)) { last = me; lastFloor = p.floor; lastAt = at; }
+  }
+  return {
+    deck: last?.deck ?? null,
+    relics: last?.relics ?? null,
+    potions: last?.potions ?? null,
+    badges: runEnd ? (runEnd.badges ? (runEnd.badges[playerId] ?? []) : 'none') : null,
+  };
 }

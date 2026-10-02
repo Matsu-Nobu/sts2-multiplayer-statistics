@@ -76,6 +76,7 @@ func (s *Server) Routes() http.Handler {
 	// "/s/{id}" は SPA（共有URLで開かれる統計ビュー）
 	r.Get("/", landingHTML())
 	r.Get("/s/{id}", indexHTML())
+	r.Get("/s/{id}/*", indexHTML()) // web 側の画面 (spec ui.md §1)
 	r.Mount("/assets/", staticAssets())
 	r.Get("/favicon.ico", staticAssets().ServeHTTP)
 	// /catalog.{lang}.json — STS2 のカード/レリック/ポーション/エンチャント definitions。

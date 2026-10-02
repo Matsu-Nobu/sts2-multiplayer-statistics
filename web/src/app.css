@@ -14,3 +14,20 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* === デザインシステムの共通スタイル (spec ui.md §4) === */
+@layer components {
+  /* DataTable: 見出し行固定、数値は右寄せ、狭い画面では横スクロール */
+  .dt-wrap { @apply overflow-x-auto; }
+  .dt { @apply w-full text-sm tabular; border-collapse: separate; border-spacing: 0; }
+  .dt thead th { @apply sticky top-0 bg-bg-2 text-xs font-medium text-slate-400 text-left px-3 py-2 whitespace-nowrap border-b border-bg-3; }
+  .dt tbody td { @apply px-3 py-2 border-b border-bg-3 align-top; }
+  .dt tbody tr:last-child td { @apply border-b-0; }
+  .dt .num { @apply text-right whitespace-nowrap; }
+  .dt tbody tr.row-link { @apply cursor-pointer hover:bg-bg-2; }
+  .dt tbody tr.row-link:focus-within { @apply bg-bg-2; }
+  .dt th.sortable { @apply cursor-pointer select-none hover:text-slate-200; }
+
+  .focus-ring { @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2; }
+  .link { @apply text-accent hover:underline focus-ring rounded-sm; }
+}
