@@ -145,16 +145,15 @@ dump-catalog:
 	@echo "=== カタログ更新ワークフロー (lang=$(LANG)) ==="
 	@echo ""
 	@echo "1. STS2 のゲーム内言語を [$(LANG)] に設定済か確認してください"
-	@echo "2. 環境変数 STS_STATS_DUMP_CATALOG=1 を立てて STS2 を起動してください:"
-	@echo ""
-	@echo "     STS_STATS_DUMP_CATALOG=1 open -a 'Slay the Spire 2'"
-	@echo ""
-	@echo "   (CatalogDumper はこの env var が立ってるときだけ動く)"
+	@touch "$(STS2_MODS_DIR)/StsStats/dump-catalog"
+	@rm -f "$(DUMP_SRC)"
+	@echo "2. STS2 を (再) 起動してください (mod フォルダに dump-catalog を置いたので、Steam から普通に起動して OK)"
 	@echo "3. 新規ランを 1 階 (Neow まで) 進めてください"
 	@echo "4. STS2 を閉じてください"
 	@echo "5. ここで Enter を押してください"
 	@read _
-	@test -f "$(DUMP_SRC)" || (echo "❌ dump file not found: $(DUMP_SRC)" && echo "   → STS_STATS_DUMP_CATALOG=1 を設定したか / mod が install されてるか / Neow まで進めたか確認" && exit 1)
+	@rm -f "$(STS2_MODS_DIR)/StsStats/dump-catalog"
+	@test -f "$(DUMP_SRC)" || (echo "❌ dump file not found: $(DUMP_SRC)" && echo "   → mod が install されてるか / STS2 を再起動したか / Neow まで進めたか確認" && exit 1)
 	@mkdir -p $(WEB_DIR)/public
 	@cp "$(DUMP_SRC)" "$(DUMP_DST)"
 	@echo ""
