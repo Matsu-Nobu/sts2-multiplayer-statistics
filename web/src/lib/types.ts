@@ -262,6 +262,7 @@ export interface BlockGainedPayload {
   source_card_type?: string | null;   // "Attack" / "Skill" / "Power" / "Orb" 等
   source_kind?: string;
   source_origin?: Origin | null;
+  triggered_by?: { player_id: string; id: string; name: string; type: string } | null;
   from_player?: string;
 }
 

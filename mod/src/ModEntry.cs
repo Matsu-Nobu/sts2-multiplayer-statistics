@@ -92,6 +92,7 @@ public static class ModEntry
             Log.Info($"[StsStats] Patch table: {_patchOk} ok, {_patchFailed} failed");
 
             SourceContext.AutoPatch(_harmony);
+            SourceContext.PatchHookDispatch(_harmony);
 
             StatsLogger.Initialize();
 

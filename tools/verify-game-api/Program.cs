@@ -166,6 +166,18 @@ try
         if (selected.Any(x => $"{x.DeclaringType!.Name}.{x.Name}" == must)) Ok($"選ばれている: {must}");
         else Fail($"選ばれていない: {must} (ゲーム側の実装が変わった可能性。デコンパイルで確認すること)");
     }
+    // 「ゲームのイベントへの反応」か「カードの効果が直接発動させる処理」かの判定 (api.md「triggered_by」)
+    var isHook = liveMod.GetType("StsStats.SourceContext")!.GetMethod("IsHook", BindingFlags.Static | BindingFlags.NonPublic)!;
+    foreach (var (name, expectHook) in new[] {
+        ("PoisonPower.AfterSideTurnStart", true), ("ThornsPower.BeforeDamageReceived", true), ("NoxiousFumesPower.AfterSideTurnStart", true),
+        ("PoisonPower.Trigger", false), ("LightningOrb.Evoke", false), ("LightningOrb.Passive", false), ("DoomPower.DoomKill", false) })
+    {
+        var m = selected.FirstOrDefault(x => $"{x.DeclaringType!.Name}.{x.Name}" == name);
+        if (m == null) { Fail($"見つからない: {name}"); continue; }
+        bool got = (bool)isHook.Invoke(null, new object[] { m })!;
+        if (got == expectHook) Ok($"{name} は{(expectHook ? "イベントへの反応" : "直接発動させる処理")}");
+        else Fail($"{name} の判定が逆 ({(got ? "反応" : "直接")} と判定)");
+    }
 }
 catch (Exception ex) { Fail($"SourceContext.SelectTargets を実行できなかった: {ex.GetBaseException().Message}"); }
 

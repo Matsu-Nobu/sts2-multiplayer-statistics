@@ -114,7 +114,7 @@ internal static class CombatRecorder
                     is_doom_kill       = false,
                     source_appliers    = ApplierList(appliers),
                     source_origin      = OriginPayload(sourceOrigin),
-                    triggered_by       = TriggeredBy(appliers),
+                    triggered_by       = cardSource == null ? TriggeredBy() : null,
                     target_creature_id = CreatureId(receiver),
                     source_card_id     = source?.CardId,
                     source_card_name   = source?.CardName,
@@ -177,6 +177,7 @@ internal static class CombatRecorder
                 is_doom_kill       = true,
                 source_appliers    = ApplierList(appliers),
                 target_creature_id = CreatureId(creature),
+                triggered_by       = TriggeredBy(),
                 source_card_id     = "DOOM_POWER",
                 source_card_name   = SourceContext.CurrentInfo(creature)?.CardName ?? "DOOM_POWER",
                 source_card_type   = "Power",
@@ -215,6 +216,7 @@ internal static class CombatRecorder
                 source_card_type = source?.CardType,
                 source_kind      = sourceKind,
                 source_origin    = OriginPayload(sourceOrigin),
+                triggered_by     = cardSource == null ? TriggeredBy() : null,
                 from_player      = giverId ?? receiverId,
             });
         }
@@ -332,12 +334,13 @@ internal static class CombatRecorder
             : appliers.Select(a => (object)new { player_id = a.PlayerId, stacks = a.Stacks, origin = OriginPayload(a.Origin) }).ToList();
 
     /// <summary>
-    /// 相手に付けたデバフのダメージがカードのプレイ中に起きたら、そのカードと使った人 (api.md「triggered_by」)。
-    /// 例: 感染爆発が毒をその場で発動させたダメージ。ターン開始時の毒はプレイ中でないので null。
+    /// カード以外が出どころのダメージ・ブロックが、プレイ中のカードの効果で直接発動されたものなら、そのカードと使った人
+    /// (api.md「triggered_by」。例: 感染爆発の毒の発動、デュアルキャストのオーブの解放、終末の日の破滅)。
+    /// ゲームのイベントへの反応 (ターン開始時の毒、カードを使うたびに効くパワー等) は null。
     /// </summary>
-    private static object? TriggeredBy(List<(string PlayerId, int Stacks, Origin? Origin)>? appliers)
+    private static object? TriggeredBy()
     {
-        if (appliers == null || appliers.Count == 0) return null;
+        if (!SourceContext.DirectlyTriggeredByCard) return null;
         var card = CardPlayScope.Current;
         if (card?.Owner == null) return null;
         return new { player_id = Identity.Of(card.Owner), id = card.Id.Entry, name = ModelInfo.SafeTitle(card), type = card.Type.ToString() };

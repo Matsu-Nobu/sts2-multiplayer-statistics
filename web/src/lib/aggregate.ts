@@ -67,9 +67,9 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
   const out: EventRecord[] = [];
   for (const ev of events) {
     const p = ev.payload as DamageDealtPayload;
-    if (ev.event_type === 'block_gained') { out.push(withOrigin(ev, (ev.payload as { source_origin?: Origin | null })?.source_origin)); continue; }
+    if (ev.event_type === 'block_gained') { out.push(withOrigin(ev, rowOrigin(ev))); continue; }
     const appliers = ev.event_type === 'damage_dealt' ? sharedAppliers(p) : null;
-    if (!appliers || appliers.length === 0) { out.push(withOrigin(ev, (p as { source_origin?: Origin | null })?.source_origin)); continue; }
+    if (!appliers || appliers.length === 0) { out.push(withOrigin(ev, rowOrigin(ev))); continue; }
     const fields = ['amount', 'total_damage', 'blocked_damage', 'overkill_damage'] as const;
     const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, appliers));
     const trig = p.triggered_by ?? null;
@@ -97,6 +97,17 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
  * パワーによるダメージ・ブロックを、そのパワーを付けた持ち物 (カード・レリック・ポーション等) の行に付け替える
  * (spec combat-stats.md §3.3)。分からなければそのまま (パワー名の行)。
  */
+/**
+ * カード別の表の行にする持ち物: カードの効果が直接発動させたもの (オーブの解放等) はそのカード (使った人の event のとき)、
+ * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md §3.3)。
+ */
+function rowOrigin(ev: EventRecord): Origin | null | undefined {
+  const p = ev.payload as { triggered_by?: DamageDealtPayload['triggered_by']; source_origin?: Origin | null } | undefined;
+  const t = p?.triggered_by;
+  if (t && t.player_id === ev.player_id) return { id: t.id, name: t.name, type: t.type, kind: 'card' };
+  return p?.source_origin;
+}
+
 function withOrigin(ev: EventRecord, origin: Origin | null | undefined): EventRecord {
   if (!origin) return ev;
   return { ...ev, payload: { ...(ev.payload as object), source_card_id: origin.id, source_card_name: origin.name, source_card_type: origin.type } };
