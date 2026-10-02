@@ -186,6 +186,7 @@ internal static class SourceContext
                 PowerModel p       => PowerNameResolver.Resolve(p) ?? p.Id.Entry,
                 RelicModel r       => ModelInfo.Text(r.Title),
                 PotionModel po     => ModelInfo.Text(po.Title),
+                OrbModel o         => ModelInfo.Text(o.Title),
                 EnchantmentModel e => ModelInfo.Text(e.Title),
                 _                  => m.Id.Entry,
             };
