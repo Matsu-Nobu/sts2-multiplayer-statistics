@@ -6,6 +6,7 @@
   import { roomVisual } from '../lib/runOverview';
   import { link, href, navigate, type CombatViewName } from '../lib/router.svelte';
   import Badge from '../components/ui/Badge.svelte';
+  import CombatSelector from '../components/CombatSelector.svelte';
   import SegmentedControl from '../components/ui/SegmentedControl.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
   import CombatSummary from '../components/CombatSummary.svelte';
@@ -18,8 +19,6 @@
 
   let idx = $derived(s.combats.findIndex(c => c.combat_index === combatIndex));
   let combat = $derived(idx >= 0 ? s.combats[idx] : null);
-  let prev = $derived(idx > 0 ? s.combats[idx - 1] : null);
-  let next = $derived(idx >= 0 && idx < s.combats.length - 1 ? s.combats[idx + 1] : null);
   let events = $derived(s.eventsByCombat.get(combatIndex) ?? []);
   let rdps = $derived(computeRdps(events));
   let rmit = $derived(computeRmit(events));
@@ -27,21 +26,9 @@
   const VIEWS: { value: CombatViewName; label: string }[] = [
     { value: 'summary', label: 'サマリ' }, { value: 'turns', label: 'ターン' }, { value: 'timeline', label: 'タイムライン' },
   ];
-  const page = (c: number) => ({ name: 'combat' as const, combat: c, view });
-  const title = (c: { encounter_name: string | null }, i: number) => `${i + 1}. ${c.encounter_name ?? '不明な遭遇'}`;
 </script>
 
-<nav aria-label="パンくず" class="flex flex-wrap items-center justify-between gap-2 text-sm mb-4">
-  <ol class="flex items-center gap-1.5 text-slate-400 min-w-0">
-    <li><a class="link" href={href({ name: 'combats' })} use:link={{ name: 'combats' }}>戦闘</a></li>
-    <li aria-hidden="true">›</li>
-    <li class="text-slate-200 truncate" aria-current="page">{combat ? title(combat, idx) : `戦闘 ${combatIndex}`}</li>
-  </ol>
-  <div class="flex items-center gap-3">
-    {#if prev}<a class="link" href={href(page(prev.combat_index))} use:link={page(prev.combat_index)}>‹ 前の戦闘</a>{:else}<span class="text-slate-600">‹ 前の戦闘</span>{/if}
-    {#if next}<a class="link" href={href(page(next.combat_index))} use:link={page(next.combat_index)}>次の戦闘 ›</a>{:else}<span class="text-slate-600">次の戦闘 ›</span>{/if}
-  </div>
-</nav>
+<div class="mb-4"><CombatSelector current={combatIndex} {view} /></div>
 
 {#if !combat}
   <div class="bg-bg-1 border border-bg-3 rounded-lg"><EmptyState title="この戦闘の記録がありません" hint="戦闘一覧から選んでください。" /></div>
