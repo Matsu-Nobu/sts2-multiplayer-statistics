@@ -4,11 +4,10 @@
   import { buildFloorSummaries, buildPlayerFinalState } from '../lib/runOverview';
   import { navigate } from '../lib/router.svelte';
   import { playerColor } from '../lib/players';
-  import { BADGE_RARITY, OUTCOME_LABEL } from '../lib/labels';
+  import { BADGE_RARITY } from '../lib/labels';
   import { cardTip, relicTip, potionTip } from '../lib/tips';
   import type { RunStartPayload, SnapshotCard } from '../lib/types';
   import Panel from '../components/ui/Panel.svelte';
-  import StatTile from '../components/ui/StatTile.svelte';
   import CardChip from '../components/ui/CardChip.svelte';
   import Chip from '../components/ui/Chip.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
@@ -32,18 +31,6 @@
   }));
   let anyFloors = $derived(perPlayer.some(p => p.floors.length > 0));
 
-  let wins = $derived(s.combats.filter(c => c.victory === true).length);
-  let outcome = $derived(s.doc.session.outcome ? OUTCOME_LABEL[s.doc.session.outcome] ?? s.doc.session.outcome : '進行中');
-  let duration = $derived.by(() => {
-    const evs = s.doc.events;
-    if (evs.length === 0) return null;
-    const t0 = Date.parse(evs[0].occurred_at ?? '');
-    const t1 = Date.parse(s.doc.session.finished_at ?? evs[evs.length - 1].occurred_at ?? '');
-    if (!isFinite(t0) || !isFinite(t1) || t1 < t0) return null;
-    const m = Math.round((t1 - t0) / 60000);
-    return m >= 60 ? `${Math.floor(m / 60)} 時間 ${m % 60} 分` : `${m} 分`;
-  });
-
   // デッキ: 種類ごと、同じカード (同じ強化・エンチャント) は ×N にまとめる
   const GROUPS = [
     { key: 'Attack', label: 'アタック' }, { key: 'Skill', label: 'スキル' }, { key: 'Power', label: 'パワー' }, { key: 'other', label: 'その他' },
@@ -66,15 +53,7 @@
 </script>
 
 <div class="space-y-6">
-  <!-- 1. ランの結果 -->
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-    <StatTile size="primary" label="結果" value={outcome} />
-    <StatTile size="primary" label="到達階" value={s.doc.session.final_floor ?? (perPlayer[0]?.last?.floor ?? '—')} />
-    <StatTile size="primary" label="戦闘" value={`${s.combats.length} 戦`} sub={`勝利 ${wins}`} />
-    <StatTile size="primary" label="プレイ時間" value={duration ?? '—'} />
-  </div>
-
-  <!-- 2. HP 推移 -->
+  <!-- 1. HP 推移 -->
   <Panel title="HP 推移" scope="全員" help="各階を出た時点の HP。点を押すとその階の詳細を開きます。">
     {#if anyFloors}
       <HpRunChart series={perPlayer.filter(p => p.floors.length > 0)} highlight={s.player}
@@ -84,7 +63,7 @@
     {/if}
   </Panel>
 
-  <!-- 3. プレイヤーごとのカード -->
+  <!-- 2. プレイヤーごとのカード -->
   <div class="grid grid-cols-1 {perPlayer.length > 1 ? 'lg:grid-cols-2 xl:grid-cols-3' : ''} gap-4 items-start">
     {#each perPlayer as p (p.pid)}
       {@const selected = s.playerIds.length > 1 && p.pid === s.player}
