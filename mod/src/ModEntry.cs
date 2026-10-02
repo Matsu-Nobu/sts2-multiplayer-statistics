@@ -11,6 +11,7 @@ using MegaCrit.Sts2.Core.ValueProps;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
@@ -63,6 +64,7 @@ public static class ModEntry
         // 戦闘
         P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<Creature>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay));
         P(typeof(CardModel), "OnPlayWrapper",      typeof(CardPlayScope), "Prefix", "Postfix", typeof(PlayerChoiceContext), typeof(Creature), typeof(bool), typeof(ResourceInfo), typeof(bool));
+        P(typeof(OrbCmd), "Channel",               typeof(SourceContext), "ChannelPrefix", "ChannelPostfix", typeof(PlayerChoiceContext), typeof(OrbModel), typeof(Player));
         P(typeof(Hook), "ModifyDamage",            typeof(CombatRecorder), null, "ModifyDamagePostfix");
         P(typeof(Hook), "AfterDamageGiven",        typeof(CombatRecorder), null, "AfterDamageGivenPostfix");
         P(typeof(Hook), "AfterCurrentHpChanged",   typeof(CombatRecorder), null, "AfterCurrentHpChangedPostfix");

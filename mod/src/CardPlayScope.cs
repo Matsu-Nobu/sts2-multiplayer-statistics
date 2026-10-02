@@ -15,7 +15,7 @@ internal static class CardPlayScope
 
     public static CardModel? Current => _current.Value;
 
-    internal sealed class State { public CardModel? Card; public (SourceContext.Frame? Frame, bool InHook) Saved; }
+    internal sealed class State { public CardModel? Card; public (SourceContext.Frame? Frame, bool InHook, bool InChannel) Saved; }
 
     public static void Prefix(CardModel __instance, out State __state)
     {

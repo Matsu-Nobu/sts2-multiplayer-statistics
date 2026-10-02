@@ -90,7 +90,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 戦闘の勝敗 | `combat_end.victory` |
 | 相手に付けたデバフによるダメージの按分 (与ダメ・カード別・rDPS) | `damage_dealt.source_appliers` |
 | パワーによるダメージ・ブロックのカード別の行 | 付与時の `Hook.AfterPowerAmountChanged` の `cardSource` (無ければ実行中のレリック・ポーション等、パワーならそのパワーを付けた持ち物) を `PowerOriginRegistry` に「誰が・何で」の内訳として記録 → `source_appliers[].origin` / `source_origin` |
-| カードの効果が直接発動させた、カード以外のもののダメージ・ブロック (感染爆発の毒、オーブの解放・自動効果、終末の日の破滅等) | `CardModel.OnPlayWrapper` の Prefix / Postfix で「プレイ中のカード」を AsyncLocal に持つ (この中では実行中モデルの記録を空から始める)。SourceContext は Hook の上書き (`AbstractModel` で宣言されたメソッドの上書き) を「反応」として印を付け、プレイ中で反応の中でなければ `triggered_by` を付ける |
+| カードの効果が直接発動させた、カード以外のもののダメージ・ブロック (感染爆発の毒、オーブの解放・自動効果、終末の日の破滅等) | `CardModel.OnPlayWrapper` の Prefix / Postfix で「プレイ中のカード」を AsyncLocal に持つ (この中では実行中モデルの記録を空から始める)。SourceContext は Hook の上書き (`AbstractModel` で宣言されたメソッドの上書き) を「反応」として印を付け、プレイ中で反応の中でなく、`OrbCmd.Channel` (生成。枠があふれると解放する) の中でもなければ `triggered_by` を付ける |
 
 ---
 

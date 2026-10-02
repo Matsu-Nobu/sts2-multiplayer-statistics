@@ -282,7 +282,7 @@ web は与ダメージ・カード別の表・rDPS をこの比で按分する�
 
 `triggered_by` (`{ "player_id", "id", "name", "type" }`, damage_dealt / block_gained): カード以外が出どころのダメージ・ブロックを、
 **カードの効果が直接発動させた** ときの、そのカードと使った人。判定: カードのプレイ中 (`CardModel.OnPlayWrapper` の実行中) で、
-出どころの処理が Hook の上書き (ゲームのイベントへの反応) の中からではないこと。例: 感染爆発の毒の発動、デュアルキャストのオーブの解放。
+出どころの処理が Hook の上書き (ゲームのイベントへの反応) の中からではなく、オーブの生成 (`OrbCmd.Channel`) で押し出された解放でもないこと。例: 感染爆発の毒の発動、デュアルキャストのオーブの解放。
 web はカード別の表でだけ使う (combat-stats.md §3.3)。
 
 `source_origin` (`{ "id", "name", "type", "kind" }`, damage_dealt / block_gained): 出どころが **自分側に付いているパワー** (トゲ・プレート等) のとき、

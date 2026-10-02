@@ -77,6 +77,21 @@ internal static class SourceContext
 
     private static readonly AsyncLocal<bool> _inHookDispatch = new();
 
+    // オーブの生成 (OrbCmd.Channel) の中か。枠がいっぱいだと生成の中で古いオーブが解放される (EvokeNext)。
+    // これはカードに書かれた解放ではないので、カードの効果にしない (spec combat-stats.md §3.3)。
+    private static readonly AsyncLocal<bool> _inChannel = new();
+
+    public static void ChannelPrefix(out bool __state)
+    {
+        __state = _inChannel.Value;
+        _inChannel.Value = true;
+    }
+
+    public static void ChannelPostfix(bool __state)
+    {
+        _inChannel.Value = __state;
+    }
+
     public static void HookDispatchPrefix(out bool __state)
     {
         __state = _inHookDispatch.Value;
@@ -112,26 +127,28 @@ internal static class SourceContext
             .ToList();
 
     /// <summary>カードのプレイの開始時 (CardPlayScope): 実行中モデルの記録と配信中の目印を空から始める。戻り値は終了時に戻す値。</summary>
-    internal static (Frame? Frame, bool InHook) EnterCardPlay()
+    internal static (Frame? Frame, bool InHook, bool InChannel) EnterCardPlay()
     {
-        var saved = (_current.Value, _inHookDispatch.Value);
+        var saved = (_current.Value, _inHookDispatch.Value, _inChannel.Value);
         _current.Value = null;
         _inHookDispatch.Value = false;
+        _inChannel.Value = false;
         return saved;
     }
 
-    internal static void ExitCardPlay((Frame? Frame, bool InHook) saved)
+    internal static void ExitCardPlay((Frame? Frame, bool InHook, bool InChannel) saved)
     {
         _current.Value = saved.Frame;
         _inHookDispatch.Value = saved.InHook;
+        _inChannel.Value = saved.InChannel;
     }
 
     /// <summary>
     /// 今のカード以外のもの (毒・オーブ・破滅等) の処理が、プレイ中のカードの効果で直接発動されたものか。
-    /// プレイ中で、実行中モデルがあり、それが Hook の上書き (反応) の中でも、Hook の配信の中でもないこと。
+    /// プレイ中で、実行中モデルがあり、それが Hook の上書き (反応) の中でも、Hook の配信の中でも、オーブの生成の中でもないこと。
     /// </summary>
     public static bool DirectlyTriggeredByCard =>
-        CardPlayScope.Current != null && _current.Value is { InReaction: false } && !_inHookDispatch.Value;
+        CardPlayScope.Current != null && _current.Value is { InReaction: false } && !_inHookDispatch.Value && !_inChannel.Value;
 
     // === 実行中モデルの解決 ===================================================
 
