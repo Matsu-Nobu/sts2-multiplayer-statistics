@@ -91,6 +91,10 @@ canonical 化に伴って廃止した patch も §4「削除済み / 廃止さ�
 ```
 
 ユーザに「STS2 を再起動して」と言うときは、本当に install まで完了している場合に限る。
+
+**ゲームの起動中は install しない** (`install.sh` が止める)。起動中に StsStats.dll を上書きすると、まだ読み込まれていない
+処理が壊れた中身で読み込まれ (`BadImageFormatException: Bad IL range`)、ゲームが止まる (2026-10-03、クリア時にフリーズさせた)。
+起動中に mod を直したら build までにして、install はゲームを閉じてから。
 build しただけ / install パス間違いの状態で再起動を依頼しない。
 
 ### 2.4 ユーザは何度も再起動している

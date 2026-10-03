@@ -18,6 +18,13 @@ if [ -z "$STS2_MODS_DIR" ]; then
     exit 1
 fi
 
+# ゲームの起動中は入れ替えない。起動中に StsStats.dll を上書きすると、まだ読み込まれていない処理が
+# 壊れた中身で読み込まれ (BadImageFormatException: Bad IL range)、ゲームが止まる (2026-10-03、クリア時にフリーズ)。
+if pgrep -f "SlayTheSpire2.app/Contents/MacOS" >/dev/null 2>&1; then
+    echo "[install] ERROR: Slay the Spire 2 が起動中です。ゲームを閉じてから install してください (build は済んでいます)。"
+    exit 1
+fi
+
 if [ ! -d "$SCRIPT_DIR/dist" ] || [ -z "$(ls -A "$SCRIPT_DIR/dist")" ]; then
     echo "[install] ERROR: dist/ is empty. Run build.sh first."
     exit 1
