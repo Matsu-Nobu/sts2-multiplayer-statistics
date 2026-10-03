@@ -18,9 +18,7 @@
   let catalog: CatalogLookup | null = $state(null);
   $effect(() => { loadCatalog('ja').then(l => { catalog = l; }); });
 
-  // オーブの解放・自動効果をカードの行に入れてよいカード: 説明に「解放」か「自動効果」がある (spec combat-stats.md §3.3)
-  let orbTrigger = $derived(catalog ? (id: string) => /解放|自動効果/.test(catalog!.card(id)?.description ?? '') : undefined);
-  let combats = $derived(buildCombatInfos(doc, orbTrigger));
+  let combats = $derived(buildCombatInfos(doc));
   let totals = $derived(buildRunTotals(combats));
   let playerIds = $derived(doc.players.map(p => p.steam_id));
   let playerNames = $derived(Object.fromEntries(doc.players.map(p => [p.steam_id, p.display_name])));
