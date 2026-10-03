@@ -6,6 +6,13 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.ValueProps;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Runs;
@@ -55,10 +62,15 @@ public static class ModEntry
         P(typeof(MerchantCardRemovalEntry), "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardRemovalPurchasePostfix", typeof(MerchantInventory), typeof(bool));
 
         // 戦闘
+        P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<Creature>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay));
+        P(typeof(CardModel), "OnPlayWrapper",      typeof(CardPlayScope), "Prefix", "Postfix", typeof(PlayerChoiceContext), typeof(Creature), typeof(bool), typeof(ResourceInfo), typeof(bool));
+        P(typeof(OrbCmd), "Channel",               typeof(SourceContext), "ChannelPrefix", "ChannelPostfix", typeof(PlayerChoiceContext), typeof(OrbModel), typeof(Player));
         P(typeof(Hook), "ModifyDamage",            typeof(CombatRecorder), null, "ModifyDamagePostfix");
         P(typeof(Hook), "AfterDamageGiven",        typeof(CombatRecorder), null, "AfterDamageGivenPostfix");
         P(typeof(Hook), "AfterCurrentHpChanged",   typeof(CombatRecorder), null, "AfterCurrentHpChangedPostfix");
         P(typeof(Hook), "AfterBlockGained",        typeof(CombatRecorder), null, "AfterBlockGainedPostfix");
+        P(typeof(Hook), "AfterBlockCleared",       typeof(CombatRecorder), null, "AfterBlockClearedPostfix");
+        P(typeof(Hook), "ModifyHpLost",            typeof(CombatRecorder), null, "ModifyHpLostPostfix");
         P(typeof(Hook), "AfterEnergySpent",        typeof(CombatRecorder), null, "AfterEnergySpentPostfix");
         P(typeof(Hook), "AfterCardPlayed",         typeof(CombatRecorder), null, "AfterCardPlayedPostfix");
         P(typeof(Hook), "AfterCardDrawn",          typeof(CombatRecorder), null, "AfterCardDrawnPostfix");
@@ -82,6 +94,7 @@ public static class ModEntry
             Log.Info($"[StsStats] Patch table: {_patchOk} ok, {_patchFailed} failed");
 
             SourceContext.AutoPatch(_harmony);
+            SourceContext.PatchHookDispatch(_harmony);
 
             StatsLogger.Initialize();
 

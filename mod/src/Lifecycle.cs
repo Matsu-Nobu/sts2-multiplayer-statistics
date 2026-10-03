@@ -5,6 +5,9 @@ using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Models.Badges;
+using MegaCrit.Sts2.Core.Saves;
 
 namespace StsStats;
 
@@ -99,6 +102,7 @@ internal static class Lifecycle
             EventBuffer.EmitGlobalEvent("run_start", Identity.Of(p), new
             {
                 character_id = p.Character?.Id.Entry ?? "",
+                character_name = p.Character != null ? ModelInfo.Text(p.Character.Title) : "",
                 ascension    = runState.AscensionLevel,
                 seed         = seed,
                 game_mode    = runState.GameMode.ToString(),
@@ -124,7 +128,7 @@ internal static class Lifecycle
             }
             EventBuffer.BeginCombat();
             PowerOriginRegistry.ClearForCombat();
-            DamageModificationLog.Clear();
+            ModifierLog.Clear();
             _combatOpen = true;
 
             var enc = combatState?.Encounter;
@@ -192,7 +196,7 @@ internal static class Lifecycle
     /// 勝利後の「全員を倒す」処理で 2 回目が来るので、最初の 1 回だけ使う。
     /// この時点で最終階の floor_snapshot は送信済み (OnEnded 冒頭の UpdatePlayerStatsInMapPointHistory)。
     /// </summary>
-    public static void OnEndedPostfix(bool isVictory)
+    public static void OnEndedPostfix(bool isVictory, SerializableRun __result)
     {
         try
         {
@@ -213,11 +217,46 @@ internal static class Lifecycle
                 outcome     = outcome,
                 final_floor = Run.TotalFloor,
                 final_hp    = finalHp,
+                badges      = Badges(__result, isVictory),
             });
             EventBuffer.FlushOutgoing();
             Log.Info($"[StsStats] run_end outcome={outcome} floor={Run.TotalFloor}");
         }
         catch (Exception ex) { Log.Error($"[StsStats] OnEnded postfix error: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// ゲームオーバー画面のバッジ。ゲームと同じ判定 (ScoreUtility.GetBadges) を各プレイヤーに行う。
+    /// 名前・説明は翻訳 badges の {ID}.{bronze|silver|gold}Title / Description (無ければ {ID}.title / description)。NBadge.Create と同じ。
+    /// </summary>
+    private static Dictionary<string, List<object>> Badges(SerializableRun? run, bool isVictory)
+    {
+        var result = new Dictionary<string, List<object>>();
+        if (run == null) return result;
+        foreach (var sp in run.Players)
+        {
+            var list = new List<object>();
+            try
+            {
+                foreach (var b in ScoreUtility.GetBadges(run, sp.NetId, isVictory))
+                {
+                    string prefix = b.Rarity switch { BadgeRarity.Bronze => "bronze", BadgeRarity.Silver => "silver", BadgeRarity.Gold => "gold", _ => "" };
+                    bool ranked = prefix != "" && LocString.Exists("badges", $"{b.Id}.{prefix}Title");
+                    string titleKey = ranked ? $"{b.Id}.{prefix}Title" : $"{b.Id}.title";
+                    string descKey  = ranked ? $"{b.Id}.{prefix}Description" : $"{b.Id}.description";
+                    list.Add(new
+                    {
+                        id          = b.Id,
+                        name        = ModelInfo.Text(new LocString("badges", titleKey)),
+                        description = ModelInfo.Text(new LocString("badges", descKey)),
+                        rarity      = b.Rarity.ToString(),
+                    });
+                }
+            }
+            catch (Exception ex) { Log.Error($"[StsStats] badges error: {ex.Message}"); }
+            result[Identity.OfNetId(sp.NetId)] = list;
+        }
+        return result;
     }
 
     internal static string SafeSeed(IRunState runState)

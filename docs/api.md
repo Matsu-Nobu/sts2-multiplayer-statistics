@@ -166,16 +166,17 @@ Content-Type: application/json
 
 | event_type | payload | player_id | context |
 |-----------|---------|-----------|---------|
-| `run_start` | `character_id`, `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
+| `run_start` | `character_id`, `character_name` (表示名), `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
 | `floor_snapshot` | §floor_snapshot | 空 | floor のみ |
 | `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
-| `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`) | 空 | floor のみ |
+| `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`), `badges` (`{ player_id: [{ id, name, description, rarity }] }`) | 空 | floor のみ |
 | `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 空 | floor + combat_index |
 | `combat_end` | `combat_index`, `victory` (bool) | 空 | floor + combat_index |
 
 - `combat_index` = 戦闘の階番号。中断→再開で同じ `combat_index` の `combat_start` が再び来たら、
   それより前の同じ `combat_index` の event は無効 (web が捨てる)。
 - `run_end` はラン 1 回につき 1 件。`final_hp` は勝利・放棄ではラン終了処理 (全員を倒す) の直前の HP、全滅では 0。
+- `badges`: ゲームオーバー画面のバッジ。ゲームと同じ判定 (`ScoreUtility.GetBadges(run, playerId, won)`) をラン終了時に行う。`rarity` は `Bronze` / `Silver` / `Gold`。
 
 #### floor_snapshot
 
@@ -205,7 +206,10 @@ Content-Type: application/json
     "ancient_choices":   [{ "title": "轟音のほら貝", "was_chosen": true }],
     "rest_site_choices": ["SMITH"],
     "bought":            { "relics": [model], "potions": [model], "colorless": [model] },
-    "completed_quests":  [model]
+    "completed_quests":  [model],
+    "deck":    [card],                  // その時点のデッキ (Player.Deck)
+    "relics":  [{ "id", "name", "rarity" }],
+    "potions": [model]
   }]
 }
 ```
@@ -225,7 +229,7 @@ Content-Type: application/json
 | `card_played` | `card_id`, `card_name`, `card_type`, `target_creature_id?` | 使用者 |
 | `card_drawn` | `card_id`, `card_name?`, `from_hand_draw?` | ドローした人 |
 | `damage_dealt` | `amount` (敵HPに通った分), `total_damage` (ブロック込み), `blocked_damage`, `overkill_damage`, `was_target_killed`, `is_doom_kill`, `source_appliers?`, `target_creature_id`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `active_on_target[]`, `active_on_dealer[]`, `modifications[]` | 与えた人 (ペットは持ち主。攻撃者が空なら出どころパワーの付与者) |
-| `damage_received` | `amount` (自HPに受けた分), `total_damage`, `blocked_damage` (=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]` | 受けた人 (**致死の一撃を含む**) |
+| `damage_received` | `amount` (自HPに受けた分), `total_damage`, `blocked_damage` (=有効ブロック), `source_creature_id`, `source_card_id?`, `active_on_target[]`, `active_on_dealer[]`, `modifications`, `block_sources[]` | 受けた人 (**致死の一撃を含む**) |
 | `block_gained` | `amount`, `source_card_id?`, `source_card_name?`, `source_card_type?`, `source_kind`, `from_player?` | 受けた人 |
 | `power_changed` | `power_id`, `power_name?`, `delta`, `target_creature_id?`, `target_player_id?`, `source_card_id?` | 付与者 |
 | `energy_spent` | `amount`, `source_card_id?` | 使った人 |
@@ -242,8 +246,47 @@ Content-Type: application/json
 (`source_card_type` の `Power` はカードの種類「パワー」と同じ文字列なので判定に使わない)。`damage_dealt` / `block_gained` に付く。
 mod が起動時に対象メソッドを自動で列挙して追跡する (`redesign-v2.md` §2.4)。v1 の合成タグ (`(poison)` 等) は廃止。
 
-`source_appliers` (`[{ "player_id", "stacks" }]`): 出どころが **ダメージを受けた敵自身に付いているパワー** (毒・Doom・絞殺など) のとき、
-そのパワーの付与者ごとのスタック数。web は与ダメージ・カード別の表・rDPS をこの比で按分する。`player_id` は最大スタックの人。
+#### `modifications` (damage_dealt / damage_received。貢献スコア用、spec combat-stats.md §3.5)
+
+ゲームの補正計算で値を変えたモデルを、計算順に 1 つずつ並べたもの。
+
+```json
+{
+  "base": 6,                 // 補正前のダメージ (カードの基礎値)
+  "final": 13.5,             // ダメージ補正後 (ブロック前・HP 上限前)
+  "steps": [
+    { "phase": "additive",       "model_id": "STRENGTH_POWER",   "model_name": "筋力", "kind": "power", "value": 3,
+      "appliers": [{ "player_id": "765...A", "stacks": 3 }] },
+    { "phase": "multiplicative", "model_id": "VULNERABLE_POWER", "model_name": "弱体", "kind": "power", "value": 1.5,
+      "appliers": [{ "player_id": "765...B", "stacks": 2 }] },
+    { "phase": "multiplicative", "model_id": "PEN_NIB",          "model_name": "ペン先", "kind": "relic", "value": 2, "owner": "765...A" }
+  ]
+}
+```
+
+- `phase`: `enchant` / `additive` (value = 増減量) / `multiplicative` (value = 倍率) / `cap` (value = 上限で下がった量、負) /
+  `hp_lost` (ブロック後の HP 減少補正。value = 変化量。damage_received のみ)
+- `appliers`: パワーの付与者ごとのスタック数 (全パワー)。`owner`: レリック・エンチャント等の持ち主
+- v1 形式 (配列で `pre` / `post` / `modifier_types` / `modifier_ids`) は旧データのみ
+
+#### `block_sources` (damage_received)
+
+`[{ "player_id", "amount" }]`: このヒットで防いだブロック量を、ブロックを付けた人ごとに分けたもの (残っているブロックの比で按分)。
+
+`source_appliers` (`[{ "player_id", "stacks", "origin"? }]`): 出どころが **ダメージを受けた敵自身に付いているパワー** (毒・Doom・絞殺など) のとき、
+そのパワーのスタックを「誰が・何で」付けたかの内訳。同じ人が別のカードで付けた分は別の行になる。
+web は与ダメージ・カード別の表・rDPS をこの比で按分する。`player_id` は最大スタックの人。
+
+`origin` (`{ "id", "name", "type", "kind" }`): そのスタックを付けたカード・レリック・ポーション。`kind` は `card` / `relic` / `potion` / `orb` / `enchantment` / `power`。
+パワーが付けた場合 (例: 有毒ガスのパワーが毎ターン毒を付ける) は、そのパワーを付けたカード等までさかのぼる (1 段まで)。分からなければ無し。
+
+`triggered_by` (`{ "player_id", "id", "name", "type" }`, damage_dealt / block_gained): カード以外が出どころのダメージ・ブロックを、
+**カードの効果が直接発動させた** ときの、そのカードと使った人。判定: カードのプレイ中 (`CardModel.OnPlayWrapper` の実行中) で、
+出どころの処理が Hook の上書き (ゲームのイベントへの反応) の中からではなく、オーブの生成 (`OrbCmd.Channel`) で押し出された解放でもないこと。例: 感染爆発の毒の発動、デュアルキャストのオーブの解放。
+web はカード別の表でだけ使う (combat-stats.md §3.3)。
+
+`source_origin` (`{ "id", "name", "type", "kind" }`, damage_dealt / block_gained): 出どころが **自分側に付いているパワー** (トゲ・プレート等) のとき、
+そのパワーを付けたカード・レリック・ポーション。カード別の表はこれで集計する。分からなければ無し。
 
 #### power snapshot（`active_on_target` / `active_on_dealer` の中身）
 

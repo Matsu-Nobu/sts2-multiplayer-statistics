@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,6 +11,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Models;
 
 namespace StsStats;
@@ -35,28 +37,118 @@ namespace StsStats;
 /// </summary>
 internal static class SourceContext
 {
-    internal sealed record Frame(AbstractModel? Instance, Type ModelType);
+    /// <param name="InReaction">
+    /// この処理が「ゲームのイベントへの反応」(AbstractModel で宣言された Hook の上書き) の中か。
+    /// カードの効果が直接発動させたもの (毒の Trigger・オーブの Evoke / Passive・破滅の DoomKill 等) と区別する
+    /// (spec combat-stats.md §3.3、api.md「triggered_by」)。
+    /// </param>
+    internal sealed record Frame(AbstractModel? Instance, Type ModelType, bool InReaction);
 
     private static readonly AsyncLocal<Frame?> _current = new();
+    private static readonly ConcurrentDictionary<MethodBase, bool> _isHook = new();
 
     public static Frame? Current => _current.Value;
 
-    public static void Prefix(AbstractModel __instance, out Frame? __state)
+    public static void Prefix(AbstractModel __instance, MethodBase __originalMethod, out Frame? __state)
     {
         __state = _current.Value;
-        _current.Value = new Frame(__instance, __instance.GetType());
+        _current.Value = new Frame(__instance, __instance.GetType(), IsHook(__originalMethod) || (__state?.InReaction ?? false));
     }
 
     public static void PrefixStatic(MethodBase __originalMethod, out Frame? __state)
     {
         __state = _current.Value;
-        _current.Value = new Frame(null, __originalMethod.DeclaringType!);
+        _current.Value = new Frame(null, __originalMethod.DeclaringType!, __state?.InReaction ?? false);
     }
 
     public static void Postfix(Frame? __state)
     {
         _current.Value = __state;
     }
+
+    /// <summary>Hook の上書き (AbstractModel で宣言された virtual の上書き) か。</summary>
+    internal static bool IsHook(MethodBase m) => _isHook.GetOrAdd(m, x =>
+        x is MethodInfo mi && mi.IsVirtual && mi.GetBaseDefinition().DeclaringType == typeof(AbstractModel));
+
+    // === ゲームのイベントの配信中か =================================================
+    // ゲームはイベントを Hook クラスの static な配信メソッド (Hook.AfterCardPlayed 等、async Task を返すもの) から
+    // 各モデルに 1 つずつ届ける (デコンパイル確認済 v0.111.0)。その配信の中で起きたことは「反応」。
+    // 目印を付けていないモデルの反応 (例: カードを使うとオーブを解放するレリック) も、これで反応として扱える。
+
+    private static readonly AsyncLocal<bool> _inHookDispatch = new();
+
+    // オーブの生成 (OrbCmd.Channel) の中か。枠がいっぱいだと生成の中で古いオーブが解放される (EvokeNext)。
+    // これはカードに書かれた解放ではないので、カードの効果にしない (spec combat-stats.md §3.3)。
+    private static readonly AsyncLocal<bool> _inChannel = new();
+
+    public static void ChannelPrefix(out bool __state)
+    {
+        __state = _inChannel.Value;
+        _inChannel.Value = true;
+    }
+
+    public static void ChannelPostfix(bool __state)
+    {
+        _inChannel.Value = __state;
+    }
+
+    public static void HookDispatchPrefix(out bool __state)
+    {
+        __state = _inHookDispatch.Value;
+        _inHookDispatch.Value = true;
+    }
+
+    public static void HookDispatchPostfix(bool __state)
+    {
+        _inHookDispatch.Value = __state;
+    }
+
+    /// <summary>Hook の配信メソッド (public static で Task を返すもの) 全部に目印を付ける。</summary>
+    public static void PatchHookDispatch(Harmony harmony)
+    {
+        // 同じ Hook には記録用の Postfix (CombatRecorder.AfterDamageGivenPostfix 等) も付いている。
+        // 記録の時点で「配信中」の目印が残っていると、全部が反応扱いになるので、目印を外す Postfix を最初に、
+        // 目印を付ける Prefix を最後に走らせる (Harmony は priority の高い順に実行)。
+        var prefix  = new HarmonyMethod(AccessTools.Method(typeof(SourceContext), nameof(HookDispatchPrefix)))  { priority = Priority.Last };
+        var postfix = new HarmonyMethod(AccessTools.Method(typeof(SourceContext), nameof(HookDispatchPostfix))) { priority = Priority.First };
+        int n = 0;
+        foreach (var m in HookDispatchTargets())
+        {
+            try { harmony.Patch(m, prefix: prefix, postfix: postfix); n++; }
+            catch (Exception ex) { Log.Error($"[StsStats] Hook 配信の目印に失敗: {m.Name}: {ex.Message}"); }
+        }
+        Log.Info($"[StsStats] Hook 配信の目印: {n} 個");
+        if (n == 0) Log.Error("[StsStats] Hook 配信の目印が 1 つも付いていない (カードの効果とイベントへの反応を区別できない)");
+    }
+
+    internal static List<MethodInfo> HookDispatchTargets() =>
+        typeof(Hook).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.ReturnType == typeof(System.Threading.Tasks.Task) && !m.IsGenericMethodDefinition)
+            .ToList();
+
+    /// <summary>カードのプレイの開始時 (CardPlayScope): 実行中モデルの記録と配信中の目印を空から始める。戻り値は終了時に戻す値。</summary>
+    internal static (Frame? Frame, bool InHook, bool InChannel) EnterCardPlay()
+    {
+        var saved = (_current.Value, _inHookDispatch.Value, _inChannel.Value);
+        _current.Value = null;
+        _inHookDispatch.Value = false;
+        _inChannel.Value = false;
+        return saved;
+    }
+
+    internal static void ExitCardPlay((Frame? Frame, bool InHook, bool InChannel) saved)
+    {
+        _current.Value = saved.Frame;
+        _inHookDispatch.Value = saved.InHook;
+        _inChannel.Value = saved.InChannel;
+    }
+
+    /// <summary>
+    /// 今のカード以外のもの (毒・オーブ・破滅等) の処理が、プレイ中のカードの効果で直接発動されたものか。
+    /// プレイ中で、実行中モデルがあり、それが Hook の上書き (反応) の中でも、Hook の配信の中でも、オーブの生成の中でもないこと。
+    /// </summary>
+    public static bool DirectlyTriggeredByCard =>
+        CardPlayScope.Current != null && _current.Value is { InReaction: false } && !_inHookDispatch.Value && !_inChannel.Value;
 
     // === 実行中モデルの解決 ===================================================
 
@@ -111,6 +203,7 @@ internal static class SourceContext
                 PowerModel p       => PowerNameResolver.Resolve(p) ?? p.Id.Entry,
                 RelicModel r       => ModelInfo.Text(r.Title),
                 PotionModel po     => ModelInfo.Text(po.Title),
+                OrbModel o         => ModelInfo.Text(o.Title),
                 EnchantmentModel e => ModelInfo.Text(e.Title),
                 _                  => m.Id.Entry,
             };
@@ -142,6 +235,62 @@ internal static class SourceContext
         }
         catch { return null; }
     }
+
+    /// <summary>
+    /// DebuffAppliers と同じ条件で、(付与者, スタック, 付けた持ち物) ごとの内訳 (多い順)。カード別の表用 (api.md「origin」)。
+    /// </summary>
+    public static List<(string PlayerId, int Stacks, Origin? Origin)>? DebuffOrigins(Creature? target)
+    {
+        if (target == null) return null;
+        try
+        {
+            if (ResolveModel(target) is not PowerModel p || !ReferenceEquals(p.Owner, target)) return null;
+            var list = PowerOriginRegistry.LookupOrigins(target, p.Id.Entry)
+                .Where(a => a.Stacks > 0)
+                .OrderByDescending(a => a.Stacks)
+                .Select(a => (a.Applier, a.Stacks, a.Origin))
+                .ToList();
+            if (list.Count > 0) return list;
+            string? applier = Identity.OfCreature(p.Applier, includePets: true);
+            return applier != null ? new List<(string, int, Origin?)> { (applier, Math.Max(1, p.Amount), null) } : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// 今パワーを付けている (カード以外の) 持ち物。実行中のレリック・ポーション・オーブ・エンチャントはそれ自身、
+    /// パワーなら「そのパワーを付けた持ち物」(1 段だけさかのぼる。例: 有毒ガスのパワー → カード「有毒ガス」)。
+    /// 何も実行中でなければ null。<paramref name="target"/> は static メソッドの枠でパワーを探す相手。
+    /// </summary>
+    public static Origin? CurrentOrigin(Creature? target)
+    {
+        if (_current.Value == null) return null;
+        try
+        {
+            var m = ResolveModel(target);
+            if (m is PowerModel p) return OriginOfPower(p) ?? AsOrigin(CurrentInfo(target), "power");
+            return AsOrigin(CurrentInfo(target), CurrentKind());
+        }
+        catch { return null; }
+    }
+
+    /// <summary>パワーのスタックを最も多く付けた持ち物 (分からなければ null)。</summary>
+    public static Origin? OriginOfPower(PowerModel? p)
+    {
+        if (p?.Owner == null) return null;
+        try
+        {
+            return PowerOriginRegistry.LookupOrigins(p.Owner, p.Id.Entry)
+                .Where(a => a.Origin != null && a.Stacks != 0)
+                .OrderByDescending(a => Math.Abs(a.Stacks))
+                .Select(a => a.Origin)
+                .FirstOrDefault();
+        }
+        catch { return null; }
+    }
+
+    private static Origin? AsOrigin(CardInfo? i, string kind) =>
+        i == null ? null : new Origin(i.CardId, i.CardName, i.CardType, kind);
 
     /// <summary>
     /// 実行中モデルが「誰の行為か」。相手に付けたデバフは付与者 (最大スタックの人)、

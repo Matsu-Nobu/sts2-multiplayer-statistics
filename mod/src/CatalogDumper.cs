@@ -31,10 +31,14 @@ internal static class CatalogDumper
 
     public static void DumpOnce()
     {
-        // 環境変数 STS_STATS_DUMP_CATALOG=1 が立ってるときだけ動く。
+        // 環境変数 STS_STATS_DUMP_CATALOG=1 か、mod のフォルダに dump-catalog という空ファイルがあるときだけ動く。
         // (一般プレイヤーが mod 入れても毎回 dump 走らないように)
+        // Steam が起動し直すと環境変数が消えるので、ファイルでも指定できるようにしてある (make dump-catalog が置く)。
         var enabled = Environment.GetEnvironmentVariable("STS_STATS_DUMP_CATALOG");
-        if (string.IsNullOrEmpty(enabled) || enabled == "0") return;
+        bool byEnv = !string.IsNullOrEmpty(enabled) && enabled != "0";
+        bool byFile = false;
+        try { byFile = File.Exists(Path.Combine(GetDumpDir(), "dump-catalog")); } catch { }
+        if (!byEnv && !byFile) return;
 
         Log.Info($"[StsStats][CatalogDumper] DumpOnce called (already_dumped={_dumped})");
         if (_dumped) return;

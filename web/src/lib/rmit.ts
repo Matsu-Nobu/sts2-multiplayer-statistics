@@ -17,6 +17,7 @@
 
 import type { EventRecord, DamageReceivedPayload, PowerSnapshot } from './types';
 import { latestCombatEvents } from './aggregate';
+import { isModsV2, stepContributions, stepActors, stepLabel } from './contrib';
 
 export interface RmitBreakdown {
   total: number;
@@ -50,6 +51,27 @@ export function computeRmit(events: EventRecord[]): RmitTable {
     const p = ev.payload as DamageReceivedPayload;
     const recipient = ev.player_id;
     if (!recipient) continue;
+
+    // v2 (spec combat-stats.md §3.5): 補正の負の寄与 (= 防いだ量) を行為者へ、防いだブロックを付けた人へ
+    if (isModsV2(p.modifications) || p.block_sources) {
+      const acc = new Map<string, number>();
+      if (isModsV2(p.modifications)) {
+        for (const { step, contrib } of stepContributions(p.modifications)) {
+          if (contrib >= 0) continue;                    // 被ダメを増やした補正は誰の貢献でもない
+          for (const a of stepActors(step)) {
+            const k = `${a.player_id}\u0000${stepLabel(step)}`;
+            acc.set(k, (acc.get(k) ?? 0) + (-contrib) * a.weight);
+          }
+        }
+      }
+      for (const [k, v] of acc) {
+        const [applier, label] = k.split('\u0000');
+        credit(recipient, applier, applier === recipient ? 'self' : label, Math.round(v));
+      }
+      for (const b of p.block_sources ?? []) credit(recipient, b.player_id, b.player_id === recipient ? 'self' : 'ブロック', b.amount);
+      continue;
+    }
+
     const total = p.total_damage ?? p.amount ?? 0;
     if (total <= 0) continue;
     const onDealer = p.active_on_dealer ?? [];

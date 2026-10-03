@@ -24,7 +24,7 @@ DOCKER_DATA_DIR := $(PWD)/.docker-data
 .PHONY: help all test build install log verify-game-api \
         mod-use-local mod-use-public \
         backend-dev backend-test \
-        web-dev \
+        web-dev web-dev-prod \
         app-build app-run \
         docker-build docker-run \
         dump-catalog
@@ -44,6 +44,7 @@ help:
 	@echo "make backend-dev      Go 開発サーバ起動 (:8080)"
 	@echo "make backend-test     Go ユニットテスト"
 	@echo "make web-dev          Vite dev server (:5173)"
+	@echo "make web-dev-prod     上記 + 本番のデータを読む (http://localhost:5173/s/<セッションID>)"
 	@echo ""
 	@echo "make app-build        web → backend embed → 単一バイナリ"
 	@echo "make app-run          上記 + 起動"
@@ -99,6 +100,9 @@ backend-test:
 web-dev:
 	cd $(WEB_DIR) && npm run dev
 
+web-dev-prod:
+	cd $(WEB_DIR) && API_TARGET=https://sts2stats.fly.dev npm run dev
+
 # --- 統合バイナリ -------------------------------------------------------------
 # web をビルドして backend の embed 配下に同期、go build で単一バイナリ生成。
 
@@ -141,16 +145,15 @@ dump-catalog:
 	@echo "=== カタログ更新ワークフロー (lang=$(LANG)) ==="
 	@echo ""
 	@echo "1. STS2 のゲーム内言語を [$(LANG)] に設定済か確認してください"
-	@echo "2. 環境変数 STS_STATS_DUMP_CATALOG=1 を立てて STS2 を起動してください:"
-	@echo ""
-	@echo "     STS_STATS_DUMP_CATALOG=1 open -a 'Slay the Spire 2'"
-	@echo ""
-	@echo "   (CatalogDumper はこの env var が立ってるときだけ動く)"
+	@touch "$(STS2_MODS_DIR)/StsStats/dump-catalog"
+	@rm -f "$(DUMP_SRC)"
+	@echo "2. STS2 を (再) 起動してください (mod フォルダに dump-catalog を置いたので、Steam から普通に起動して OK)"
 	@echo "3. 新規ランを 1 階 (Neow まで) 進めてください"
 	@echo "4. STS2 を閉じてください"
 	@echo "5. ここで Enter を押してください"
 	@read _
-	@test -f "$(DUMP_SRC)" || (echo "❌ dump file not found: $(DUMP_SRC)" && echo "   → STS_STATS_DUMP_CATALOG=1 を設定したか / mod が install されてるか / Neow まで進めたか確認" && exit 1)
+	@rm -f "$(STS2_MODS_DIR)/StsStats/dump-catalog"
+	@test -f "$(DUMP_SRC)" || (echo "❌ dump file not found: $(DUMP_SRC)" && echo "   → mod が install されてるか / STS2 を再起動したか / Neow まで進めたか確認" && exit 1)
 	@mkdir -p $(WEB_DIR)/public
 	@cp "$(DUMP_SRC)" "$(DUMP_DST)"
 	@echo ""

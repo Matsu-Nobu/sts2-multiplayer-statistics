@@ -62,11 +62,11 @@ internal static class FloorRecorder
                 monster_ids = r.MonsterIds.Select(m => m.Entry).ToList(),
                 turns_taken = r.TurnsTaken,
             }).ToList(),
-            players = entry.PlayerStats.Select(BuildPlayer).ToList(),
+            players = entry.PlayerStats.Select(e => BuildPlayer(e, runState.Players.FirstOrDefault(p => p.NetId == e.PlayerId))).ToList(),
         });
     }
 
-    private static object BuildPlayer(PlayerMapPointHistoryEntry e) => new
+    private static object BuildPlayer(PlayerMapPointHistoryEntry e, Player? player) => new
     {
         player_id = Identity.OfNetId(e.PlayerId),
         hp = new
@@ -113,6 +113,10 @@ internal static class FloorRecorder
             colorless = e.BoughtColorless.Select(ModelInfo.CardRef).ToList(),
         },
         completed_quests = e.CompletedQuests.Select(ModelInfo.Generic).ToList(),
+        // その時点のデッキ・レリック・ポーション (ラン全体の画面用。spec run-overview.md §3.6)
+        deck    = player?.Deck.Cards.Select(ModelInfo.Card).ToList(),
+        relics  = player?.Relics.Select(r => ModelInfo.Relic(r.Id)).ToList(),
+        potions = player?.Potions.Select(po => ModelInfo.Potion(po.Id)).ToList(),
     };
 
     // === ショップの値段 ===========================================================

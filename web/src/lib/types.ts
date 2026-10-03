@@ -1,4 +1,6 @@
 // docs/api.md と一致させること。v2 形式 (docs/redesign-v2.md)。
+import type { ModsV2 } from './contrib';
+export type { ModsV2 } from './contrib';
 
 export interface SessionMeta {
   id: string;
@@ -138,6 +140,9 @@ export interface FloorSnapshotPlayer {
   rest_site_choices: string[];
   bought:            { relics: SnapshotModel[]; potions: SnapshotModel[]; colorless: SnapshotCard[] };
   completed_quests:  SnapshotModel[];
+  deck?:    SnapshotCard[];     // その時点のデッキ (新しい mod から)
+  relics?:  SnapshotModel[];
+  potions?: SnapshotModel[];
 }
 
 export interface FloorSnapshotPayload {
@@ -178,6 +183,7 @@ export interface CombatEndPayload {
 
 export interface RunStartPayload {
   character_id: string;
+  character_name?: string;
   ascension: number;
   seed: string;
   game_mode?: string;
@@ -191,7 +197,13 @@ export interface RunEndPayload {
   outcome: 'victory' | 'death' | 'abandoned';
   final_floor: number;
   final_hp?: Record<string, number>;   // player_id → ラン終了処理の直前の HP
+  badges?: Record<string, Badge[]>;     // player_id → ゲームオーバー画面のバッジ
 }
+
+/** パワーのスタックを付けた持ち物 (api.md「origin」)。 */
+export interface Origin { id: string; name: string; type: string; kind: string }
+
+export interface Badge { id: string; name: string; description: string; rarity: 'Bronze' | 'Silver' | 'Gold' | string }
 
 export interface PowerSnapshot {
   power_id: string;
@@ -216,7 +228,10 @@ export interface DamageDealtPayload {
   was_target_killed?: boolean;
   is_doom_kill?: boolean;             // Doom による撃破 (source_card_id = DOOM_POWER)
   // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md §4)
-  source_appliers?: { player_id: string; stacks: number }[];
+  source_appliers?: { player_id: string; stacks: number; origin?: Origin | null }[];
+  source_origin?: Origin | null;      // 自分側のパワーが出どころのとき、そのパワーを付けた持ち物 (api.md)
+  triggered_by?: { player_id: string; id: string; name: string; type: string } | null;   // カードのプレイ中に発動したデバフのダメージ (api.md)
+  card_amount?: number;              // web 内部: カード別の表の行に足す値 (splitSharedDamage が付ける)
   target_creature_id: string | null;
   target_player_id?: string | null;
   source_card_id?: string | null;
@@ -225,7 +240,7 @@ export interface DamageDealtPayload {
   source_kind?: string;               // 'card' | 'power' | 'relic' | 'orb' | 'enchantment' | 'potion' | 'unknown'
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
-  modifications?: DamageModification[];  // Hook.ModifyDamage で観測した (pre,post,modifier) ログ
+  modifications?: DamageModification[] | ModsV2;  // v2: 補正 1 つずつ (ModsV2)。配列は旧データ
 }
 
 export interface DamageReceivedPayload {
@@ -236,6 +251,8 @@ export interface DamageReceivedPayload {
   source_card_id?: string | null;
   active_on_target: PowerSnapshot[];
   active_on_dealer?: PowerSnapshot[]; // dealer (敵) に乗っていた power（rMit で WEAK 等を見る）
+  modifications?: ModsV2;              // 被ダメ側の補正 1 つずつ (rMit)
+  block_sources?: { player_id: string; amount: number }[];   // 防いだブロックを付けた人ごとに
 }
 
 export interface BlockGainedPayload {
@@ -244,6 +261,8 @@ export interface BlockGainedPayload {
   source_card_name?: string | null;
   source_card_type?: string | null;   // "Attack" / "Skill" / "Power" / "Orb" 等
   source_kind?: string;
+  source_origin?: Origin | null;
+  triggered_by?: { player_id: string; id: string; name: string; type: string } | null;
   from_player?: string;
 }
 

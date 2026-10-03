@@ -6,6 +6,7 @@
  */
 
 import type {
+  Origin,
   SessionDoc, EventRecord, TurnPayload, PlayerEntry, CardStats,
   PlayerTurnSummary, PlayerCombatSummary,
   CombatStartPayload, CombatEndPayload,
@@ -66,17 +67,50 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
   const out: EventRecord[] = [];
   for (const ev of events) {
     const p = ev.payload as DamageDealtPayload;
+    if (ev.event_type === 'block_gained') { out.push(withOrigin(ev, rowOrigin(ev))); continue; }
     const appliers = ev.event_type === 'damage_dealt' ? sharedAppliers(p) : null;
-    if (!appliers || appliers.length === 0) { out.push(ev); continue; }
+    if (!appliers || appliers.length === 0) { out.push(withOrigin(ev, rowOrigin(ev))); continue; }
     const fields = ['amount', 'total_damage', 'blocked_damage', 'overkill_damage'] as const;
     const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, appliers));
+    const trig = p.triggered_by ?? null;
     appliers.forEach((a, i) => {
+      if (trig && a.player_id === trig.player_id) return;   // 使った人の分は下でまとめる
       const payload: DamageDealtPayload = { ...p };
       fields.forEach((f, fi) => { (payload as any)[f] = parts[fi][i]?.share ?? 0; });
-      out.push({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload });
+      out.push(withOrigin({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload }, a.origin));
     });
+    if (trig) {
+      // カードのプレイ中に発動したデバフのダメージ (感染爆発の毒等。spec combat-stats.md §3.3):
+      // 使った人の与ダメージはその人の取り分 (スタック比) のまま、カード別の表ではそのカードの行に全量を出す
+      const payload: DamageDealtPayload = { ...p, card_amount: p.amount ?? 0 };
+      fields.forEach((f, fi) => {
+        (payload as any)[f] = appliers.reduce((sum, a, i) => sum + (a.player_id === trig.player_id ? (parts[fi][i]?.share ?? 0) : 0), 0);
+      });
+      out.push(withOrigin({ ...ev, player_id: trig.player_id, event_uuid: `${ev.event_uuid}#t`, payload },
+        { id: trig.id, name: trig.name, type: trig.type, kind: 'card' }));
+    }
   }
   return out;
+}
+
+/**
+ * パワーによるダメージ・ブロックを、そのパワーを付けた持ち物 (カード・レリック・ポーション等) の行に付け替える
+ * (spec combat-stats.md §3.3)。分からなければそのまま (パワー名の行)。
+ */
+/**
+ * カード別の表の行にする持ち物: カードの効果が直接発動させたもの (オーブの解放等) はそのカード (使った人の event のとき)、
+ * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md §3.3)。
+ */
+function rowOrigin(ev: EventRecord): Origin | null | undefined {
+  const p = ev.payload as { triggered_by?: DamageDealtPayload['triggered_by']; source_origin?: Origin | null } | undefined;
+  const t = p?.triggered_by;
+  if (t && t.player_id === ev.player_id) return { id: t.id, name: t.name, type: t.type, kind: 'card' };
+  return p?.source_origin;
+}
+
+function withOrigin(ev: EventRecord, origin: Origin | null | undefined): EventRecord {
+  if (!origin) return ev;
+  return { ...ev, payload: { ...(ev.payload as object), source_card_id: origin.id, source_card_name: origin.name, source_card_type: origin.type } };
 }
 
 /**
@@ -84,7 +118,7 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
  * 無い旧データ (2026-10-02 以前の mod) の毒・Doom は、記録済みのパワー一覧 (active_on_target) の内訳を使う
  * (rdps.ts の旧データ用の按分と同じ)。
  */
-export function sharedAppliers(p: DamageDealtPayload | undefined): { player_id: string; stacks: number }[] | null {
+export function sharedAppliers(p: DamageDealtPayload | undefined): { player_id: string; stacks: number; origin?: Origin | null }[] | null {
   if (!p) return null;
   if (p.source_appliers && p.source_appliers.length > 0) return p.source_appliers;
   const powerId = p.source_card_id === 'POISON_POWER' ? 'POISON_POWER'
@@ -314,7 +348,7 @@ function buildTurnsForCombat(
 
       if (ev.event_type === 'damage_dealt' && pid) {
         const p = ev.payload as DamageDealtPayload;
-        const hpLost = p.amount ?? 0;          // mod 保証で amount = HP loss
+        const hpLost = p.card_amount ?? p.amount ?? 0;   // カードの行の値 (mod 保証で amount = HP loss)
         const sid = p.source_card_id ?? '(unknown)';
         // カード以外 (毒・オーブ・レリック等) は 1 hit = 1 play 扱い (source_kind、api.md「出どころ」)
         const isSynthetic = (p.source_kind != null && p.source_kind !== 'card') || sid === '(unknown)';
@@ -422,10 +456,11 @@ function applyEvent(
       cum.overkill_damage  += overkill;
       // max_single_hit は呼び出し元ループで「カード1プレイあたり」に集計するためここでは触らない
       if (p.source_card_id) {
+        const cardAmt = p.card_amount ?? hpLost;   // カードの行の値 (発動させたカードは全量。splitSharedDamage)
         const tCard = upsertCard(turn.cards, p.source_card_id, p.source_card_name ?? p.source_card_id, p.source_card_type ?? '');
-        tCard.damage_dealt += hpLost;
+        tCard.damage_dealt += cardAmt;
         const cCard = upsertCard(cum.card_stats, p.source_card_id, p.source_card_name ?? p.source_card_id, p.source_card_type ?? '');
-        cCard.damage_dealt += hpLost;
+        cCard.damage_dealt += cardAmt;
       }
       break;
     }

@@ -21,6 +21,8 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchase`。**購入処理は買った人の手元でしか動かない** (ホストには `RewardSynchronizer` で結果だけ届く) ので、取れるのはホスト自身の購入だけ | `item_purchased` |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` の Postfix (最初の 1 回だけ)。放棄は `RunManager.IsAbandoned` | `run_end` |
 | ラン終了直前の HP | `RunManager.WinRun()` / `RunManager.Abandon()` の Prefix (この後ゲームが全員を倒すため) | `run_end.final_hp` |
+| デッキ・レリック・ポーション | 階の確定・途中経過の送信時に `Player.Deck.Cards` / `Player.Relics` / `Player.Potions` | `floor_snapshot.players[].deck` / `relics` / `potions` |
+| バッジ | `RunManager.OnEnded` の Postfix で、戻り値の `SerializableRun` に対して `ScoreUtility.GetBadges(run, playerId, isVictory)`。名前は翻訳 `badges` の `{ID}.{bronze\|silver\|gold}Title` (無ければ `{ID}.title`) | `run_end.badges` |
 
 ### 1.2 戦闘
 
@@ -31,7 +33,9 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 戦闘敗北 | 戦闘中の `RunManager.OnEnded` | `combat_end` (`victory: false`) |
 | ターン区切り | `Hook.AfterSideTurnEnd(side=Player)` | (送信の区切り。`turn_number` を進める) |
 | 与ダメ・被ダメ | `Hook.AfterDamageGiven` 1 か所。受けた側が敵なら与ダメ、プレイヤーなら被ダメ (致死の一撃も呼ばれる) | `damage_dealt` / `damage_received` |
-| ダメージ補正の内訳 | `Hook.ModifyDamage` の Postfix (直後の `AfterDamageGiven` で消費) | `damage_dealt.modifications` |
+| ダメージ補正の内訳 (補正 1 つずつ) | `Hook.ModifyDamage` の Postfix で、返された「値を変えたモデル」に同じ引数で補正計算をもう一度させる。**`CreatureCmd.Damage` の実行中だけ記録する** (攻撃予告 `AttackIntent`・カード表示 `DamageVar` も同じ Hook を呼ぶため)。`AfterDamageGiven` で、その処理の中で同じ対象・攻撃者について最初に記録されたものを使う | `damage_dealt.modifications` / `damage_received.modifications` |
+| HP 減少補正の内訳 (バッファー・霊体等) | `Hook.ModifyHpLost` の Postfix (同上) | `damage_received.modifications` (`hp_lost`) |
+| 誰のブロックが残っているか | `Hook.AfterBlockGained` で付けた人ごとに積み、被弾時に防いだ量を残量の比で消費、`Hook.AfterBlockCleared` で消す | `damage_received.block_sources` |
 | Doom による撃破 | Doom 実行中 (§1.3) の `Hook.AfterCurrentHpChanged` で敵の HP が減ったとき | `damage_dealt` (`is_doom_kill: true`) |
 | ブロック | `Hook.AfterBlockGained` | `block_gained` |
 | カード使用 | `Hook.AfterCardPlayed` | `card_played` |
@@ -85,6 +89,8 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | デバフ付与 | `power_changed` |
 | 戦闘の勝敗 | `combat_end.victory` |
 | 相手に付けたデバフによるダメージの按分 (与ダメ・カード別・rDPS) | `damage_dealt.source_appliers` |
+| パワーによるダメージ・ブロックのカード別の行 | 付与時の `Hook.AfterPowerAmountChanged` の `cardSource` (無ければ実行中のレリック・ポーション等、パワーならそのパワーを付けた持ち物) を `PowerOriginRegistry` に「誰が・何で」の内訳として記録 → `source_appliers[].origin` / `source_origin` |
+| カードの効果が直接発動させた、カード以外のもののダメージ・ブロック (感染爆発の毒、オーブの解放・自動効果、終末の日の破滅等) | `CardModel.OnPlayWrapper` の Prefix / Postfix で「プレイ中のカード」を AsyncLocal に持つ (この中では実行中モデルの記録を空から始める)。SourceContext は Hook の上書き (`AbstractModel` で宣言されたメソッドの上書き) を「反応」として印を付け、プレイ中で反応の中でなく、`OrbCmd.Channel` (生成。枠があふれると解放する) の中でもなければ `triggered_by` を付ける |
 
 ---
 

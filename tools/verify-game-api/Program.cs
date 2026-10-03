@@ -75,7 +75,7 @@ foreach (Match m in rx.Matches(File.ReadAllText(modEntry)))
     if (target == null) { Fail($"{label}: 型 {targetName} が見つからない (または同名が複数)"); continue; }
     var candidates = MethodsInHierarchy(target, method);
     if (argTypes.Count > 0)
-        candidates = candidates.Where(c => c.GetParameters().Select(p => p.ParameterType.Name).SequenceEqual(argTypes.Select(a => CsName(a.Split('.').Last())))).ToList();
+        candidates = candidates.Where(c => c.GetParameters().Select(p => p.ParameterType.Name.Split('`')[0]).SequenceEqual(argTypes.Select(a => CsName(a.Split('<')[0].Split('.').Last())))).ToList();
     if (candidates.Count == 0) { Fail($"{label}: メソッドが見つからない"); continue; }
     if (candidates.Count > 1) { Fail($"{label}: 同名のメソッドが {candidates.Count} 個 (引数の型を指定すること)"); continue; }
     var original = candidates[0];
@@ -158,10 +158,25 @@ try
                          .Select(x => $"{x.DeclaringType!.Name}.{x.Name}{(x.IsStatic ? "(static)" : "")}").OrderBy(x => x).ToList();
     Console.WriteLine($"  選ばれたメソッド {selected.Count} 個、うち Hook の上書きではないもの {direct.Count} 個: {string.Join(", ", direct)}");
     // 必ず入っていてほしいもの (これが外れたら、毒・Doom 等の帰属が壊れる)
-    foreach (var must in new[] { "PoisonPower.Trigger", "PoisonPower.AfterSideTurnStart", "DoomPower.DoomKill", "LightningOrb.Evoke", "ThornsPower.BeforeDamageReceived" })
+    foreach (var must in new[] { "PoisonPower.Trigger", "PoisonPower.AfterSideTurnStart", "DoomPower.DoomKill", "LightningOrb.Evoke", "ThornsPower.BeforeDamageReceived",
+        // カードを渡さずに毒を付ける処理 (付けた持ち物を実行中のモデルから求める。api.md「origin」)
+        "PoisonPotion.OnUse", "NoxiousFumesPower.AfterSideTurnStart", "EnvenomPower.AfterDamageGiven", "CorrosiveWavePower.AfterCardDrawn", "ConcoctPower.AfterDamageGiven", "TwistedFunnel.BeforeSideTurnStart",
+        "PlatingPower.BeforeSideTurnEndEarly" })
     {
         if (selected.Any(x => $"{x.DeclaringType!.Name}.{x.Name}" == must)) Ok($"選ばれている: {must}");
         else Fail($"選ばれていない: {must} (ゲーム側の実装が変わった可能性。デコンパイルで確認すること)");
+    }
+    // 「ゲームのイベントへの反応」か「カードの効果が直接発動させる処理」かの判定 (api.md「triggered_by」)
+    var isHook = liveMod.GetType("StsStats.SourceContext")!.GetMethod("IsHook", BindingFlags.Static | BindingFlags.NonPublic)!;
+    foreach (var (name, expectHook) in new[] {
+        ("PoisonPower.AfterSideTurnStart", true), ("ThornsPower.BeforeDamageReceived", true), ("NoxiousFumesPower.AfterSideTurnStart", true),
+        ("PoisonPower.Trigger", false), ("LightningOrb.Evoke", false), ("LightningOrb.Passive", false), ("DoomPower.DoomKill", false) })
+    {
+        var m = selected.FirstOrDefault(x => $"{x.DeclaringType!.Name}.{x.Name}" == name);
+        if (m == null) { Fail($"見つからない: {name}"); continue; }
+        bool got = (bool)isHook.Invoke(null, new object[] { m })!;
+        if (got == expectHook) Ok($"{name} は{(expectHook ? "イベントへの反応" : "直接発動させる処理")}");
+        else Fail($"{name} の判定が逆 ({(got ? "反応" : "直接")} と判定)");
     }
 }
 catch (Exception ex) { Fail($"SourceContext.SelectTargets を実行できなかった: {ex.GetBaseException().Message}"); }

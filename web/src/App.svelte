@@ -3,6 +3,8 @@
   import { fetchSession } from './lib/api';
   import { mockSession } from './lib/mock';
   import SessionView from './components/SessionView.svelte';
+  import Skeleton from './components/ui/Skeleton.svelte';
+  import { route } from './lib/router.svelte';
 
   let doc = $state<SessionDoc | null>(null);
   let etag: string | null = null;       // $state にしない（読み書き両方するため）
@@ -10,15 +12,8 @@
   let lastUpdated = $state<Date | null>(null);
   let error = $state<string | null>(null);
 
-  function parsePath(): { id: string; isDemo: boolean } {
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('demo')) return { id: 'demo', isDemo: true };
-    const m = url.pathname.match(/^\/s\/([^/]+)$/);
-    if (m) return { id: m[1], isDemo: false };
-    return { id: 'demo', isDemo: true };
-  }
-
-  const { id, isDemo } = parsePath();
+  const id = route.sessionId ?? 'demo';
+  const isDemo = route.isDemo;
 
   let iv: ReturnType<typeof setInterval> | null = null;
 
@@ -58,7 +53,10 @@
 {#if doc}
   <SessionView {doc} {live} {lastUpdated} />
 {:else if error}
-  <div class="p-8 text-bad">エラー: {error}</div>
+  <div class="max-w-xl mx-auto mt-16 px-4 text-center">
+    <div class="text-slate-200">セッションを読み込めませんでした</div>
+    <div class="text-xs text-slate-500 mt-1">{error}。URL を確認するか、しばらくしてから再読み込みしてください。</div>
+  </div>
 {:else}
-  <div class="p-8 text-slate-500">読み込み中…</div>
+  <Skeleton />
 {/if}
