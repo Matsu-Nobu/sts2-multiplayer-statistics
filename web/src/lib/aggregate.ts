@@ -63,13 +63,16 @@ export function splitByStacks(amount: number, appliers: { player_id: string; sta
  * 相手に付けたデバフ (毒・Doom 等) によるダメージ (source_appliers あり) を、付与者ごとの event に分ける。
  * 与ダメージ・カード別の表・最大単発の集計用 (spec combat-stats.md §4)。
  */
-export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
+/** オーブの解放・自動効果をカードの行に入れてよいカードか (説明に「解放」か「自動効果」がある。spec combat-stats.md §3.3)。 */
+export type OrbTriggerCheck = (cardId: string) => boolean;
+
+export function splitSharedDamage(events: EventRecord[], orbTrigger?: OrbTriggerCheck): EventRecord[] {
   const out: EventRecord[] = [];
   for (const ev of events) {
     const p = ev.payload as DamageDealtPayload;
-    if (ev.event_type === 'block_gained') { out.push(withOrigin(ev, rowOrigin(ev))); continue; }
+    if (ev.event_type === 'block_gained') { out.push(withOrigin(ev, rowOrigin(ev, orbTrigger))); continue; }
     const appliers = ev.event_type === 'damage_dealt' ? sharedAppliers(p) : null;
-    if (!appliers || appliers.length === 0) { out.push(withOrigin(ev, rowOrigin(ev))); continue; }
+    if (!appliers || appliers.length === 0) { out.push(withOrigin(ev, rowOrigin(ev, orbTrigger))); continue; }
     const fields = ['amount', 'total_damage', 'blocked_damage', 'overkill_damage'] as const;
     const parts = fields.map(f => splitByStacks((p[f] as number | undefined) ?? 0, appliers));
     const trig = p.triggered_by ?? null;
@@ -101,10 +104,12 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
  * カード別の表の行にする持ち物: カードの効果が直接発動させたもの (オーブの解放等) はそのカード (使った人の event のとき)、
  * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md §3.3)。
  */
-function rowOrigin(ev: EventRecord): Origin | null | undefined {
-  const p = ev.payload as { triggered_by?: DamageDealtPayload['triggered_by']; source_origin?: Origin | null } | undefined;
+function rowOrigin(ev: EventRecord, orbTrigger?: OrbTriggerCheck): Origin | null | undefined {
+  const p = ev.payload as { triggered_by?: DamageDealtPayload['triggered_by']; source_origin?: Origin | null; source_kind?: string } | undefined;
   const t = p?.triggered_by;
-  if (t && t.player_id === ev.player_id) return { id: t.id, name: t.name, type: t.type, kind: 'card' };
+  // オーブの解放・自動効果は、カードの説明に書かれているときだけカードの行に (生成で押し出された解放はオーブの行)
+  const orbNotWritten = p?.source_kind === 'orb' && t && orbTrigger && !orbTrigger(t.id);
+  if (t && t.player_id === ev.player_id && !orbNotWritten) return { id: t.id, name: t.name, type: t.type, kind: 'card' };
   return p?.source_origin;
 }
 
@@ -129,8 +134,8 @@ export function sharedAppliers(p: DamageDealtPayload | undefined): { player_id: 
   return ap.length > 0 ? ap : null;
 }
 
-export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {
-  const events = splitSharedDamage(latestCombatEvents(doc.events));
+export function buildCombatInfos(doc: SessionDoc, orbTrigger?: OrbTriggerCheck): CombatInfo[] {
+  const events = splitSharedDamage(latestCombatEvents(doc.events), orbTrigger);
   // 1. combat_start / combat_end からメタ情報を集める
   const startByIdx = new Map<number, CombatStartPayload>();
   const endByIdx   = new Map<number, CombatEndPayload>();
