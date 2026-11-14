@@ -144,7 +144,7 @@ WasFullyBlocked / Receiver` がそのまま入っている。HP の前後比較�
 | 画面 | データ | v2 の正規ソース | 送る event |
 |---|---|---|---|
 | ラン全体 | 階ごとの全項目 (入手・除去・強化・エンチャント・変化・選択・購入・HP・ゴールド) | 階の記録 (`MapPointHistoryEntry`) | `floor_snapshot` |
-| ラン全体 | ショップで買った品の **値段** | `Merchant*Entry.OnTryPurchase` (階の記録に値段が無いため残す) | `item_purchased` |
+| ラン全体 | ショップで買った品の **値段** | `Merchant*Entry.OnTryPurchaseInternal` (階の記録に値段が無いため残す) | `item_purchased` |
 | ヘッダー | ラン結果 (勝利 / 死亡 / 放棄)・最終階 | `RunManager.OnEnded` + `IsAbandoned` | `run_end` |
 | ヘッダー | キャラ・アセンション・シード・参加者 | ラン開始時の `RunState` | `run_start` |
 | 戦闘統計 | 戦闘の開始・勝敗 | `BeforeCombatStart` / `AfterCombatEnd` (=勝利) / `OnEnded`・全滅 (=敗北) | `combat_start` / `combat_end` |

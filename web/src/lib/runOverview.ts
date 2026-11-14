@@ -19,7 +19,7 @@ export interface ShopPurchase {
   name: string;
   rarity?: string;
   is_upgraded?: boolean;
-  gold_spent?: number;          // ホスト自身の購入だけ分かる (item_purchased)
+  gold_spent?: number;          // 同じ品物の item_purchased があるときだけ分かる
 }
 
 export interface FloorSummary {
@@ -135,7 +135,7 @@ export function buildFloorSummaries(events: EventRecord[], playerId: string): Fl
     const pickedPotions = me.potion_choices.filter(p => p.was_picked);
 
     if (sum.room_type === 'Shop') {
-      // ショップの階で入手したものは全部購入品 (spec §3.5)。値段はホスト自身の購入だけ分かる
+      // ショップの階で入手したものは全部購入品 (spec §3.5)。値段は同じ品物の item_purchased があるときだけ分かる
       const priced = (purchasesByFloor.get(f) ?? []).slice();
       const takePrice = (key: 'card_id' | 'relic_id' | 'potion_id', id: string): number | undefined => {
         const i = priced.findIndex(p => p[key] === id);

@@ -175,7 +175,7 @@ interface FloorSummary {
   cards_transformed: { from: Card, to: Card }[]
   cards_removed:     { card_id, card_name? }[]
   rest_options:      string[]
-  shop_purchases:    { kind: 'card' | 'relic' | 'potion', id, name, rarity?, is_upgraded?, gold_spent? }[]  // gold_spent はホスト自身の購入のみ
+  shop_purchases:    { kind: 'card' | 'relic' | 'potion', id, name, rarity?, is_upgraded?, gold_spent? }[]  // gold_spent は同じ品物の item_purchased があるときだけ
   event_choices:     { title }[]
   card_choices:      { picked_card_id, choices: { card_id, card_name, card_rarity?, is_upgraded?, was_picked }[] }[]  // 0 か 1 件
 }
@@ -202,8 +202,8 @@ interface FloorSummary {
   は **すべて購入品** として「ショップ購入」欄に出し、「入手」欄には出さない (CLAUDE.md §6「ショップで買ったカードが二重表示されない」)。
   カードの除去サービスは「デッキ改造 / 除去」に出る。
 - 値段: その階に同じ品物の `item_purchased` (同じプレイヤー) があれば `NNNG` を付ける。
-  `item_purchased` が取れるのはホスト自身の購入だけ (ゲームの購入処理は買った人の手元でしか動かず、
-  ホストには結果だけが同期されるため)。マルチプレイの相手の購入品は値段なしで出す。
+  ゲームの購入処理は全員の PC で実行されるので (v0.113.0)、マルチプレイの相手の購入品にも値段が付く。
+  同じ品物の `item_purchased` が無い購入品は値段なしで出す。
 
 ---
 

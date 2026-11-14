@@ -66,7 +66,7 @@ STS2 のマルチプレイは決定論的ロックステップ方式で、全ク
 | 何 | どこから | event |
 |---|---|---|
 | ラン全体の各階の内容 | ゲーム自身の階ごとの記録 (`MapPointHistoryEntry`)。確定点 `RunManager.UpdatePlayerStatsInMapPointHistory` | `floor_snapshot` |
-| ショップの値段 | `Merchant*Entry.OnTryPurchase` | `item_purchased` |
+| ショップの値段 | `Merchant*Entry.OnTryPurchaseInternal` | `item_purchased` |
 | ラン開始 / 終了 | 最初の部屋 (`AfterRoomEntered`) / `RunManager.OnEnded` (+ `IsAbandoned`、直前の HP は `WinRun` / `Abandon` の Prefix) | `run_start` / `run_end` |
 | 戦闘開始 / 勝利 / 敗北 | `BeforeCombatStart` / `AfterCombatEnd` (勝利でしか呼ばれない) / 戦闘中の `OnEnded` | `combat_start` / `combat_end` |
 | ターン区切り | `AfterSideTurnEnd(side=Player)` | (送信の区切り) |

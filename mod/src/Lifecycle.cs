@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Save;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -196,7 +197,7 @@ internal static class Lifecycle
     /// 勝利後の「全員を倒す」処理で 2 回目が来るので、最初の 1 回だけ使う。
     /// この時点で最終階の floor_snapshot は送信済み (OnEnded 冒頭の UpdatePlayerStatsInMapPointHistory)。
     /// </summary>
-    public static void OnEndedPostfix(bool isVictory, SerializableRun __result)
+    public static void OnEndedPostfix(bool isVictory, PostRunProgressUpdateResult __result)
     {
         try
         {
@@ -217,7 +218,7 @@ internal static class Lifecycle
                 outcome     = outcome,
                 final_floor = Run.TotalFloor,
                 final_hp    = finalHp,
-                badges      = Badges(__result, isVictory),
+                badges      = Badges(__result.run, isVictory),
             });
             EventBuffer.FlushOutgoing();
             Log.Info($"[StsStats] run_end outcome={outcome} floor={Run.TotalFloor}");

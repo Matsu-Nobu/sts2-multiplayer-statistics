@@ -56,13 +56,13 @@ public static class ModEntry
         P(typeof(Hook),       "AfterRewardTaken",   typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteHeal",  typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteSmith", typeof(FloorRecorder), null, "AfterRunActionPostfix");
-        P(typeof(MerchantCardEntry),        "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
-        P(typeof(MerchantPotionEntry),      "OnTryPurchase", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
-        P(typeof(MerchantRelicEntry),       "OnTryPurchase", typeof(FloorRecorder), null, "MerchantRelicPurchasePostfix");
-        P(typeof(MerchantCardRemovalEntry), "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardRemovalPurchasePostfix", typeof(MerchantInventory), typeof(bool));
+        P(typeof(MerchantCardEntry),        "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
+        P(typeof(MerchantPotionEntry),      "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
+        P(typeof(MerchantRelicEntry),       "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantRelicPurchasePostfix");
+        P(typeof(MerchantCardRemovalEntry), "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantCardRemovalPurchasePostfix", typeof(MerchantInventory), typeof(bool));
 
         // 戦闘
-        P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<Creature>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay));
+        P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<DamageTargetData>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay), typeof(ModifyDamageHookType));
         P(typeof(CardModel), "OnPlayWrapper",      typeof(CardPlayScope), "Prefix", "Postfix", typeof(PlayerChoiceContext), typeof(Creature), typeof(bool), typeof(ResourceInfo), typeof(bool));
         P(typeof(OrbCmd), "Channel",               typeof(SourceContext), "ChannelPrefix", "ChannelPostfix", typeof(PlayerChoiceContext), typeof(OrbModel), typeof(Player));
         P(typeof(Hook), "ModifyDamage",            typeof(CombatRecorder), null, "ModifyDamagePostfix");

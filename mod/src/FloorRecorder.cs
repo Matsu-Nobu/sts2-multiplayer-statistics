@@ -120,7 +120,7 @@ internal static class FloorRecorder
     };
 
     // === ショップの値段 ===========================================================
-    // 購入処理 (OnTryPurchase) は買った人の手元でしか動かないので、取れるのはホスト自身の購入だけ。
+    // 購入処理 (OnTryPurchaseInternal) は全員の PC で実行されるので、全プレイヤーの購入が取れる。
     // 品物そのものは階の記録 (cards_gained 等) に全員分入る。
 
     /// <summary>MerchantEntry._player (protected readonly)。起動時に存在を確認する (ModEntry.RequiredMembers)。</summary>
@@ -179,6 +179,6 @@ internal static class FloorRecorder
             EventBuffer.EmitGlobalEvent("item_purchased", player != null ? Identity.Of(player) : null, payload);
             if (Lifecycle.Run != null) EmitLive(Lifecycle.Run);
         }
-        catch (Exception ex) { Log.Error($"[StsStats] {kind}.OnTryPurchase postfix error: {ex.Message}"); }
+        catch (Exception ex) { Log.Error($"[StsStats] {kind}.OnTryPurchaseInternal postfix error: {ex.Message}"); }
     }
 }

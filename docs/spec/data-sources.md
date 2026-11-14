@@ -18,11 +18,11 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 各階の内容 (入手・除去・強化・ダウングレード・エンチャント・変化・選択・購入品・HP・ゴールド・被ダメ・部屋・ターン数) | ゲーム自身の階ごとの記録 `RunState.CurrentMapPointHistoryEntry` (`MapPointHistoryEntry` / `PlayerMapPointHistoryEntry`) | `floor_snapshot` |
 | 階の確定 | `RunManager.UpdatePlayerStatsInMapPointHistory()` (private、同期) の Postfix。次の階に入る直前とラン終了時に呼ばれる | `floor_snapshot` (`is_final: true`) |
 | 階の途中経過 (ライブ表示) | 送信の区切り (ターン終了・戦闘終了・報酬取得・ショップ購入・休憩所・イベント選択) | `floor_snapshot` (`is_final: false`) |
-| ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchase`。**購入処理は買った人の手元でしか動かない** (ホストには `RewardSynchronizer` で結果だけ届く) ので、取れるのはホスト自身の購入だけ | `item_purchased` |
+| ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchaseInternal(MerchantInventory, bool)` の Postfix (v0.113.0 で確認。それより前の名前は `OnTryPurchase`)。v0.113.0 では **購入処理が全員の PC で実行される** (`MerchantSynchronizer.PurchaseLocalEntry` が購入を全員に送信し、受け取った PC も `MerchantEntry.OnTryPurchaseUnsynchronized` を実行する) ので、全プレイヤーの購入が取れる | `item_purchased` |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` の Postfix (最初の 1 回だけ)。放棄は `RunManager.IsAbandoned` | `run_end` |
 | ラン終了直前の HP | `RunManager.WinRun()` / `RunManager.Abandon()` の Prefix (この後ゲームが全員を倒すため) | `run_end.final_hp` |
 | デッキ・レリック・ポーション | 階の確定・途中経過の送信時に `Player.Deck.Cards` / `Player.Relics` / `Player.Potions` | `floor_snapshot.players[].deck` / `relics` / `potions` |
-| バッジ | `RunManager.OnEnded` の Postfix で、戻り値の `SerializableRun` に対して `ScoreUtility.GetBadges(run, playerId, isVictory)`。名前は翻訳 `badges` の `{ID}.{bronze\|silver\|gold}Title` (無ければ `{ID}.title`) | `run_end.badges` |
+| バッジ | `RunManager.OnEnded` の Postfix で、戻り値 `PostRunProgressUpdateResult` の `run` (`SerializableRun`。v0.113.0 で確認) に対して `ScoreUtility.GetBadges(run, playerId, isVictory)`。名前は翻訳 `badges` の `{ID}.{bronze\|silver\|gold}Title` (無ければ `{ID}.title`) | `run_end.badges` |
 
 ### 1.2 戦闘
 
@@ -33,7 +33,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 戦闘敗北 | 戦闘中の `RunManager.OnEnded` | `combat_end` (`victory: false`) |
 | ターン区切り | `Hook.AfterSideTurnEnd(side=Player)` | (送信の区切り。`turn_number` を進める) |
 | 与ダメ・被ダメ | `Hook.AfterDamageGiven` 1 か所。受けた側が敵なら与ダメ、プレイヤーなら被ダメ (致死の一撃も呼ばれる) | `damage_dealt` / `damage_received` |
-| ダメージ補正の内訳 (補正 1 つずつ) | `Hook.ModifyDamage` の Postfix で、返された「値を変えたモデル」に同じ引数で補正計算をもう一度させる。**`CreatureCmd.Damage` の実行中だけ記録する** (攻撃予告 `AttackIntent`・カード表示 `DamageVar` も同じ Hook を呼ぶため)。`AfterDamageGiven` で、その処理の中で同じ対象・攻撃者について最初に記録されたものを使う | `damage_dealt.modifications` / `damage_received.modifications` |
+| ダメージ補正の内訳 (補正 1 つずつ) | `Hook.ModifyDamage` の Postfix で、返された「値を変えたモデル」に同じ引数で補正計算をもう一度させる。**`CreatureCmd.Damage` の実行中だけ記録する**。実行中かどうかは、`Damage` のすべての多重定義が最後に呼ぶ `Damage(PlayerChoiceContext, IEnumerable<DamageTargetData>, decimal, ValueProp, Creature, CardModel, CardPlay, ModifyDamageHookType)` (v0.113.0 で確認) の Prefix / Postfix で区切る (攻撃予告 `AttackIntent`・カード表示 `DamageVar` も同じ Hook を呼ぶため)。`AfterDamageGiven` で、その処理の中で同じ対象・攻撃者について最初に記録されたものを使う | `damage_dealt.modifications` / `damage_received.modifications` |
 | HP 減少補正の内訳 (バッファー・霊体等) | `Hook.ModifyHpLost` の Postfix (同上) | `damage_received.modifications` (`hp_lost`) |
 | 誰のブロックが残っているか | `Hook.AfterBlockGained` で付けた人ごとに積み、被弾時に防いだ量を残量の比で消費、`Hook.AfterBlockCleared` で消す | `damage_received.block_sources` |
 | Doom による撃破 | Doom 実行中 (§1.3) の `Hook.AfterCurrentHpChanged` で敵の HP が減ったとき | `damage_dealt` (`is_doom_kill: true`) |
@@ -70,7 +70,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | デッキ改造 / エンチャント | `cards_enchanted` |
 | デッキ改造 / 変化 | `cards_transformed` |
 | デッキ改造 / 除去 | `cards_removed` |
-| ショップ購入 | ショップの階で入手したもの (`cards_gained` / 選んだ `relic_choices` / 選んだ `potion_choices`)。値段は同じ階・同じ品物の `item_purchased` (ホスト自身の購入のみ取れる) |
+| ショップ購入 | ショップの階で入手したもの (`cards_gained` / 選んだ `relic_choices` / 選んだ `potion_choices`)。値段は同じ階・同じ品物・同じプレイヤーの `item_purchased` |
 | 選択 / 休憩所 | `rest_site_choices` |
 | 選択 / イベント | `ancient_choices` (選んだもの) と `event_choices` |
 | 選択 / カード選択肢 | `card_choices` (ショップの階では出さない) |

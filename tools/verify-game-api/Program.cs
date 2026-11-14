@@ -47,6 +47,20 @@ string CsName(string n) => n switch
     "decimal" => "Decimal", "float" => "Single", "double" => "Double", "object" => "Object", _ => n,
 };
 
+// 引数の型を、名前空間を除いた名前とジェネリック引数で表す。
+// ジェネリック引数まで比べないと、IEnumerable<Creature> と IEnumerable<DamageTargetData> の多重定義を区別できない。
+string TypeSig(Type t) => t.IsGenericType
+    ? $"{t.Name.Split('`')[0]}<{string.Join(",", t.GetGenericArguments().Select(TypeSig))}>"
+    : t.Name;
+
+string TableSig(string a)
+{
+    int lt = a.IndexOf('<');
+    if (lt < 0) return CsName(a.Split('.').Last());
+    var inner = a[(lt + 1)..a.LastIndexOf('>')];
+    return $"{a[..lt].Split('.').Last()}<{TableSig(inner)}>";
+}
+
 Type Elem(Type t) => t.IsByRef ? t.GetElementType()! : t;
 
 bool Compatible(Type patchParam, Type original)
@@ -75,7 +89,7 @@ foreach (Match m in rx.Matches(File.ReadAllText(modEntry)))
     if (target == null) { Fail($"{label}: 型 {targetName} が見つからない (または同名が複数)"); continue; }
     var candidates = MethodsInHierarchy(target, method);
     if (argTypes.Count > 0)
-        candidates = candidates.Where(c => c.GetParameters().Select(p => p.ParameterType.Name.Split('`')[0]).SequenceEqual(argTypes.Select(a => CsName(a.Split('<')[0].Split('.').Last())))).ToList();
+        candidates = candidates.Where(c => c.GetParameters().Select(p => TypeSig(p.ParameterType)).SequenceEqual(argTypes.Select(TableSig))).ToList();
     if (candidates.Count == 0) { Fail($"{label}: メソッドが見つからない"); continue; }
     if (candidates.Count > 1) { Fail($"{label}: 同名のメソッドが {candidates.Count} 個 (引数の型を指定すること)"); continue; }
     var original = candidates[0];
