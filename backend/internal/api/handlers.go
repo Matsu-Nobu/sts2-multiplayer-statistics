@@ -132,13 +132,14 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 				PlayerName    string  `json:"player_name"`
 				CharacterID   *string `json:"character_id"`
 				CharacterName *string `json:"character_name"`
+				GameMode      *string `json:"game_mode"`
 			}
 			if json.Unmarshal(payload, &rs) == nil {
 				if rs.PlayerName != "" {
 					_ = s.Store.UpsertPlayer(r.Context(), *ev.PlayerID, rs.PlayerName)
 				}
 				// ランの参加者 (ユーザーページの一覧に使う。docs/spec/user-pages.md)
-				if err := s.Store.UpsertSessionPlayer(r.Context(), id, *ev.PlayerID, rs.CharacterID, rs.CharacterName); err != nil {
+				if err := s.Store.UpsertSessionPlayer(r.Context(), id, *ev.PlayerID, rs.CharacterID, rs.CharacterName, rs.GameMode); err != nil {
 					writeError(w, http.StatusInternalServerError, "failed to store participant")
 					return
 				}

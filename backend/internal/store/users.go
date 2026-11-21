@@ -10,14 +10,15 @@ import (
 var ErrNotAllowed = errors.New("not allowed")
 
 // UpsertSessionPlayer はランの参加者を記録する (run_start を受けたとき)。キャラクターは後から来た値で上書きする。
-func (s *Store) UpsertSessionPlayer(ctx context.Context, sessionID, steamID string, characterID, characterName *string) error {
+func (s *Store) UpsertSessionPlayer(ctx context.Context, sessionID, steamID string, characterID, characterName, gameMode *string) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO session_players (session_id, steam_id, character_id, character_name)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO session_players (session_id, steam_id, character_id, character_name, game_mode)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(session_id, steam_id) DO UPDATE SET
 			character_id = COALESCE(excluded.character_id, character_id),
-			character_name = COALESCE(excluded.character_name, character_name)
-	`, sessionID, steamID, characterID, characterName)
+			character_name = COALESCE(excluded.character_name, character_name),
+			game_mode = COALESCE(excluded.game_mode, game_mode)
+	`, sessionID, steamID, characterID, characterName, gameMode)
 	return err
 }
 
@@ -61,6 +62,7 @@ type UserRun struct {
 	CreatedAt     string   `json:"created_at"`
 	CharacterID   *string  `json:"character_id"`
 	CharacterName *string  `json:"character_name"`
+	GameMode      *string  `json:"game_mode"` // Standard / Blitz / Daily / Dread
 	Ascension     *int     `json:"ascension"`
 	Outcome       *string  `json:"outcome"`
 	FinalFloor    *int     `json:"final_floor"`
@@ -74,7 +76,7 @@ type UserRun struct {
 // onlyListed なら、公開で、かつ本人がページに載せているランだけを返す (本人以外が見るとき)。
 func (s *Store) ListUserRuns(ctx context.Context, steamID string, onlyListed bool) ([]UserRun, error) {
 	q := `
-		SELECT s.id, s.created_at, sp.character_id, sp.character_name, s.ascension, s.outcome, s.final_floor,
+		SELECT s.id, s.created_at, sp.character_id, sp.character_name, sp.game_mode, s.ascension, s.outcome, s.final_floor,
 		       s.visibility, sp.hidden, COALESCE(s.host_steam_id, '') = sp.steam_id
 		FROM session_players sp
 		JOIN sessions s ON s.id = sp.session_id
@@ -93,7 +95,7 @@ func (s *Store) ListUserRuns(ctx context.Context, steamID string, onlyListed boo
 		var r UserRun
 		var hidden int
 		var recorder bool
-		if err := rows.Scan(&r.SessionID, &r.CreatedAt, &r.CharacterID, &r.CharacterName, &r.Ascension,
+		if err := rows.Scan(&r.SessionID, &r.CreatedAt, &r.CharacterID, &r.CharacterName, &r.GameMode, &r.Ascension,
 			&r.Outcome, &r.FinalFloor, &r.Visibility, &hidden, &recorder); err != nil {
 			return nil, err
 		}

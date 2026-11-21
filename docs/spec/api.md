@@ -393,7 +393,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
   "is_me": true,
   "runs": [{
     "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
-    "character_id": "FOOL", "character_name": "フール", "ascension": 3,
+    "character_id": "FOOL", "character_name": "フール", "game_mode": "Blitz", "ascension": 3,
     "outcome": "victory", "final_floor": 48,
     "visibility": "public", "hidden": false, "is_recorder": true,
     "participants": [{ "steam_id": "765...", "display_name": "Nobu" }]
@@ -401,7 +401,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 }
 ```
 
-`character_*` はそのユーザーのキャラクター (`run_start` から)。`is_recorder` はそのユーザーが記録した人か。
+`character_*` はそのユーザーのキャラクター、`game_mode` はゲームモード (`Standard` / `Blitz` / `Daily` / `Dread`)。どちらも `run_start` から。`is_recorder` はそのユーザーが記録した人か。
 
 ### `GET /api/sessions/{id}/me`
 

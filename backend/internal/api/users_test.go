@@ -61,7 +61,7 @@ func seedRun(t *testing.T, srv *Server) string {
 	runStart := func(uuid, pid, name, char string) map[string]any {
 		return map[string]any{
 			"event_uuid": uuid, "event_type": "run_start", "occurred_at": "2026-11-22T00:00:00Z", "player_id": pid, "floor": 0,
-			"payload": map[string]any{"character_id": char, "character_name": char, "player_name": name, "ascension": 3, "seed": "S"},
+			"payload": map[string]any{"character_id": char, "character_name": char, "player_name": name, "ascension": 3, "seed": "S", "game_mode": "Blitz"},
 		}
 	}
 	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, []map[string]any{
@@ -83,6 +83,7 @@ type userPage struct {
 	Runs []struct {
 		SessionID     string `json:"session_id"`
 		CharacterName string `json:"character_name"`
+		GameMode      string `json:"game_mode"`
 		Visibility    string `json:"visibility"`
 		Hidden        bool   `json:"hidden"`
 		IsRecorder    bool   `json:"is_recorder"`
@@ -120,7 +121,7 @@ func TestGetUser_PrivateProfile(t *testing.T) {
 			t.Fatalf("status=%d page=%+v", code, page)
 		}
 		r := page.Runs[0]
-		if r.SessionID != id || r.CharacterName != "REGENT" || r.IsRecorder || len(r.Participants) != 2 {
+		if r.SessionID != id || r.CharacterName != "REGENT" || r.GameMode != "Blitz" || r.IsRecorder || len(r.Participants) != 2 {
 			t.Fatalf("run=%+v", r)
 		}
 	})
