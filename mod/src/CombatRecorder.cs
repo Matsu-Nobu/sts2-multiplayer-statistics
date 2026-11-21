@@ -70,15 +70,14 @@ internal static class CombatRecorder
         Creature?     target,
         CardModel?    cardSource)
     {
-        // 同じ対象・攻撃者の補正記録 (と、受けた側の HP 減少補正) を取り出す。返る前でも必ず取り出して捨てる
-        var receiverForLog = results?.Receiver ?? target;
-        var (modDamage, modHpLost) = ModifierLog.Take(target, dealer, receiverForLog);
         try
         {
             if (combatState == null || results == null) return;
             if (!Lifecycle.InCombat) return;
             var receiver = results.Receiver ?? target;
             if (receiver == null) return;
+            // 補正の記録は、攻撃が本来狙った相手で探す (オスティ等に移ったダメージでも、補正の計算は本来の相手で行われる)
+            var originalTarget = results.OriginalTarget ?? target ?? receiver;
 
             int amount   = results.UnblockedDamage;
             int blocked  = results.BlockedDamage;
@@ -104,6 +103,7 @@ internal static class CombatRecorder
                                 ?? (dealer == null ? SourceContext.CurrentActorPlayerId(receiver) : null);
                 if (dealerId == null) return;   // 敵 → 敵
 
+                var (modDamage, _) = ModifierLog.Take(originalTarget, dealer, receiver);
                 EventBuffer.EmitTurnEvent("damage_dealt", dealerId, new
                 {
                     amount             = amount,
@@ -130,6 +130,7 @@ internal static class CombatRecorder
                 // 受けた側がプレイヤー本人のときだけ被ダメ (ペットの被ダメは持ち主に数えない)
                 if (receiver.Player == null) return;
                 string receiverId = Identity.Of(receiver.Player);
+                var (modDamage, modHpLost) = ModifierLog.Take(originalTarget, dealer, receiver);
                 // 防いだブロックを、付けた人ごとに分ける。ペットが狙われてもブロックは持ち主のもの (CreatureCmd.Damage)
                 var blockOwner = target?.PetOwner?.Creature ?? target ?? receiver;
                 var blockSources = BlockLedger.Consume(blockOwner, blocked, blockOwner.Block, receiverId)

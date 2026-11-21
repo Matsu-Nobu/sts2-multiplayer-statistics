@@ -15,6 +15,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 何 | 正規ソース (v0.111.0 で確認) | event |
 |---|---|---|
 | ラン開始 | 最初に部屋に入ったとき (`Hook.AfterRoomEntered`)、セッション確保と同時に 1 回 | `run_start` (プレイヤー人数分) |
+| 今のラン | ゲームの `RunState` の同一性 (`RunManager.State`)。部屋に入る・戦闘開始・階の確定・購入のどの Hook でも、送る前に今のランを確かめ、前と違うランならセッションを切り替えて、ラン終了の送信済みの目印などランごとの状態を作り直す (再開直後は「部屋に入った」より先に階の確定が走るため) | — |
 | 各階の内容 (入手・除去・強化・ダウングレード・エンチャント・変化・選択・購入品・HP・ゴールド・被ダメ・部屋・ターン数) | ゲーム自身の階ごとの記録 `RunState.CurrentMapPointHistoryEntry` (`MapPointHistoryEntry` / `PlayerMapPointHistoryEntry`) | `floor_snapshot` |
 | 階の確定 | `RunManager.UpdatePlayerStatsInMapPointHistory()` (private、同期) の Postfix。次の階に入る直前とラン終了時に呼ばれる | `floor_snapshot` (`is_final: true`) |
 | 階の途中経過 (ライブ表示) | 送信の区切り (ターン終了・戦闘終了・報酬取得・ショップ購入・休憩所・イベント選択) | `floor_snapshot` (`is_final: false`) |
@@ -33,8 +34,8 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 戦闘敗北 | 戦闘中の `RunManager.OnEnded` | `combat_end` (`victory: false`) |
 | ターン区切り | `Hook.AfterSideTurnEnd(side=Player)` | (送信の区切り。`turn_number` を進める) |
 | 与ダメ・被ダメ | `Hook.AfterDamageGiven` 1 か所。受けた側が敵なら与ダメ、プレイヤーなら被ダメ (致死の一撃も呼ばれる) | `damage_dealt` / `damage_received` |
-| ダメージ補正の内訳 (補正 1 つずつ) | `Hook.ModifyDamage` の Postfix で、返された「値を変えたモデル」に同じ引数で補正計算をもう一度させる。**`CreatureCmd.Damage` の実行中だけ記録する**。実行中かどうかは、`Damage` のすべての多重定義が最後に呼ぶ `Damage(PlayerChoiceContext, IEnumerable<DamageTargetData>, decimal, ValueProp, Creature, CardModel, CardPlay, ModifyDamageHookType)` (v0.113.0 で確認) の Prefix / Postfix で区切る (攻撃予告 `AttackIntent`・カード表示 `DamageVar` も同じ Hook を呼ぶため)。`AfterDamageGiven` で、その処理の中で同じ対象・攻撃者について最初に記録されたものを使う | `damage_dealt.modifications` / `damage_received.modifications` |
-| HP 減少補正の内訳 (バッファー・霊体等) | `Hook.ModifyHpLost` の Postfix (同上) | `damage_received.modifications` (`hp_lost`) |
+| ダメージ補正の内訳 (補正 1 つずつ) | `Hook.ModifyDamage` の Postfix で、返された「値を変えたモデル」に同じ引数で補正計算をもう一度させる。**`CreatureCmd.Damage` の実行中だけ記録する**。実行中かどうかは、`Damage` のすべての多重定義が最後に呼ぶ `Damage(PlayerChoiceContext, IEnumerable<DamageTargetData>, decimal, ValueProp, Creature, CardModel, CardPlay, ModifyDamageHookType)` (v0.113.0 で確認) の Prefix / Postfix で区切る (攻撃予告 `AttackIntent`・カード表示 `DamageVar` も同じ Hook を呼ぶため)。`Damage` は全対象の補正計算を先に済ませてから、対象ごとに `AfterDamageGiven` を呼ぶ。そのため `AfterDamageGiven` では、`DamageResult.OriginalTarget` (攻撃が本来狙った相手) と攻撃者が同じで、まだ使っていない記録を 1 つ使う。記録を使うのは event を送るときだけにする (オスティが受けた分のように送らない結果で、本人の分の記録を使い切らないため) | `damage_dealt.modifications` / `damage_received.modifications` |
+| HP 減少補正の内訳 (バッファー・霊体等) | `Hook.ModifyHpLost` の Postfix (同上)。ダメージ補正の記録の後から次のダメージ補正の記録の前までにある、被ダメを受けたプレイヤーへの記録を使う | `damage_received.modifications` (`hp_lost`) |
 | 誰のブロックが残っているか | `Hook.AfterBlockGained` で付けた人ごとに積み、被弾時に防いだ量を残量の比で消費、`Hook.AfterBlockCleared` で消す | `damage_received.block_sources` |
 | Doom による撃破 | Doom 実行中 (§1.3) の `Hook.AfterCurrentHpChanged` で敵の HP が減ったとき | `damage_dealt` (`is_doom_kill: true`) |
 | ブロック | `Hook.AfterBlockGained` | `block_gained` |

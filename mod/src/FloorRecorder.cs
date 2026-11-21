@@ -47,6 +47,7 @@ internal static class FloorRecorder
         var history = runState.MapPointHistory;
         var entry = runState.CurrentMapPointHistoryEntry;
         if (entry == null || history.Count == 0) return;
+        Lifecycle.Track(runState);
 
         EventBuffer.EmitGlobalEvent("floor_snapshot", null, new
         {
@@ -173,11 +174,13 @@ internal static class FloorRecorder
     {
         try
         {
+            var run = Lifecycle.Run;
+            if (run != null) Lifecycle.Track(run);
             Player? player = PlayerField != null ? PlayerField(entry) : null;
             payload["item_kind"]  = kind;
             payload["gold_spent"] = entry.Cost;
             EventBuffer.EmitGlobalEvent("item_purchased", player != null ? Identity.Of(player) : null, payload);
-            if (Lifecycle.Run != null) EmitLive(Lifecycle.Run);
+            if (run != null) EmitLive(run);
         }
         catch (Exception ex) { Log.Error($"[StsStats] {kind}.OnTryPurchaseInternal postfix error: {ex.Message}"); }
     }
