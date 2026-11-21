@@ -1,5 +1,3 @@
-# 全部無視（ビルド成果物が入る）
+# web のビルド成果物が入る (make app-build / Dockerfile)。.gitignore だけを管理して、go:embed の対象を空にしない
 *
-# ただし以下は git 管理する
 !.gitignore
-!index.html

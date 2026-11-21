@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 読み込み中 (spec ui.md §4.2): 画面の骨格の形。
+  // 読み込み中 (spec ui.md「共通部品」): 画面の骨格の形。
 </script>
 
 <div class="animate-pulse" aria-busy="true" aria-label="読み込み中">

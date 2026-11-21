@@ -1,5 +1,5 @@
 /**
- * ダメージ補正の内訳 (modifications v2) から、補正ごとの寄与を求める (spec combat-stats.md §3.5)。
+ * ダメージ補正の内訳 (modifications v2) から、補正ごとの寄与を求める (spec combat-stats.md「貢献スコア」)。
  * rDPS (rdps.ts) と rMit (rmit.ts) の両方がこれを使う。
  *
  *   足し算 (additive / enchant / cap / other / hp_lost): 記録された増減量そのまま
@@ -22,10 +22,6 @@ export interface ModsV2 {
   base?: number | null;
   final?: number | null;
   steps: ModStep[];
-}
-
-export function isModsV2(m: unknown): m is ModsV2 {
-  return !!m && !Array.isArray(m) && typeof m === 'object' && Array.isArray((m as ModsV2).steps);
 }
 
 export interface StepContribution { step: ModStep; contrib: number }
@@ -90,4 +86,38 @@ export function allocateInt(total: number, weights: Map<string, number>): Map<st
   for (const r of [...rows].sort((a, b) => b.rem - a.rem)) { if (left <= 0) break; r.n++; left--; }
   for (const r of rows) if (r.n > 0) out.set(r.k, r.n);
   return out;
+}
+
+// === 貢献スコアの表 (rDPS / rMit 共通) ===
+
+export interface ContribBreakdown {
+  total: number;          // self + to の合計
+  self: number;
+  from: { source: string; applier: string; amount: number }[];   // 味方から受けた分
+  to:   { source: string; recipient: string; amount: number }[]; // 味方への貢献
+}
+
+export interface ContribTable {
+  byPlayer: Record<string, ContribBreakdown>;
+}
+
+export type Credit = (recipient: string, applier: string, source: string, amount: number) => void;
+
+/** 貢献を積む関数と、積み終えた表を返す関数。recipient = 恩恵を受けた人、applier = 貢献した人。 */
+export function contribTable(): { credit: Credit; finish: () => ContribTable } {
+  const byPlayer: Record<string, ContribBreakdown> = {};
+  const ensure = (pid: string): ContribBreakdown => (byPlayer[pid] ??= { total: 0, self: 0, from: [], to: [] });
+  const credit: Credit = (recipient, applier, source, amount) => {
+    if (amount <= 0) return;
+    if (recipient === applier) ensure(recipient).self += amount;
+    else {
+      ensure(recipient).from.push({ source, applier, amount });
+      ensure(applier).to.push({ source, recipient, amount });
+    }
+  };
+  const finish = (): ContribTable => {
+    for (const b of Object.values(byPlayer)) b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
+    return { byPlayer };
+  };
+  return { credit, finish };
 }

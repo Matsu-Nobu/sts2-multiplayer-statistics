@@ -22,7 +22,7 @@ func indexHTML() http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")     // SPA bootstrap は常に最新
+		w.Header().Set("Cache-Control", "no-cache") // SPA bootstrap は常に最新
 		_, _ = w.Write(body)
 	}
 }

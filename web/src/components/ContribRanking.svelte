@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 貢献度スコア (spec ui.md §3.1): 合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit) の大きい順。
+  // 貢献度スコア (spec ui.md「ラン全体」): 合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit) の大きい順。
   import { useSession } from '../lib/session';
   import { computeRdps } from '../lib/rdps';
   import { computeRmit } from '../lib/rmit';

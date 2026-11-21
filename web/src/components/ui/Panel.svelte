@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 画面の区切り (spec ui.md §4.2)。見出しに範囲 (「全員」かプレイヤー名) を明記する。
+  // 画面の区切り (spec ui.md「共通部品」)。見出しに範囲 (「全員」かプレイヤー名) を明記する。
   import type { Snippet } from 'svelte';
   import InfoTip from './InfoTip.svelte';
   interface Props {

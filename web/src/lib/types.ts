@@ -1,4 +1,4 @@
-// docs/api.md と一致させること。v2 形式 (docs/redesign-v2.md)。
+// docs/spec/api.md と一致させること。
 import type { ModsV2 } from './contrib';
 export type { ModsV2 } from './contrib';
 
@@ -69,20 +69,15 @@ export interface PlayerEntry {
   combat: PlayerCombatSummary;
 }
 
-/**
- * 1 ターンぶんのスナップショット（既存表示コンポーネントの入力形式）。
- * Phase 3.5 では events 列から aggregate.ts で導出される。
- */
+/** 1 ターンが終わった時点の、プレイヤーごとのそのターンの値と戦闘の累計 (aggregate.ts が events から作る)。 */
 export interface TurnPayload {
   combat_index: number;
   turn_number: number;
-  is_final: boolean;
-  timestamp: string;
   players: Record<string, PlayerEntry>;
 }
 
 /**
- * docs/api.md POST /sessions/{id}/events の各要素 + サーバ付与の received_at。
+ * docs/spec/api.md POST /sessions/{id}/events の各要素 + サーバ付与の received_at。
  * 戦闘内 event は combat_index / turn_number / sequence を持ち、
  * 戦闘外 event はそれらが null。
  */
@@ -99,7 +94,7 @@ export interface EventRecord<P = unknown> {
   payload: P;
 }
 
-// === ラン全体ビュー用 events (v2: docs/api.md「floor_snapshot」) ==========
+// === ラン全体ビュー用 events (docs/spec/api.md「floor_snapshot」) ==========
 
 export type RoomTypeName = 'Monster' | 'Elite' | 'Boss' | 'Event' | 'Shop' | 'RestSite' | 'Treasure' | string;
 
@@ -209,15 +204,7 @@ export interface PowerSnapshot {
   power_id: string;
   power_name?: string | null;
   stacks: number;
-  applier: string | null;                                  // 後方互換: 最大 stacks の applier
-  appliers?: { player_id: string; stacks: number }[];      // stacks 加重帰属用
-}
-
-export interface DamageModification {
-  pre: number;
-  post: number;
-  modifier_types: string[];           // 例: "VulnerablePower" / "WeakPower" / "PenNibRelic"
-  modifier_ids: string[];             // 例: "VULNERABLE_POWER" or relic id（取れない場合は ""）
+  appliers: { player_id: string; stacks: number }[];       // 付与者ごとのスタック数
 }
 
 export interface DamageDealtPayload {
@@ -227,7 +214,7 @@ export interface DamageDealtPayload {
   overkill_damage?: number;           // HP を超えた分
   was_target_killed?: boolean;
   is_doom_kill?: boolean;             // Doom による撃破 (source_card_id = DOOM_POWER)
-  // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md §4)
+  // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md「データソース」)
   source_appliers?: { player_id: string; stacks: number; origin?: Origin | null }[];
   source_origin?: Origin | null;      // 自分側のパワーが出どころのとき、そのパワーを付けた持ち物 (api.md)
   triggered_by?: { player_id: string; id: string; name: string; type: string } | null;   // カードのプレイ中に発動したデバフのダメージ (api.md)
@@ -240,7 +227,7 @@ export interface DamageDealtPayload {
   source_kind?: string;               // 'card' | 'power' | 'relic' | 'orb' | 'enchantment' | 'potion' | 'unknown'
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
-  modifications?: DamageModification[] | ModsV2;  // v2: 補正 1 つずつ (ModsV2)。配列は旧データ
+  modifications?: ModsV2 | null;     // 補正 1 つずつ。補正計算を通らないダメージは null
 }
 
 export interface DamageReceivedPayload {
@@ -251,7 +238,7 @@ export interface DamageReceivedPayload {
   source_card_id?: string | null;
   active_on_target: PowerSnapshot[];
   active_on_dealer?: PowerSnapshot[]; // dealer (敵) に乗っていた power（rMit で WEAK 等を見る）
-  modifications?: ModsV2;              // 被ダメ側の補正 1 つずつ (rMit)
+  modifications?: ModsV2 | null;     // 被ダメ側の補正 1 つずつ (rMit)
   block_sources?: { player_id: string; amount: number }[];   // 防いだブロックを付けた人ごとに
 }
 
@@ -291,11 +278,6 @@ export interface CardDrawnPayload {
 export interface EnergySpentPayload {
   amount: number;
   source_card_id?: string | null;
-}
-
-export interface PotionUsedPayload {
-  potion_id?: string | null;
-  target_creature_id?: string | null;
 }
 
 export interface SessionDoc {

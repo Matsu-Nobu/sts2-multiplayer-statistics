@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Logging;
 
@@ -78,6 +79,7 @@ internal static class CatalogDumper
                 relics         = allRelics.Select(BuildRelicEntry).Where(e => e != null).ToList(),
                 potions        = allPotions.Select(BuildPotionEntry).Where(e => e != null).ToList(),
                 enchantments   = allEnchantments.Select(BuildEnchantmentEntry).Where(e => e != null).ToList(),
+                rest_site_options = BuildRestSiteOptions(),
             };
 
             var json = JsonSerializer.Serialize(output, new JsonSerializerOptions
@@ -95,7 +97,7 @@ internal static class CatalogDumper
             var gzipBytes = GzipBytes(rawBytes);
 
             Log.Info($"[StsStats][CatalogDumper] dumped to {path}");
-            Log.Info($"[StsStats][CatalogDumper] lang={lang} cards={output.cards.Count} relics={output.relics.Count} potions={output.potions.Count} enchantments={output.enchantments.Count}");
+            Log.Info($"[StsStats][CatalogDumper] lang={lang} cards={output.cards.Count} relics={output.relics.Count} potions={output.potions.Count} enchantments={output.enchantments.Count} rest_site_options={output.rest_site_options.Count}");
             Log.Info($"[StsStats][CatalogDumper] raw_size={rawBytes.Length}B gzip_size={gzipBytes.Length}B");
         }
         catch (Exception ex)
@@ -279,14 +281,38 @@ internal static class CatalogDumper
             description.GetType().GetMethod("Add", new[] { typeof(string), typeof(bool) })
                 ?.Invoke(description, new object[] { "InCombat", false });
 
-            return description.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)
+            string text = description.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)
                 ?.Invoke(description, null) as string ?? "";
+            return card is CardModel model ? WithKeywordLines(model, text) : text;
         }
         catch (Exception ex)
         {
             Log.Error($"[StsStats][CatalogDumper] ResolveCardDescriptionBase error: {ex.Message}");
             return "";
         }
+    }
+
+    /// <summary>キーワードの行の文 (CardKeywordExtensions.GetCardText。internal なので名前で呼ぶ。tools/verify-game-api/members.txt で確認)。</summary>
+    /// カタログを書き出すときだけ探す (見つからなければ、カタログの書き出しだけが失敗する)。
+    private static readonly Lazy<MethodInfo> KeywordCardText = new(() =>
+        AccessTools.Method(AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Cards.CardKeywordExtensions"), "GetCardText")
+        ?? throw new MissingMethodException("CardKeywordExtensions", "GetCardText"));
+
+    /// <summary>
+    /// ゲームがカードに表示する文と同じく、説明文の前後にキーワード (プレイ不可・エセリアル・廃棄等) の行を足す
+    /// (CardModel.GetDescriptionForPile)。キーワードだけのカード (呪いの多く) は、説明文が空でキーワードの行だけになる。
+    /// 戦闘の外で見る文なので、このターンだけの狡猾・保留も、カードが持つキーワードかどうかで決める。
+    /// </summary>
+    private static string WithKeywordLines(CardModel card, string description)
+    {
+        var keywords = card.Keywords;
+        string Text(CardKeyword k) => (string)KeywordCardText.Value.Invoke(null, new object[] { k })!;
+        var lines = new List<string> { description };
+        foreach (var k in CardKeywordOrder.beforeDescription)
+            if (keywords.Contains(k)) lines.Insert(0, Text(k));
+        foreach (var k in CardKeywordOrder.afterDescription.Intersect(keywords))
+            lines.Add(Text(k));
+        return string.Join('\n', lines.Where(l => !string.IsNullOrEmpty(l)));
     }
 
     /// <summary>
@@ -334,20 +360,6 @@ internal static class CatalogDumper
         {
             Log.Error($"[StsStats][CatalogDumper] ResolveCardDescriptionUpgraded error: {ex.Message}");
             return "";
-        }
-    }
-
-    private static string? TryCallStringMethod(object instance, string methodName)
-    {
-        try
-        {
-            var m = instance.GetType().GetMethod(methodName, Type.EmptyTypes);
-            return m?.Invoke(instance, null) as string;
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats][CatalogDumper] {instance.GetType().Name}.{methodName}() error: {ex.Message}");
-            return null;
         }
     }
 
@@ -409,6 +421,24 @@ internal static class CatalogDumper
         // make dump-catalog 側で web/public/catalog.{LANG}.json にコピーする際に
         // 文字列を上書きするのが綺麗だが、当面は null で運用問題なし。
         return null;
+    }
+
+    /// <summary>
+    /// 休憩所の選択肢の名前 (階の記録 rest_site_choices は OptionId しか持たないため)。
+    /// OptionId は定数を返すだけのプロパティなので、コンストラクタを呼ばずに作ったインスタンスから読む。
+    /// 名前は RestSiteOption.Title と同じ翻訳 rest_site_ui の OPTION_{OptionId}.name。
+    /// </summary>
+    private static List<object> BuildRestSiteOptions()
+    {
+        var result = new List<object>();
+        var baseType = typeof(MegaCrit.Sts2.Core.Entities.RestSite.RestSiteOption);
+        foreach (var t in baseType.Assembly.GetTypes().Where(t => !t.IsAbstract && baseType.IsAssignableFrom(t)).OrderBy(t => t.Name))
+        {
+            var option = (MegaCrit.Sts2.Core.Entities.RestSite.RestSiteOption)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(t);
+            string id = option.OptionId;
+            result.Add(new { id, name = ModelInfo.Text(new MegaCrit.Sts2.Core.Localization.LocString("rest_site_ui", $"OPTION_{id}.name")) });
+        }
+        return result;
     }
 
     private static string GetDumpDir()

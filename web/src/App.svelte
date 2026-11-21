@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { SessionDoc } from './lib/types';
   import { fetchSession } from './lib/api';
-  import { mockSession } from './lib/mock';
   import SessionView from './components/SessionView.svelte';
   import Skeleton from './components/ui/Skeleton.svelte';
   import { route } from './lib/router.svelte';
@@ -12,12 +11,11 @@
   let lastUpdated = $state<Date | null>(null);
   let error = $state<string | null>(null);
 
-  const id = route.sessionId ?? 'demo';
-  const isDemo = route.isDemo;
+  const id = route.sessionId;
 
   let iv: ReturnType<typeof setInterval> | null = null;
 
-  async function fetchOnce() {
+  async function fetchOnce(id: string) {
     try {
       const r = await fetchSession(id, etag);
       if (r.doc) {
@@ -37,15 +35,9 @@
 
   // 起動時に1度だけ実行されるよう、effect の本体は何も読まない構成にする
   $effect(() => {
-    if (isDemo) {
-      const d = mockSession();
-      doc = d;
-      live = d.session.outcome ? 'final' : 'live';
-      lastUpdated = new Date();
-      return;
-    }
-    iv = setInterval(fetchOnce, 10_000);
-    fetchOnce();
+    if (id == null) { error = 'URL にセッションの ID がありません'; return; }
+    iv = setInterval(() => fetchOnce(id), 10_000);
+    fetchOnce(id);
     return () => { if (iv != null) clearInterval(iv); };
   });
 </script>

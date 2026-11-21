@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 数値のタイル (spec ui.md §4.2)。primary = 大きい主要数値、secondary = 小さい補助の数値。
+  // 数値のタイル (spec ui.md「共通部品」)。primary = 大きい主要数値、secondary = 小さい補助の数値。
   import InfoTip from './InfoTip.svelte';
   interface Props { label: string; value: number | string; sub?: string; help?: string; size?: 'primary' | 'secondary' }
   let { label, value, sub, help, size = 'secondary' }: Props = $props();

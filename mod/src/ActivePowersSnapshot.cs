@@ -7,17 +7,13 @@ using MegaCrit.Sts2.Core.Logging;
 namespace StsStats;
 
 /// <summary>
-/// damage_dealt event 発火時に「dealer / target に乗っている rDPS 関連 power」を
-/// snapshot する。whitelist で絞っているので 1 イベントに乗る要素は通常 0〜2 個。
-///
-/// applier は PowerOriginRegistry から逆引き。passive / 不明は null。
+/// ダメージの event に、攻撃した側・受けた側に付いている主なパワーとその付与者を添える (戦闘詳細のタイムライン表示用)。
+/// 貢献スコアは補正 1 つずつの内訳 (modifications) から計算するので、ここは表示にしか使わない。
+/// 付与者は PowerOriginRegistry から引く。
 /// </summary>
 internal static class ActivePowersSnapshot
 {
-    /// <summary>
-    /// rDPS 計算で意味のある power のみ snapshot する。それ以外は無視。
-    /// 拡張は ROADMAP / PHASE35_PLAN に従って行う。
-    /// </summary>
+    /// <summary>タイムラインに出すパワー。1 回のダメージの event が大きくなりすぎないよう、よく効くものに絞る。</summary>
     private static readonly HashSet<string> Whitelist = new()
     {
         // 与ダメ攻撃強化 / 間接ダメ
@@ -46,18 +42,12 @@ internal static class ActivePowersSnapshot
                 var appliers = PowerOriginRegistry.LookupAll(c, powerId);
                 string? powerName = PowerNameResolver.Resolve(p);
 
-                // 後方互換: 単一 applier 想定の旧フィールドは「最大 stacks の applier」を入れる
-                string? primaryApplier = appliers.Count == 0
-                    ? null
-                    : appliers.OrderByDescending(a => a.Stacks).First().Applier;
-
                 // PayloadJson は SnakeCaseLower で property 名を変換するため、PascalCase にしておく
                 result.Add(new
                 {
                     PowerId   = powerId,
                     PowerName = powerName,
                     Stacks    = stacks,
-                    Applier   = primaryApplier,
                     Appliers  = appliers.Select(a => new { PlayerId = a.Applier, Stacks = a.Stacks }).ToList(),
                 });
             }

@@ -35,7 +35,7 @@ public static class ModEntry
     internal static RunSessionStore? SessionStore { get; private set; }
 
     /// <summary>
-    /// patch の一覧 (docs/spec/data-sources.md §1)。
+    /// patch の一覧 (docs/spec/data-sources.md「mod: ゲーム内のどこから取るか」)。
     /// 1 行 = 1 patch。tools/verify-game-api がこの表を読み、ゲーム更新後の sts2.dll に対して
     /// 「対象が存在するか」「postfix の引数がすべて結び付くか」を確認する。書式を崩さないこと:
     ///   P(typeof(対象の型), "メソッド名", typeof(patch のクラス), "prefix名 or null", "postfix名 or null"[, 引数の型...]);
@@ -44,7 +44,7 @@ public static class ModEntry
     {
         // ラン・戦闘の始まりと終わり
         P(typeof(Hook),       "AfterRoomEntered",   typeof(Lifecycle), null, "AfterRoomEnteredPostfix");
-        P(typeof(Hook),       "BeforeCombatStart",  typeof(Lifecycle), null, "BeforeCombatStartPostfix");
+        P(typeof(Hook),       "BeforeCombatStart",  typeof(Lifecycle), "BeforeCombatStartPrefix", null);
         P(typeof(Hook),       "AfterCombatEnd",     typeof(Lifecycle), null, "AfterCombatEndPostfix");
         P(typeof(Hook),       "AfterSideTurnEnd",   typeof(Lifecycle), null, "AfterSideTurnEndPostfix");
         P(typeof(RunManager), "OnEnded",            typeof(Lifecycle), null, "OnEndedPostfix");
@@ -56,13 +56,13 @@ public static class ModEntry
         P(typeof(Hook),       "AfterRewardTaken",   typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteHeal",  typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteSmith", typeof(FloorRecorder), null, "AfterRunActionPostfix");
-        P(typeof(MerchantCardEntry),        "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
-        P(typeof(MerchantPotionEntry),      "OnTryPurchase", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
-        P(typeof(MerchantRelicEntry),       "OnTryPurchase", typeof(FloorRecorder), null, "MerchantRelicPurchasePostfix");
-        P(typeof(MerchantCardRemovalEntry), "OnTryPurchase", typeof(FloorRecorder), null, "MerchantCardRemovalPurchasePostfix", typeof(MerchantInventory), typeof(bool));
+        P(typeof(MerchantCardEntry),        "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
+        P(typeof(MerchantPotionEntry),      "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
+        P(typeof(MerchantRelicEntry),       "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantRelicPurchasePostfix");
+        P(typeof(MerchantCardRemovalEntry), "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantCardRemovalPurchasePostfix", typeof(MerchantInventory), typeof(bool));
 
         // 戦闘
-        P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<Creature>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay));
+        P(typeof(CreatureCmd), "Damage",           typeof(ModifierLog), "DamageScopePrefix", "DamageScopePostfix", typeof(PlayerChoiceContext), typeof(IEnumerable<DamageTargetData>), typeof(decimal), typeof(ValueProp), typeof(Creature), typeof(CardModel), typeof(CardPlay), typeof(ModifyDamageHookType));
         P(typeof(CardModel), "OnPlayWrapper",      typeof(CardPlayScope), "Prefix", "Postfix", typeof(PlayerChoiceContext), typeof(Creature), typeof(bool), typeof(ResourceInfo), typeof(bool));
         P(typeof(OrbCmd), "Channel",               typeof(SourceContext), "ChannelPrefix", "ChannelPostfix", typeof(PlayerChoiceContext), typeof(OrbModel), typeof(Player));
         P(typeof(Hook), "ModifyDamage",            typeof(CombatRecorder), null, "ModifyDamagePostfix");

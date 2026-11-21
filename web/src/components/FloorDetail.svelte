@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 1 階分の詳細 (spec run-overview.md §2.4): 入手・デッキ改造・ショップ購入・選択。空のグループは出さない (CLAUDE.md §3.3)。
+  // 1 階分の詳細 (spec run-overview.md「階の詳細」): 入手・デッキ改造・ショップ購入・選択。空のグループは出さない (CLAUDE.md §3.3)。
   import type { FloorSummary } from '../lib/runOverview';
   import { useSession } from '../lib/session';
   import { cardTip, relicTip, potionTip, enchantmentTip } from '../lib/tips';
@@ -36,7 +36,7 @@
   {#if hasAcq}
     {#snippet acq()}
       {#if f.cards_obtained.length > 0}
-        {#snippet b()}{#each f.cards_obtained as c}<CardChip label={name(c.card_id, c.card_name)} rarity={c.card_rarity} upgraded={!!c.is_upgraded} tip={cardTip(s.catalog, c.card_id, !!c.is_upgraded)} />{/each}{/snippet}
+        {#snippet b()}{#each f.cards_obtained as c}<CardChip label={name(c.card_id, c.card_name)} rarity={c.card_rarity} upgraded={!!c.is_upgraded} enchanted={!!c.enchantment_id} tip={cardTip(s.catalog, c.card_id, !!c.is_upgraded, c.enchantment_id)} />{/each}{/snippet}
         {@render kv('カード', b)}
       {/if}
       {#if f.relics_obtained.length > 0}
@@ -64,9 +64,9 @@
       {#if f.cards_transformed.length > 0}
         {#snippet b()}{#each f.cards_transformed as t}
           <span class="inline-flex items-center gap-1">
-            <CardChip label={name(t.from.card_id, t.from.card_name)} rarity={t.from.card_rarity} upgraded={!!t.from.is_upgraded} tip={cardTip(s.catalog, t.from.card_id, !!t.from.is_upgraded)} />
+            <CardChip label={name(t.from.card_id, t.from.card_name)} rarity={t.from.card_rarity} upgraded={!!t.from.is_upgraded} enchanted={!!t.from.enchantment_id} tip={cardTip(s.catalog, t.from.card_id, !!t.from.is_upgraded, t.from.enchantment_id)} />
             <span class="text-slate-500" aria-label="から">→</span>
-            <CardChip label={name(t.to.card_id, t.to.card_name)} rarity={t.to.card_rarity} upgraded={!!t.to.is_upgraded} tip={cardTip(s.catalog, t.to.card_id, !!t.to.is_upgraded)} />
+            <CardChip label={name(t.to.card_id, t.to.card_name)} rarity={t.to.card_rarity} upgraded={!!t.to.is_upgraded} enchanted={!!t.to.enchantment_id} tip={cardTip(s.catalog, t.to.card_id, !!t.to.is_upgraded, t.to.enchantment_id)} />
           </span>
         {/each}{/snippet}
         {@render kv('変化', b)}
@@ -85,7 +85,7 @@
         {#each f.shop_purchases as p}
           {@const price = p.gold_spent != null ? `${p.gold_spent}G` : ''}
           {#if p.kind === 'card'}
-            <CardChip label={p.name || name(p.id)} rarity={p.rarity} upgraded={!!p.is_upgraded} suffix={price} tip={cardTip(s.catalog, p.id, !!p.is_upgraded)} />
+            <CardChip label={p.name || name(p.id)} rarity={p.rarity} upgraded={!!p.is_upgraded} enchanted={!!p.enchantment_id} suffix={price} tip={cardTip(s.catalog, p.id, !!p.is_upgraded, p.enchantment_id)} />
           {:else if p.kind === 'relic'}
             <Chip label={p.name || p.id} sub={price} subClass="text-yellow-400" tip={relicTip(s.catalog, p.id)} />
           {:else}
@@ -100,7 +100,7 @@
   {#if hasChoice}
     {#snippet choice()}
       {#if f.rest_options.length > 0}
-        {#snippet b()}{#each f.rest_options as o}<Chip label={o} />{/each}{/snippet}
+        {#snippet b()}{#each f.rest_options as o}<Chip label={s.catalog?.restSiteOption(o)?.name ?? o} />{/each}{/snippet}
         {@render kv('休憩所', b)}
       {/if}
       {#if f.event_choices.length > 0}
@@ -108,7 +108,7 @@
         {@render kv('イベント', b)}
       {/if}
       {#if f.card_choices.length > 0}
-        {#snippet b()}{#each f.card_choices as g}{#each g.choices as c}<CardChip label={c.card_name || name(c.card_id)} rarity={c.card_rarity} upgraded={!!c.is_upgraded} skipped={!c.was_picked} tip={cardTip(s.catalog, c.card_id, !!c.is_upgraded)} />{/each}{/each}{/snippet}
+        {#snippet b()}{#each f.card_choices as g}{#each g.choices as c}<CardChip label={c.card_name || name(c.card_id)} rarity={c.card_rarity} upgraded={!!c.is_upgraded} enchanted={!!c.enchantment_id} skipped={!c.was_picked} tip={cardTip(s.catalog, c.card_id, !!c.is_upgraded, c.enchantment_id)} />{/each}{/each}{/snippet}
         {@render kv('カード選択肢', b)}
       {/if}
     {/snippet}

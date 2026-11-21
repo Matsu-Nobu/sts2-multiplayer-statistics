@@ -11,14 +11,14 @@ using MegaCrit.Sts2.Core.ValueProps;
 namespace StsStats;
 
 /// <summary>
-/// ダメージ補正・HP 減少補正を「補正 1 つずつ」記録する (spec combat-stats.md §3.5、貢献スコア用)。
+/// ダメージ補正・HP 減少補正を「補正 1 つずつ」記録する (spec combat-stats.md「貢献スコア」、貢献スコア用)。
 ///
 /// ゲームの Hook.ModifyDamage / Hook.ModifyHpLost は「値を変えたモデルの一覧」を計算順に返す
 /// (Hook.ModifyDamageInternal: 足し算 → 掛け算 → 上限。デコンパイル確認済 v0.111.0)。
 /// その一覧の各モデルに同じ引数で補正計算をもう一度させ、モデルごとの増減量・倍率・上限を得る。
 /// 補正計算 (Modify*) は値を返すだけの関数で、状態の変更は別の Hook (AfterModifying*) で行われる。
 ///
-/// 記録は直後の Hook.AfterDamageGiven で、同じ対象・攻撃者のものを取り出して payload に入れる。
+/// 記録は Hook.AfterDamageGiven で、同じ対象・攻撃者のものを取り出して payload に入れる。
 ///
 /// **記録するのは CreatureCmd.Damage の実行中だけ** (実行中のダメージ処理ごとの枠 = Scope を AsyncLocal で持つ)。
 /// 敵の攻撃予告 (AttackIntent) や手札のダメージ表示 (DamageVar) も Hook.ModifyDamage を呼ぶが、
@@ -31,7 +31,11 @@ internal static class ModifierLog
 
     internal sealed record Record(bool IsHpLost, Creature? Target, Creature? Dealer, decimal Base, decimal Final, List<Step> Steps);
 
-    internal sealed class Scope { public readonly List<Record> Records = new(); }
+    internal sealed class Scope
+    {
+        public readonly List<Record> Records = new();
+        public readonly HashSet<Record> Used = new(ReferenceEqualityComparer.Instance);
+    }
 
     private static readonly System.Threading.AsyncLocal<Scope?> _scope = new();
 
@@ -53,8 +57,6 @@ internal static class ModifierLog
         if (scope == null) return;   // CreatureCmd.Damage の外 (攻撃予告・カード表示等) は記録しない
         lock (scope) scope.Records.Add(r);
     }
-
-    public static void Clear() { }
 
     // === 記録 =====================================================================
 
@@ -101,6 +103,12 @@ internal static class ModifierLog
                 foreach (var m in models)
                 {
                     decimal f = m.ModifyDamageMultiplicative(target, num, props, dealer, cardSource, cardPlay);
+                    if (f != 1m) steps.Add(new Step("multiplicative", m, f));
+                    num *= f;
+                }
+                foreach (var m in models)
+                {
+                    decimal f = m.ModifyDamageMultiplicativeLate(target, num, props, dealer, cardSource, cardPlay);
                     if (f != 1m) steps.Add(new Step("multiplicative", m, f));
                     num *= f;
                 }
@@ -165,24 +173,27 @@ internal static class ModifierLog
     // === 取り出し =====================================================================
 
     /// <summary>
-    /// AfterDamageGiven で呼ぶ。今のダメージ処理の枠の中で、同じ対象・攻撃者について **最初に** 記録された
-    /// ダメージ補正 (CreatureCmd.Damage は対象ごとに最初に本物の補正計算をする) と、その後の
-    /// <paramref name="hpTarget"/> の HP 減少補正を返す。枠の中身は次の対象のために空にする。
+    /// AfterDamageGiven で、event を送るときに呼ぶ。今のダメージ処理の枠の中から、
+    /// <paramref name="originalTarget"/> (攻撃が本来狙った相手) と攻撃者が同じで、まだ使っていないダメージ補正の記録と、
+    /// その記録から次のダメージ補正の記録までにある <paramref name="hpTarget"/> の HP 減少補正の記録を返す。
+    /// CreatureCmd.Damage は全対象の補正計算を済ませてから対象ごとに AfterDamageGiven を呼ぶので、
+    /// 1 つの対象の分を取り出しても、ほかの対象の記録は残しておく。
     /// </summary>
-    public static (Record? Damage, List<Record> HpLost) Take(Creature? target, Creature? dealer, Creature? hpTarget)
+    public static (Record? Damage, List<Record> HpLost) Take(Creature? originalTarget, Creature? dealer, Creature? hpTarget)
     {
+        var hp = new List<Record>();
         var scope = _scope.Value;
-        if (scope == null) return (null, new List<Record>());
+        if (scope == null) return (null, hp);
         lock (scope)
         {
             var recs = scope.Records;
-            int idx = recs.FindIndex(r => !r.IsHpLost && ReferenceEquals(r.Target, target) && ReferenceEquals(r.Dealer, dealer));
-            var dmg = idx >= 0 ? recs[idx] : null;
-            var hp = new List<Record>();
-            if (hpTarget != null)
-                for (int i = Math.Max(idx, 0); i < recs.Count; i++)
-                    if (recs[i].IsHpLost && ReferenceEquals(recs[i].Target, hpTarget)) hp.Add(recs[i]);
-            recs.Clear();
+            int idx = recs.FindIndex(r => !r.IsHpLost && !scope.Used.Contains(r)
+                                         && ReferenceEquals(r.Target, originalTarget) && ReferenceEquals(r.Dealer, dealer));
+            if (idx < 0) return (null, hp);
+            var dmg = recs[idx];
+            scope.Used.Add(dmg);
+            for (int i = idx + 1; i < recs.Count && recs[i].IsHpLost; i++)
+                if (ReferenceEquals(recs[i].Target, hpTarget)) hp.Add(recs[i]);
             return (dmg, hp);
         }
     }

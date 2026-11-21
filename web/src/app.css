@@ -15,7 +15,7 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* === デザインシステムの共通スタイル (spec ui.md §4) === */
+/* === デザインシステムの共通スタイル (spec ui.md「デザインシステム」) === */
 @layer components {
   /* DataTable: 見出し行固定、数値は右寄せ、狭い画面では横スクロール */
   .dt-wrap { @apply overflow-x-auto; }

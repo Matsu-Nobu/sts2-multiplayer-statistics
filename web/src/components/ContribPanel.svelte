@@ -1,12 +1,12 @@
 <script lang="ts">
-  // 貢献スコアのパネル (rDPS / rMit 共通。内容は spec combat-stats.md §3.5)。全員の表。
-  import type { RdpsTable } from '../lib/rdps';
+  // 貢献スコアのパネル (rDPS / rMit 共通。内容は spec combat-stats.md「貢献スコア」)。全員の表。
+  import type { ContribTable } from '../lib/contrib';
   import { useSession } from '../lib/session';
   import { playerColor } from '../lib/players';
   import Panel from './ui/Panel.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
-  interface Props { table: RdpsTable; title: string; help: string; scope?: string }
+  interface Props { table: ContribTable; title: string; help: string; scope?: string }
   let { table, title, help, scope = '全員' }: Props = $props();
   const s = useSession();
 
@@ -14,7 +14,7 @@
   let max = $derived(rows.reduce((m, r) => Math.max(m, r.total), 0) || 1);
 
   // 出どころの表示名: ゲーム内のパワー名 (events から) を優先
-  const FALLBACK: Record<string, string> = { self: '自力', vulnerable: '弱体', weak: '脱力', strength_down: '筋力', poison: '毒', doom: '破滅' };
+  const FALLBACK: Record<string, string> = { self: '自力', poison: '毒', doom: '破滅' };
   function label(src: string): string {
     return s.powerNames[`${src.toUpperCase()}_POWER`] ?? s.powerNames[src] ?? FALLBACK[src] ?? src;
   }

@@ -1,6 +1,6 @@
 # API契約
 
-mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装されている API のみを記述する**。将来追加予定のエンドポイント・event_type は `roadmap.md` 側に記載し、このドキュメントには含めない。
+mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装されている API のみを記述する**。
 
 実装変更時はまずこのドキュメントを更新し、それから mod / backend / WebUI のコードを揃える。
 
@@ -42,7 +42,6 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 |--------|------|------|------|
 | `POST` | `/sessions` | — | セッション作成 |
 | `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿（戦闘内・外いずれも） |
-| `POST` | `/sessions/{id}/turns` | — | **410 Gone**（旧形式、廃止済） |
 | `GET`  | `/api/sessions/{id}` | — | セッション全データ取得（WebUI用） |
 | `GET`  | `/s/{id}` | — | SPA HTML 配信 |
 | `GET`  | `/assets/*` | — | Vite ビルド成果物 |
@@ -157,7 +156,7 @@ Content-Type: application/json
 
 戦闘内 event は `combat_index` / `turn_number` / `sequence` をすべて set。戦闘外 event はそれらが NULL。
 
-### event_type カタログ（v2。設計は [`redesign-v2.md`](./redesign-v2.md)）
+### event_type カタログ
 
 `player_id` は全 event で **正規化済み** (シングルプレイ・LAN ホストの `NetId=1` はローカルの Steam ID に置換)。
 プレイヤーに属さない event (`combat_start` / `combat_end` / `floor_snapshot` 等) だけ空。
@@ -167,7 +166,7 @@ Content-Type: application/json
 | event_type | payload | player_id | context |
 |-----------|---------|-----------|---------|
 | `run_start` | `character_id`, `character_name` (表示名), `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
-| `floor_snapshot` | §floor_snapshot | 空 | floor のみ |
+| `floor_snapshot` | 「floor_snapshot」 | 空 | floor のみ |
 | `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
 | `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`), `badges` (`{ player_id: [{ id, name, description, rarity }] }`) | 空 | floor のみ |
 | `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 空 | floor + combat_index |
@@ -244,9 +243,9 @@ Content-Type: application/json
 `source_card_type` にはモデルの種類 (`Power` / `Relic` / `Orb` / `Enchantment` / `Potion`)、`source_card_name` には表示名が入る。
 カードかどうかは `source_kind` (`card` / `power` / `relic` / `orb` / `enchantment` / `potion` / `unknown`) で判定する
 (`source_card_type` の `Power` はカードの種類「パワー」と同じ文字列なので判定に使わない)。`damage_dealt` / `block_gained` に付く。
-mod が起動時に対象メソッドを自動で列挙して追跡する (`redesign-v2.md` §2.4)。v1 の合成タグ (`(poison)` 等) は廃止。
+mod が起動時に対象メソッドを自動で列挙して追跡する (spec data-sources.md「カードの無いダメージ」)。
 
-#### `modifications` (damage_dealt / damage_received。貢献スコア用、spec combat-stats.md §3.5)
+#### `modifications` (damage_dealt / damage_received。貢献スコア用、spec combat-stats.md「貢献スコア」)
 
 ゲームの補正計算で値を変えたモデルを、計算順に 1 つずつ並べたもの。
 
@@ -267,7 +266,7 @@ mod が起動時に対象メソッドを自動で列挙して追跡する (`rede
 - `phase`: `enchant` / `additive` (value = 増減量) / `multiplicative` (value = 倍率) / `cap` (value = 上限で下がった量、負) /
   `hp_lost` (ブロック後の HP 減少補正。value = 変化量。damage_received のみ)
 - `appliers`: パワーの付与者ごとのスタック数 (全パワー)。`owner`: レリック・エンチャント等の持ち主
-- v1 形式 (配列で `pre` / `post` / `modifier_types` / `modifier_ids`) は旧データのみ
+- 補正計算を通らないダメージ (破滅による撃破等) は `modifications` が無い (null)
 
 #### `block_sources` (damage_received)
 
@@ -283,7 +282,7 @@ web は与ダメージ・カード別の表・rDPS をこの比で按分する�
 `triggered_by` (`{ "player_id", "id", "name", "type" }`, damage_dealt / block_gained): カード以外が出どころのダメージ・ブロックを、
 **カードの効果が直接発動させた** ときの、そのカードと使った人。判定: カードのプレイ中 (`CardModel.OnPlayWrapper` の実行中) で、
 出どころの処理が Hook の上書き (ゲームのイベントへの反応) の中からではなく、オーブの生成 (`OrbCmd.Channel`) で押し出された解放でもないこと。例: 感染爆発の毒の発動、デュアルキャストのオーブの解放。
-web はカード別の表でだけ使う (combat-stats.md §3.3)。
+web はカード別の表でだけ使う (combat-stats.md「カード別 (CardTable)」)。
 
 `source_origin` (`{ "id", "name", "type", "kind" }`, damage_dealt / block_gained): 出どころが **自分側に付いているパワー** (トゲ・プレート等) のとき、
 そのパワーを付けたカード・レリック・ポーション。カード別の表はこれで集計する。分からなければ無し。
@@ -296,16 +295,15 @@ web はカード別の表でだけ使う (combat-stats.md §3.3)。
     "power_id":   "VULNERABLE_POWER",
     "power_name": "脆弱",
     "stacks":     5,
-    "applier":    "76561...B",
     "appliers":   [ { "player_id": "76561...A", "stacks": 2 },
                     { "player_id": "76561...B", "stacks": 3 } ]
   }
 ]
 ```
 
-- `applier` は最大 stacks の applier（後方互換）。
-- `appliers` は各プレイヤーの寄与 stacks 内訳。複数人が同じデバフを撒いた場合は stacks 比で按分する rDPS / rMit 計算に使う。
-- whitelist: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` / `WEAK_POWER` / `STRENGTH_POWER`。
+- 戦闘詳細のタイムラインに、攻撃した側・受けた側に付いていたパワーを出すためのもの。貢献スコアの計算には使わない (`modifications` を使う)。
+- `appliers` はプレイヤーごとの付与スタック数。
+- 対象のパワー: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` / `WEAK_POWER` / `STRENGTH_POWER`。
 
 ### 冪等性
 
@@ -316,12 +314,6 @@ web はカード別の表でだけ使う (combat-stats.md §3.3)。
 - `401 Unauthorized` — write_token 不正
 - `404 Not Found` — session_id 不在
 - `400 Bad Request` — payload 不正
-
----
-
-## `POST /sessions/{id}/turns` （廃止）
-
-旧形式（ターン集計済 payload）。Phase 3.5 で廃止、常に **`410 Gone`** を返す。古い mod クライアントには「mod を更新してください」のメッセージを返す。
 
 ---
 
@@ -386,8 +378,8 @@ WebUI が tooltip 表示用に 1 度だけ fetch する。
 - 内容は `web/public/catalog.{lang}.json` に commit 済の静的ファイル
 - backend は embed FS で同梱配信（`/assets/*` と同じ embed ソース）
 - 更新は STS2 アップデート時のみ手動: `make dump-catalog LANG=ja`
-- 詳細運用フロー / 構造 / mod 側 dumper 実装は [`architecture.md` のカタログ節](./architecture.md#カタログ-cards--relics--potions--enchantments-の-definitions) 参照
-- web 側ローダ仕様は [`spec/run-overview.md` §2.6](./spec/run-overview.md) 参照
+- 詳細運用フロー / 構造 / mod 側 dumper 実装は [`architecture.md`](../architecture.md) の「カタログ」の節 参照
+- web 側ローダ仕様は [`run-overview.md`](./run-overview.md) の「chip ホバー tooltip (description)」参照
 
 ### Response 200 (Content-Type: application/json)
 
@@ -442,12 +434,13 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 ## バージョニング方針
 
-このドキュメントは常に「現在実装されている API」を表す。Phase 3.5 で `POST /turns` を破壊的に廃止した。今後は後方互換な追加（フィールド追加・新エンドポイント・新 event_type）を基本とし、破壊的変更時は本セクションに履歴を追加する。
+このドキュメントは常に「現在実装されている API」を表す。破壊的変更をしたときは、下の表に履歴を足す。
 
 ### バージョン履歴
 
 | 時期 | 変更 |
 |------|------|
+| 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |
 | 2026-10 | v2: ラン全体の event を `floor_snapshot` に統合 (`room_entered` / `hp_changed` / `gold_changed` / `act_entered` / `rest_action` / `reward_taken` / `card_obtained` / `card_upgraded` / `card_enchanted` / `card_removed` / `relic_obtained` / `potion_obtained` / `potion_discarded` / `event_choice` を廃止)。`player_id` を全 event で正規化。`run_end` に `final_hp`。出どころをモデル ID に変更。`hit_index` 廃止 |
 | 2026-05 | `GET /catalog.{lang}.json` 追加（chip tooltip 用 STS2 definitions、静的） |
 | Phase 3.5 | `POST /turns` 廃止（410 Gone）、`turns` テーブル削除、`events` テーブルに combat_index / turn_number / sequence 追加。すべての出来事を `events` 1 表に統合 |
@@ -457,8 +450,6 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 ## 関連ドキュメント
 
-- `spec/combat-stats.md` — 戦闘統計画面の表示仕様
-- `spec/run-overview.md` — ラン全体統計画面の表示仕様
-- `spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
-- `roadmap.md` — events カタログの将来追加予定と派生統計のアイデア
-- `archive/phase35-plan.md` — 旧 phase 計画 (歴史的経緯)
+- `combat-stats.md` — 戦闘の画面に出す値と集計方法
+- `run-overview.md` — ラン全体・階の画面に出す値と集計方法
+- `data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ

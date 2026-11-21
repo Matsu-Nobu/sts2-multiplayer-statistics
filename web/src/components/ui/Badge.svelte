@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 状態・種類のバッジ (spec ui.md §4.2)。色だけでなく文字でも示す。
+  // 状態・種類のバッジ (spec ui.md「共通部品」)。色だけでなく文字でも示す。
   interface Props { label: string; tone?: 'ok' | 'bad' | 'warn' | 'accent' | 'neutral'; color?: string; title?: string }
   let { label, tone = 'neutral', color, title }: Props = $props();
   const TONES = {

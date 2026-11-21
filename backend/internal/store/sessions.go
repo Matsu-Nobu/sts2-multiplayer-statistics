@@ -8,17 +8,17 @@ import (
 )
 
 type Session struct {
-	ID           string  `json:"id"`
-	CreatedAt    string  `json:"created_at"`
-	HostName     *string `json:"host_name"`
-	HostSteamID  *string `json:"host_steam_id"`
-	CharacterID  *string `json:"character_id"`
-	Ascension    *int    `json:"ascension"`
-	Seed         *string `json:"seed"`
-	Outcome      *string `json:"outcome"`
-	FinalFloor   *int    `json:"final_floor"`
-	FinishedAt   *string `json:"finished_at"`
-	WriteToken   string  `json:"-"`
+	ID          string  `json:"id"`
+	CreatedAt   string  `json:"created_at"`
+	HostName    *string `json:"host_name"`
+	HostSteamID *string `json:"host_steam_id"`
+	CharacterID *string `json:"character_id"`
+	Ascension   *int    `json:"ascension"`
+	Seed        *string `json:"seed"`
+	Outcome     *string `json:"outcome"`
+	FinalFloor  *int    `json:"final_floor"`
+	FinishedAt  *string `json:"finished_at"`
+	WriteToken  string  `json:"-"`
 }
 
 type CreateSessionInput struct {

@@ -1,71 +1,50 @@
-# 戦闘統計画面 仕様
+# 戦闘の画面 仕様
 
-`SessionView` 上部タブ「戦闘統計」の挙動を定義する。実装は `web/src/components/SessionView.svelte` (タブ + 戦闘セレクタ)、`web/src/components/AllCombatsView.svelte` (全体集計)、`web/src/components/CombatView.svelte` (個別戦闘)。
-
-集計ロジックは `web/src/lib/aggregate.ts` (events → CombatInfo[]、turn / cum 累計)、`web/src/lib/rdps.ts` (rDPS / rMit 観測ベース算出)。
-
----
-
-> 画面の構成・ナビゲーション・配置は [`ui.md`](./ui.md) (2026-10-03) が正。本書の §1・§2 の配置の記述は古い。表示する値・集計方法は本書のまま。
-
-## 1. ナビゲーション
-
-`SessionView` 上部タブ:
-- `戦闘統計` (`combats`) — このドキュメントの対象
-- `ラン全体` (`run`) — `spec/run-overview.md` 参照
-
-戦闘統計タブ内のサブセレクタ (プルダウン):
-- `全体（N戦闘）` — `AllCombatsView`
-- 各戦闘 — `CombatView` (combat_index 指定)
-
-ラベル形式: `${ordinal}. ${encounter_name} [Elite|Boss]?`
-ordinal は出現順 1 始まり。
+戦闘の画面 (全戦闘の合計) と戦闘詳細の画面に **何を出すか** (値の定義・集計方法) を定める。
+画面の構成・配置・URL は [`ui.md`](./ui.md) の「戦闘」「戦闘詳細」に従う。
+実装は `web/src/lib/aggregate.ts` (events → 戦闘ごと・ターンごとの集計)、`web/src/lib/rdps.ts` / `rmit.ts` / `contrib.ts` (貢献スコア)、
+`web/src/pages/CombatsPage.svelte` / `CombatPage.svelte` と、そこから使う `web/src/components/` の部品。
 
 ---
 
-## 2. AllCombatsView (累計表示)
+## 主要数値
 
-全戦闘合計のサマリ + 全戦闘横断のテーブル。
+選んだプレイヤーの値。全戦闘の合計の画面では全戦闘を足し、戦闘詳細の画面ではその戦闘だけを数える。
 
-### 2.1 StatCard 群 (累計)
+| 表示名 | 値 |
+|---|---|
+| 有効与ダメージ | `damage_dealt` の `amount` (敵 HP に通った分) + `blocked_damage` (敵のブロックを削った分) の合計 |
+| 与ダメージ(HP) | `damage_dealt` の `amount` の合計 |
+| オーバーキル | `damage_dealt` の `overkill_damage` の合計 |
+| 被ダメージ | `damage_received` の `amount` の合計 |
+| 有効ブロック | `damage_received` の `blocked_damage` (自分のブロックが吸収した分) の合計 |
+| 総獲得ブロック | 自分が受け取った `block_gained` の `amount` の合計 (味方に付けてもらった分を含む) |
+| 味方付与ブロック | 自分が味方に付けた `block_gained` (`from_player` が自分で、受け取った人が別) の `amount` の合計 |
+| エナジー使用 | `energy_spent` の `amount` の合計 |
+| カード使用枚数 | `card_played` の件数 |
+| ポーション使用 | `potion_used` の件数 |
+| 最大カードダメージ | 1 回のカードのプレイ (同じカードの連続したヒット) で敵 HP に通したダメージの最大と、そのカード名 |
+| 与ダメ貢献 (rDPS) / 被ダメ軽減貢献 (rMit) | 「貢献スコア」 |
 
-プレイヤーごとに以下の数値カード:
-- 与ダメージ
-- 被ダメージ
-- 有効ブロック (ダメージ吸収量)
-- カード使用枚数 / カードドロー枚数
-- エナジー使用量
-- ポーション使用回数
-- カード単価ダメージ (与ダメ / カード使用枚数)
-- エナジー単価ダメージ (与ダメ / エナジー使用量)
-- 最大単発ダメージ + 使用カード名
-
-各 StatCard には `STAT_HELP` の説明文が tooltip で出る。
-
-### 2.2 累計テーブル
-
-- カード別累計テーブル: `card_id` ごとの play_count / total_damage / max_single_hit / debuffs_applied
-- デバフ付与テーブル: `power_id` ごとの累計付与量 (player x power 行列)
-- 貢献スコア (rDPS / rMit): `RdpsPanel` / `RmitPanel`
-
-詳細は `web/src/components/CardTable.svelte`, `DebuffTable.svelte`, `RdpsPanel.svelte`, `RmitPanel.svelte`。
-
-### 2.3 戦闘横断ビュー
-
-- 戦闘ごとの簡易統計を表で見せる
-- 戦闘間の比較・推移把握用
+相手に付けたデバフによるダメージ (`source_appliers` あり) は、与ダメージの各値・カード別の表・最大カードダメージでも、付与者ごとにスタック比で分けて数える (「データソース」)。
 
 ---
 
-## 3. CombatView (個別戦闘表示)
+## プレイヤー比較
 
-選ばれた `combat_index` の 1 戦闘。
+全員の主要数値 (「主要数値」) を、プレイヤーを行にした表で並べる。プレイヤーが 1 人なら出さない。
 
-### 3.1 メタ情報
+---
+
+## 戦闘ごとの表示
+
+カード別・デバフ付与・貢献スコアは、全戦闘の合計の画面では全戦闘を、戦闘詳細の画面ではその戦闘を対象にする。メタ情報とターン推移は戦闘詳細の画面だけに出す。
+
+### メタ情報
 
 - encounter_name / room_type / 結果 (`勝利` / `敗北`、`combat_end.victory`。戦闘中のまま終わっていない戦闘は `進行中`) / ターン数
 
-### 3.2 ターン推移 (PerTurnTable)
+### ターン推移 (PerTurnTable)
 
 各ターン:
 - 与ダメ / 被ダメ / 有効ブロック / エナジー使用 / カード使用 / カードドロー
@@ -73,22 +52,22 @@ ordinal は出現順 1 始まり。
 
 最終ターンは累計値も併記。
 
-### 3.3 カード別 (CardTable)
+### カード別 (CardTable)
 
 その戦闘の `card_played` を `source_card_id` で集計:
 - play_count, damage_dealt, block_provided, max_single_hit, debuffs_applied
 
-**行はカード・レリック・ポーション (など、プレイヤーの持ち物) だけにする** (2026-10-03 確定)。パワーによるダメージ・ブロックは、そのパワーを付けた持ち物の行に足す:
+**行はカード・レリック・ポーション (など、プレイヤーの持ち物) だけにする**。パワーによるダメージ・ブロックは、そのパワーを付けた持ち物の行に足す:
 - 相手に付けたデバフ (毒など) のダメージ: `source_appliers[].origin` ごとにスタック比で分けて、それぞれのカード等の行に足す
   (例: 毒 10 のうち 6 を感染爆発、4 をバウンドフラスコで付けていれば、毒ダメージの 6/10 を感染爆発、4/10 をバウンドフラスコに)
 - 自分側のパワー (トゲ・プレート等) のダメージ・ブロック: `source_origin` のカード等の行に足す
 - 付けたものが分からない (古いセッション・記録できなかった) 分だけ、パワー名の行で残す
-- **カードの効果が直接発動させた、カード以外のもののダメージ・ブロック** は、そのカードが起こしたものとして扱う (2026-10-03 確定。`triggered_by`)。
+- **カードの効果が直接発動させた、カード以外のもののダメージ・ブロック** は、そのカードが起こしたものとして扱う (`triggered_by`)。
   カードごとの個別対応はせず、次の共通の決まりで判定する:
   - 「カード以外のもの」のうち、**ゲームのイベントへの反応** (`AbstractModel` で宣言された Hook の上書き。例: カードを使うたびにダメージを与えるパワーの `AfterCardPlayed`、ターン開始時の毒の `AfterSideTurnStart`) は、そのもの自身の行為。カードのプレイ中に起きても、プレイ中のカードのものにしない
   - それ以外の処理 (毒の `Trigger`、オーブの `Evoke` / `Passive`、破滅の `DoomKill` など) が、カードのプレイ中に、反応の中からではなく呼ばれたら、そのカードの効果
   - 例: 感染爆発の毒の発動、デュアルキャスト等のオーブの解放、暗黒・テスラコイルのオーブの自動効果の発動、終末の日の破滅
-  - **オーブの生成で押し出された解放は除く** (2026-10-03 確定): 枠がいっぱいのときに生成すると、ゲームはいちばん古いオーブを自動で解放する
+  - **オーブの生成で押し出された解放は除く**: 枠がいっぱいのときに生成すると、ゲームはいちばん古いオーブを自動で解放する
     (`OrbCmd.Channel` の中の `EvokeNext`)。これはカードに書かれた解放ではないので、オーブの行に入れる
   - 相手に付けたデバフ (毒など) のダメージのとき:
     - カードを使ったプレイヤーのカード別の表では、**発動したダメージの全量をそのカードの行に足す** (付けた人の内訳に関係なく)
@@ -98,15 +77,15 @@ ordinal は出現順 1 始まり。
   - それ以外 (オーブ等) のダメージ・ブロックは、そのカードの行に足す
   - ターン開始時の毒など、カードのプレイ中でないダメージは、付けたカード等の行にスタック比で分ける (上の通り)
 
-### 3.4 デバフ付与 (DebuffTable)
+### デバフ付与 (DebuffTable)
 
 power × applier の行列:
 - `power_changed` event を `power_id × applier` で集計
 
-### 3.5 貢献スコア (2026-10-02 改訂)
+### 貢献スコア
 
 観測ベース。係数を仮定せず、ゲームが実際に計算したダメージ補正を 1 つずつ記録して按分する。
-対象はダメージ補正・HP 減少補正・ブロック。**カードの発動回数を増やす効果 (TagTeam 等) と、味方へのエナジー譲渡は扱わない** (2026-10-02 確定)。
+対象はダメージ補正・HP 減少補正・ブロック。**カードの発動回数を増やす効果 (TagTeam 等) と、味方へのエナジー譲渡は扱わない**。
 
 #### 補正の記録 (mod、`modifications`)
 
@@ -117,7 +96,7 @@ power × applier の行列:
 |---|---|---|
 | `enchant` | カードのエンチャントによる増減量 | 増減量そのまま |
 | `additive` (足し算。筋力・活力など) | 増減量 | 増減量そのまま |
-| `multiplicative` (掛け算。弱体・挟撃・脱力・かばう等) | 倍率 | **対数で按分** (下記) |
+| `multiplicative` (掛け算。弱体・挟撃・脱力・かばう等。ゲームの `ModifyDamageMultiplicative` と、その後に掛ける `ModifyDamageMultiplicativeLate`) | 倍率 | **対数で按分** (下記) |
 | `cap` (上限。霊体等) | 上限で下がった量 (負) | そのまま |
 | `hp_lost` (ブロック後の HP 減少補正。バッファー・霊体等) | 減少量の変化 (負なら軽減) | そのまま |
 
@@ -132,27 +111,28 @@ power × applier の行列:
 #### rDPS (与ダメージへの貢献)
 
 1 ヒットの有効ダメージ E (= HP に通った分 + ブロックを削った分) を配る。
-1. 相手に付けたデバフ (毒・Doom 等) によるダメージ (`source_appliers` あり) → 付与者にスタック比で 100% (§4)
+1. 相手に付けたデバフ (毒・Doom 等) によるダメージ (`source_appliers` あり) → 付与者にスタック比で 100% (「データソース」)
 2. それ以外: 補正前の基礎ダメージ → 攻撃した本人。正の寄与 → その補正の行為者 (パワーは付与者にスタック比、本人が付けたものは本人)。
    負の寄与 (自分に付いた脱力・敵の霊体等) → 本人の取り分から引く (0 未満にはしない)。
 3. 最後に、補正計算の結果 (ブロック前・HP 上限前) と E の比で全体を縮め、**合計を E に一致させる** (オーバーキルは含まない)。
+4. `modifications` が無いヒット (補正計算を通らないダメージ。破滅による撃破等) は、E の全量を攻撃した本人に付ける。
 
 #### rMit (被ダメ軽減への貢献)
 
 プレイヤーが受けた 1 ヒットについて、**防いだ量** を行為者に配る。
 1. 補正の負の寄与 (敵に付いた脱力・筋力ダウン、自分や味方に付いたかばう・霊体・バッファー等) → その補正の行為者
 2. ブロックで防いだ量 → **そのブロックを付けた人**。誰のブロックがどれだけ残っているかを mod が記録し、
-   防いだ量を残量の比で配る (`block_sources`)。自分で張ったブロックは自分。
+   防いだ量を残量の比で配る (`block_sources`)。**自分で張ったブロックで防いだ量は、誰の貢献にもしない**
+   (自分を守るのは貢献ではないため)。
 3. 正の寄与 (敵の筋力・自分に付いた弱体等) は誰の貢献にもしない。
 
 #### 表示
 
-`RdpsPanel` / `RmitPanel` は従来どおり 合計 / 自力 / 他人へ / 他人から を出す。内訳の出どころ名は補正のモデル名 (パワー名・レリック名)。
-`modifications` が v1 形式 (`pre` / `post` / `modifier_ids`) の旧データは、従来の計算で表示する。
+`ContribPanel` は 合計 / 自力 / 味方への貢献 / 味方から受けた分 を出す。内訳の出どころ名は補正のモデル名 (パワー名・レリック名)。
 
 ---
 
-## 4. データソース
+## データソース
 
 ベースは `web/src/lib/aggregate.ts` の `buildCombatInfos(doc)` → `CombatInfo[]`。
 
@@ -165,16 +145,16 @@ power × applier の行列:
 | ターン毎 与ダメ | `damage_dealt`, group by (combat_index, turn_number, player_id) |
 | 戦闘毎 与ダメ | 同上 + combat_index 集計 |
 | 被ダメ | `damage_received` |
-| 有効ブロック | `block_gained` の差分 |
+| 有効ブロック | `damage_received.payload.blocked_damage` |
 | カード使用 | `card_played` |
 | カードドロー | `card_drawn` |
 | エナジー使用 | `energy_spent` |
 | デバフ付与 | `power_changed` の applier ベース集計 |
 | ポーション使用 | `potion_used` |
-| 最大単発 | `damage_dealt.payload.amount` の max + `source_card_id` |
+| 最大カードダメージ | 同じカードの連続した `damage_dealt` の `amount` の合計の最大 + `source_card_id` |
 | オーバーキル | `damage_dealt.payload.overkill_damage` |
-| rDPS | `damage_dealt` の `modifications` (補正 1 つずつ) と `source_appliers` (§3.5) |
-| rMit | `damage_received` の `modifications` と `block_sources` (§3.5) |
+| rDPS | `damage_dealt` の `modifications` (補正 1 つずつ) と `source_appliers` (「貢献スコア」) |
+| rMit | `damage_received` の `modifications` と `block_sources` (「貢献スコア」) |
 
 **相手に付けたデバフによるダメージ (`source_appliers` あり) は、与ダメージ・カード別の表・最大単発も、付与者ごとにスタック比で按分して数える** (rDPS と同じ数字になる)。毒はターン開始時の発動も、カード効果 (`Outbreak` 等) からの発動も同じ扱い。
 
@@ -182,15 +162,15 @@ mod 側で patch している hook と event_type の対応は [`spec/data-sourc
 
 ---
 
-## 5. 単一プレイ vs MP
+## 単一プレイ vs MP
 
-- player_id ごとに集計。MP は per-player tab で切り替え。
+- player_id ごとに集計する。どのプレイヤーの値を出すかは AppShell のプレイヤー切り替えで選ぶ (ui.md「画面の骨格 (AppShell)」)。
 - プレイヤー ID は mod が正規化して送る (シングルプレイでも Steam ID)。web 側の読み替えは無い。
 
 ---
 
-## 6. 既知の制約
+## 既知の制約
 
-- 味方へのエナジー付与: 未追跡 (`PlayerCmd.GainEnergy` で取れることは確認済み。`redesign-v2.md` §2.4-4、v2 の後続)
+- 味方へのエナジー付与: 未追跡 (`PlayerCmd.GainEnergy` を patch すれば取れる。戦闘の画面に表示欄が無いので、画面の仕様と合わせて追加する)
 - スター消費 / シャッフル回数: 未追跡
-- クロスセッション統計（プレイヤー単位・カード単位の集計エンドポイント）: `roadmap.md` Phase 4
+- 複数のセッションをまたぐ統計 (プレイヤー単位・カード単位の集計): 無い

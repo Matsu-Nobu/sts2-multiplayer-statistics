@@ -59,31 +59,10 @@ Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を
 STS2 のマルチプレイは決定論的ロックステップ方式で、全クライアントが同じシミュレーションを実行している。`AfterDamageGiven` 等の hook は他プレイヤーの行動でも発火し、`dealer` で識別できる。
 **ホスト 1 人の mod だけがサーバーへ送信する**（`RunManager.Instance.NetService.Type == Client` のときは送信しない）。仲間は mod を入れる必要がない。
 
-### データの取り方 (v2)
+### データの取り方と帰属
 
-全体設計は [`redesign-v2.md`](./redesign-v2.md)。要点:
-
-| 何 | どこから | event |
-|---|---|---|
-| ラン全体の各階の内容 | ゲーム自身の階ごとの記録 (`MapPointHistoryEntry`)。確定点 `RunManager.UpdatePlayerStatsInMapPointHistory` | `floor_snapshot` |
-| ショップの値段 | `Merchant*Entry.OnTryPurchase` | `item_purchased` |
-| ラン開始 / 終了 | 最初の部屋 (`AfterRoomEntered`) / `RunManager.OnEnded` (+ `IsAbandoned`、直前の HP は `WinRun` / `Abandon` の Prefix) | `run_start` / `run_end` |
-| 戦闘開始 / 勝利 / 敗北 | `BeforeCombatStart` / `AfterCombatEnd` (勝利でしか呼ばれない) / 戦闘中の `OnEnded` | `combat_start` / `combat_end` |
-| ターン区切り | `AfterSideTurnEnd(side=Player)` | (送信の区切り) |
-| 与ダメ・被ダメ | `AfterDamageGiven` 1 か所 (+ `ModifyDamage` の補正記録) | `damage_dealt` / `damage_received` |
-| ブロック・カード使用・ドロー・エナジー・ポーション・パワー | `AfterBlockGained` / `AfterCardPlayed` / `AfterCardDrawn` / `AfterEnergySpent` / `AfterPotionUsed` / `AfterPowerAmountChanged` | 各 event |
-
-### 誰の行為か (帰属)
-
-- プレイヤー ID は `Identity` で正規化 (シングルプレイ・LAN ホストの `NetId=1` → ローカルの Steam ID)。
-- ペット (Osty 等) の与ダメ・付与は `Creature.PetOwner` の持ち主に付ける。
-- **出どころの自動追跡 (`SourceContext`)**: 起動時に、パワー・レリック・オーブ・エンチャントの全具象クラスの
-  上書き Hook メソッドのうち、本体で `CreatureCmd.Damage / GainBlock / Kill`、`PowerCmd.Apply`、
-  `PlayerCmd.GainEnergy` を呼ぶものを IL から自動で選んで patch し、実行中のモデルを `AsyncLocal` に積む。
-  カードが無いダメージ・ブロックには、そのモデルの ID (`POISON_POWER` 等) が出どころとして付く。
-  攻撃者が空のダメージ (毒など) は、出どころパワーの付与者を与え手にする。
-- 複数プレイヤーが同じデバフを撒いた場合、`active_on_target` の各 power に `appliers[]`
-  (player_id × stacks) を入れて送り、web が stacks 比で按分して rDPS / rMit を出す。
+mod は、ゲーム自身の記録 (階ごとの記録・ダメージの結果) と Hook から event を作る。どの Hook から何を取るか、
+誰の行為として送るかは [`spec/data-sources.md`](./spec/data-sources.md) が正。
 
 ### HTTP 送信
 
@@ -95,16 +74,7 @@ STS2 のマルチプレイは決定論的ロックステップ方式で、全ク
 
 ### エンドポイント
 
-エンドポイントの正規仕様は `api.md` を参照。要点のみ:
-
-| Method | Path | 認証 | 用途 |
-|--------|------|------|------|
-| `POST` | `/sessions` | — | セッション作成（write_token 発行） |
-| `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿 |
-| `POST` | `/sessions/{id}/turns` | — | **410 Gone**（Phase 3.5 で廃止） |
-| `GET`  | `/api/sessions/{id}` | — | WebUI 用 session 全データ取得（ETag 対応） |
-| `GET`  | `/s/{id}` | — | SPA HTML 配信 |
-| `GET`  | `/healthz` | — | ヘルスチェック |
+エンドポイントは [`spec/api.md`](./spec/api.md) が正。
 
 ### スキーマ
 
@@ -134,18 +104,11 @@ STS2 のマルチプレイは決定論的ロックステップ方式で、全ク
 
 ## WebUI
 
-クライアント側でイベント列から集計を導出する。主なビュー / パネル:
+クライアント側でイベント列から集計を導出する。画面の構成は [`spec/ui.md`](./spec/ui.md)。
 
-- `SessionView` — トップビュー（戦闘セレクタ + 統計）
-- `AllCombatsView` — ラン全体サマリ
-- `CombatView` — 戦闘単位ビュー
-- `TimelineView` — イベント列のタイムライン表示
-- `RdpsPanel` / `RmitPanel` — 観測ベースの貢献度スコア
-- `DamageChart` — ターン推移折れ線・戦闘単位棒グラフ
-- `CardTable` — カード別ダメージ／ブロック
-- `DebuffTable` — 状態異常付与
-
-集計ロジックは `web/src/lib/aggregate.ts` / `rdps.ts` 等にまとまっている。
+- `web/src/components/SessionView.svelte` — 画面の骨格 (ヘッダー・タブ・プレイヤー切り替え)。集計結果を context で各画面に配る
+- `web/src/pages/` — 画面ごとの部品 (ラン全体 `RunPage` / 階 `FloorPage` / 戦闘 `CombatsPage` / 戦闘詳細 `CombatPage`)
+- `web/src/lib/` — 集計 (`aggregate.ts` 戦闘、`runOverview.ts` 階、`rdps.ts` / `rmit.ts` / `contrib.ts` 貢献スコア)、カタログ (`catalog.ts`)、URL (`router.svelte.ts`)
 
 ---
 
@@ -173,7 +136,7 @@ mod のコード（`HttpClient` / `OS.Clipboard` / `OS.GetUserDataDir()`）は�
 
 ---
 
-## カタログ (cards / relics / potions / enchantments の definitions)
+## カタログ (cards / relics / potions / enchantments / 休憩所の選択肢の definitions)
 
 UI で chip にホバーした時に「ストライク: 6 ダメージを与える。」のような description を出すために、
 STS2 内部の Card / Relic / Potion / Enchantment のメタデータを **静的 JSON ファイル**として
@@ -214,9 +177,12 @@ web/public/catalog.{lang}.json   ← リポジトリで version 管理
   // cost:      CardModel.EnergyCost.Canonical。X コストは -1
   "relics":       [{ "id", "name", "description", "rarity" }, ...],
   "potions":      [{ "id", "name", "description", "rarity" }, ...],
-  "enchantments": [{ "id", "name", "description" }, ...]
+  "enchantments": [{ "id", "name", "description" }, ...],
+  "rest_site_options": [{ "id", "name" }, ...]
 }
 ```
+
+カードの description には、ゲームがカードに表示する文と同じく、キーワード (プレイ不可・廃棄など) の行が入る (`CardModel.GetDescriptionForPile` と同じ順)。
 
 description には STS2 内部のタグ (`[gold]X[/gold]` `[blue]X[/blue]` `[green]X[/green]` 等) が
 そのまま残る。WebUI 側 (`web/src/lib/catalog.ts` の `renderCardDescription`) で HTML span に変換。
@@ -264,9 +230,9 @@ make dump-catalog LANG=ja
 
 ## 関連ドキュメント
 
-- `api.md` — HTTP API 仕様（正）
-- `spec/combat-stats.md` — 戦闘統計画面の表示仕様
-- `spec/run-overview.md` — ラン全体統計画面の表示仕様
+- `spec/api.md` — HTTP API 仕様（正）
+- `spec/ui.md` — 画面の構成・URL・共通部品・見た目
+- `spec/combat-stats.md` — 戦闘の画面に出す値と集計方法
+- `spec/run-overview.md` — ラン全体・階の画面に出す値と集計方法
 - `spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
-- `roadmap.md` — フェーズ別到達点と将来拡張
 - `operations.md` — 配布・運用方針

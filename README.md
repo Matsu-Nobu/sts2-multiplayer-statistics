@@ -55,10 +55,9 @@ docs/       設計ドキュメント
 詳細は [`docs/`](docs/) 参照。最低限の入り口:
 
 - [`docs/README.md`](docs/README.md) — ドキュメント索引
-- [`docs/api.md`](docs/api.md) — HTTP API 仕様（現行実装のみ）
+- [`docs/spec/api.md`](docs/spec/api.md) — HTTP API 仕様（現行実装のみ）
 - [`docs/architecture.md`](docs/architecture.md) — アーキテクチャ
 - [`docs/spec/`](docs/spec/) — UI 表示仕様（戦闘統計・ラン全体・データソース）
-- [`docs/roadmap.md`](docs/roadmap.md) — 拡張計画
 - [`docs/operations.md`](docs/operations.md) — 運用方針
 
 ## ライセンス

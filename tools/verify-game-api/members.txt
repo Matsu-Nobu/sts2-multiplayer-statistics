@@ -13,6 +13,7 @@ type   MegaCrit.Sts2.Core.Models.ModelDb
 prop   MegaCrit.Sts2.Core.Models.ModelDb AllCards pub
 prop   MegaCrit.Sts2.Core.Models.ModelDb AllRelics pub
 prop   MegaCrit.Sts2.Core.Models.ModelDb AllPotions pub
+method MegaCrit.Sts2.Core.Entities.Cards.CardKeywordExtensions GetCardText
 prop   MegaCrit.Sts2.Core.Models.AbstractModel Id pub
 prop   MegaCrit.Sts2.Core.Models.ModelId Entry pub
 prop   MegaCrit.Sts2.Core.Models.CardModel Title pub

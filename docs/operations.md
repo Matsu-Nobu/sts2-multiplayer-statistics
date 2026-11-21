@@ -61,6 +61,19 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
 
 ---
 
+## 公開サーバへのデプロイ
+
+公開サーバは Fly.io のアプリ `sts2stats` で動いている。設定はリポジトリ直下の `fly.toml` にあり、秘密の値は入っていない。
+どの PC からも、次の手順でデプロイできる。
+
+1. Fly.io のコマンドを入れる (`curl -L https://fly.io/install.sh | sh`。Windows は WSL の中で入れる)。
+2. `flyctl auth login` でログインする (ブラウザで承認する)。
+3. デプロイするコミットを手元で選んだ状態で `make deploy` を実行する。backend のテストと web の型チェックが通った後に、
+   Fly.io 側でイメージをビルドして入れ替える。手元に Docker は要らない。
+4. `curl https://sts2stats.fly.dev/healthz` と、共有 URL の画面が開くことを確認する。
+
+前の版に戻すときは、`flyctl releases -a sts2stats` で版を調べ、その版のイメージで `flyctl deploy --image <イメージ>` を実行する。
+
 ## ゲーム更新時の手順
 
 Slay the Spire 2 が更新されたら、mod が依存する内部実装が変わっていないかを **実装に触る前に** 確認する。
@@ -72,7 +85,7 @@ Slay the Spire 2 が更新されたら、mod が依存する内部実装が変�
    - `tools/verify-game-api/members.txt` に書いた「名前で参照しているメンバー」が存在するかを確認する
 2. NG が出たら、デコンパイル (`ilspycmd -p <sts2.dll> -o <出力先>`) で新しいシグネチャ・呼び出し元を読んでから直す
    (CLAUDE.md §2.1)。呼ばれるタイミングの変化は検証ツールでは分からないので、NG になった箇所は中身も読む。
-3. ゲームを起動し、ログ (`~/Library/Application Support/SlayTheSpire2/logs/godot.log`) で次を確認する:
+3. ゲームを起動し、ログ (Mac は `~/Library/Application Support/SlayTheSpire2/logs/godot.log`、Windows は `%APPDATA%\SlayTheSpire2\logs\godot.log`) で次を確認する。
    - `[StsStats] Patch table: N ok, 0 failed`
    - `[StsStats] SourceContext: ... patched N ..., failed 0`
 4. カタログを作り直す (`make dump-catalog`)。新しいカード・レリック等が増えている。
@@ -80,5 +93,5 @@ Slay the Spire 2 が更新されたら、mod が依存する内部実装が変�
 ## 関連ドキュメント
 
 - `architecture.md` — 全体アーキテクチャ
-- `api.md` — HTTP API 仕様
+- `spec/api.md` — HTTP API 仕様
 - `archive/phase2-plan.md` — バックエンド・WebUI 実装計画 (歴史的経緯)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Save;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -12,10 +13,10 @@ using MegaCrit.Sts2.Core.Saves;
 namespace StsStats;
 
 /// <summary>
-/// ラン・戦闘の始まりと終わり (docs/spec/data-sources.md §1.1 / §1.2)。
+/// ラン・戦闘の始まりと終わり (docs/spec/data-sources.md「ラン・階」 / §1.2)。
 ///
 ///   ラン開始   … 最初に部屋に入ったとき (AfterRoomEntered)。1 階 = ネオウから記録される
-///   戦闘開始   … Hook.BeforeCombatStart
+///   戦闘開始   … Hook.BeforeCombatStart の Prefix
 ///   戦闘勝利   … Hook.AfterCombatEnd (ゲームは勝利時にしか呼ばない)
 ///   戦闘敗北   … 戦闘中のラン終了 (RunManager.OnEnded)
 ///   ラン終了   … RunManager.OnEnded(isVictory) の最初の 1 回。放棄は RunManager.IsAbandoned
@@ -54,6 +55,7 @@ internal static class Lifecycle
     }
 
     private static object? _runStartFor;   // run_start を送ったランの RunState (同じランで 2 回送らない)
+    private static object? _trackedRun;    // ランごとの状態 (下の 3 つ) が対象にしているランの RunState
 
     public static bool InCombat
     {
@@ -68,6 +70,26 @@ internal static class Lifecycle
     private static bool _runEndEmitted;
     private static readonly Dictionary<string, int> _finalHp = new();
 
+    // === 今のラン ===============================================================
+
+    /// <summary>
+    /// event を送る前に呼ぶ。前と違うランなら、ランごとの状態を作り直してセッションを切り替える。
+    /// 再開直後は「部屋に入った」より先に階の確定が走るので、部屋に入った時だけでは前のランのセッションに送ってしまう。
+    /// </summary>
+    public static void Track(IRunState runState)
+    {
+        Run = runState;
+        if (!ReferenceEquals(_trackedRun, runState))
+        {
+            _trackedRun = runState;
+            _runEndEmitted = false;
+            _combatOpen = false;
+            _finalHp.Clear();
+        }
+        EventBuffer.UpdateFloor(runState.TotalFloor);
+        Session.Ensure(runState);
+    }
+
     // === ラン開始・部屋 =========================================================
 
     public static void AfterRoomEnteredPostfix(IRunState? runState, AbstractRoom? room)
@@ -75,15 +97,11 @@ internal static class Lifecycle
         try
         {
             if (runState == null) return;
-            Run = runState;
-            EventBuffer.UpdateFloor(runState.TotalFloor);
-            Session.Ensure(runState);
+            Track(runState);
 
             if (!SessionManager.RunStartAlreadyEmitted && !ReferenceEquals(_runStartFor, runState))
             {
                 _runStartFor = runState;
-                _runEndEmitted = false;
-                _finalHp.Clear();
                 EmitRunStart(runState);
                 if (ModEntry.SessionStore != null) SessionManager.MarkRunStartEmitted(ModEntry.SessionStore);
             }
@@ -116,19 +134,17 @@ internal static class Lifecycle
 
     // === 戦闘 ===================================================================
 
-    public static void BeforeCombatStartPostfix(IRunState? runState, ICombatState? combatState)
+    /// <summary>
+    /// Hook.BeforeCombatStart の Prefix。レリック等が戦闘開始時の効果 (棘・プレートの付与等) を実行するより前に戦闘を始める。
+    /// Postfix だと、非同期の Hook が最初に待つ所まで効果が進んだ後に呼ばれ、付けたパワーの出どころの記録を消してしまう。
+    /// </summary>
+    public static void BeforeCombatStartPrefix(IRunState? runState, ICombatState? combatState)
     {
         try
         {
-            if (runState != null)
-            {
-                Run = runState;
-                Session.Ensure(runState);
-                EventBuffer.UpdateFloor(runState.TotalFloor);
-            }
+            if (runState != null) Track(runState);
             EventBuffer.BeginCombat();
             PowerOriginRegistry.ClearForCombat();
-            ModifierLog.Clear();
             _combatOpen = true;
 
             var enc = combatState?.Encounter;
@@ -184,9 +200,11 @@ internal static class Lifecycle
     {
         try
         {
-            if (Run == null) return;
+            var run = Run;
+            if (run == null) return;
+            Track(run);
             _finalHp.Clear();
-            foreach (var p in Run.Players) _finalHp[Identity.Of(p)] = p.Creature.CurrentHp;
+            foreach (var p in run.Players) _finalHp[Identity.Of(p)] = p.Creature.CurrentHp;
         }
         catch (Exception ex) { Log.Error($"[StsStats] WinRun/Abandon prefix error: {ex.Message}"); }
     }
@@ -196,11 +214,14 @@ internal static class Lifecycle
     /// 勝利後の「全員を倒す」処理で 2 回目が来るので、最初の 1 回だけ使う。
     /// この時点で最終階の floor_snapshot は送信済み (OnEnded 冒頭の UpdatePlayerStatsInMapPointHistory)。
     /// </summary>
-    public static void OnEndedPostfix(bool isVictory, SerializableRun __result)
+    public static void OnEndedPostfix(bool isVictory, PostRunProgressUpdateResult __result)
     {
         try
         {
-            if (_runEndEmitted || Run == null) return;
+            var run = Run;
+            if (run == null) return;
+            Track(run);
+            if (_runEndEmitted) return;
             _runEndEmitted = true;
             if (_combatOpen) EmitCombatEnd(victory: false);
 
@@ -208,19 +229,19 @@ internal static class Lifecycle
             try { abandoned = RunManager.Instance.IsAbandoned; } catch { }
             string outcome = isVictory ? "victory" : abandoned ? "abandoned" : "death";
 
-            var finalHp = Run.Players.ToDictionary(
+            var finalHp = run.Players.ToDictionary(
                 p => Identity.Of(p),
                 p => _finalHp.TryGetValue(Identity.Of(p), out var hp) ? hp : p.Creature.CurrentHp);
 
             EventBuffer.EmitGlobalEvent("run_end", null, new
             {
                 outcome     = outcome,
-                final_floor = Run.TotalFloor,
+                final_floor = run.TotalFloor,
                 final_hp    = finalHp,
-                badges      = Badges(__result, isVictory),
+                badges      = Badges(__result.run, isVictory),
             });
             EventBuffer.FlushOutgoing();
-            Log.Info($"[StsStats] run_end outcome={outcome} floor={Run.TotalFloor}");
+            Log.Info($"[StsStats] run_end outcome={outcome} floor={run.TotalFloor}");
         }
         catch (Exception ex) { Log.Error($"[StsStats] OnEnded postfix error: {ex.Message}"); }
     }

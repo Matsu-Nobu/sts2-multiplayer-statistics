@@ -32,7 +32,6 @@ data.db-shm
 data.db-wal
 
 # メンテナ専用（git 管理しない）
-fly.toml
 Makefile.local
 
 # Claude Code の個人用設定

@@ -10,7 +10,7 @@ using MegaCrit.Sts2.Core.Runs.History;
 namespace StsStats;
 
 /// <summary>
-/// ラン全体の画面のデータ (docs/spec/data-sources.md §1.1)。
+/// ラン全体の画面のデータ (docs/spec/data-sources.md「ラン・階」)。
 ///
 /// ゲーム自身の階ごとの記録 (MapPointHistoryEntry) をそのまま写して floor_snapshot として送る。
 /// 記録は全プレイヤー分あり、マルチプレイの相手の分もホストの手元で埋まる (ロックステップ + RewardSynchronizer)。
@@ -47,6 +47,7 @@ internal static class FloorRecorder
         var history = runState.MapPointHistory;
         var entry = runState.CurrentMapPointHistoryEntry;
         if (entry == null || history.Count == 0) return;
+        Lifecycle.Track(runState);
 
         EventBuffer.EmitGlobalEvent("floor_snapshot", null, new
         {
@@ -113,14 +114,14 @@ internal static class FloorRecorder
             colorless = e.BoughtColorless.Select(ModelInfo.CardRef).ToList(),
         },
         completed_quests = e.CompletedQuests.Select(ModelInfo.Generic).ToList(),
-        // その時点のデッキ・レリック・ポーション (ラン全体の画面用。spec run-overview.md §3.6)
+        // その時点のデッキ・レリック・ポーション (ラン全体の画面用。spec run-overview.md「プレイヤーの最終状態 (ラン全体の画面)」)
         deck    = player?.Deck.Cards.Select(ModelInfo.Card).ToList(),
         relics  = player?.Relics.Select(r => ModelInfo.Relic(r.Id)).ToList(),
         potions = player?.Potions.Select(po => ModelInfo.Potion(po.Id)).ToList(),
     };
 
     // === ショップの値段 ===========================================================
-    // 購入処理 (OnTryPurchase) は買った人の手元でしか動かないので、取れるのはホスト自身の購入だけ。
+    // 購入処理 (OnTryPurchaseInternal) は全員の PC で実行されるので、全プレイヤーの購入が取れる。
     // 品物そのものは階の記録 (cards_gained 等) に全員分入る。
 
     /// <summary>MerchantEntry._player (protected readonly)。起動時に存在を確認する (ModEntry.RequiredMembers)。</summary>
@@ -173,12 +174,14 @@ internal static class FloorRecorder
     {
         try
         {
+            var run = Lifecycle.Run;
+            if (run != null) Lifecycle.Track(run);
             Player? player = PlayerField != null ? PlayerField(entry) : null;
             payload["item_kind"]  = kind;
             payload["gold_spent"] = entry.Cost;
             EventBuffer.EmitGlobalEvent("item_purchased", player != null ? Identity.Of(player) : null, payload);
-            if (Lifecycle.Run != null) EmitLive(Lifecycle.Run);
+            if (run != null) EmitLive(run);
         }
-        catch (Exception ex) { Log.Error($"[StsStats] {kind}.OnTryPurchase postfix error: {ex.Message}"); }
+        catch (Exception ex) { Log.Error($"[StsStats] {kind}.OnTryPurchaseInternal postfix error: {ex.Message}"); }
     }
 }

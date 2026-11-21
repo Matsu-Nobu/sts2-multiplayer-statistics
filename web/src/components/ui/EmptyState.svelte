@@ -1,5 +1,5 @@
 <script lang="ts">
-  // データが無いとき (spec ui.md §4.2): 何が無いのか + 次にすること。
+  // データが無いとき (spec ui.md「共通部品」): 何が無いのか + 次にすること。
   interface Props { title: string; hint?: string }
   let { title, hint }: Props = $props();
 </script>

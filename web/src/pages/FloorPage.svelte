@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 階 (spec ui.md §3.2): 階セレクタ + 1 階分の詳細 (run-overview.md §2.4)。floor が null なら最初の階。
+  // 階 (spec ui.md「階」): 階セレクタ + 1 階分の詳細 (run-overview.md「階の詳細」)。floor が null なら最初の階。
   import { useSession } from '../lib/session';
   import { buildFloorSummaries, roomVisual } from '../lib/runOverview';
   import { link, href } from '../lib/router.svelte';

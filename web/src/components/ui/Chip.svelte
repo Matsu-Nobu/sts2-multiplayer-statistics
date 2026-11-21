@@ -1,5 +1,5 @@
 <script lang="ts">
-  // レリック・ポーション・その他のチップ (spec run-overview.md §2.5)。
+  // レリック・ポーション・その他のチップ (spec run-overview.md「chip 表記ルール」)。
   import CardTooltip from '../CardTooltip.svelte';
   interface Props { label: string; sub?: string; subClass?: string; tip?: string }
   let { label, sub = '', subClass = 'text-slate-400', tip = '' }: Props = $props();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 説明の「?」ボタン (spec ui.md §4.2)。押す (タップ) と開き、マウスを乗せても開く。Esc / 外を押すと閉じる。
+  // 説明の「?」ボタン (spec ui.md「共通部品」)。押す (タップ) と開き、マウスを乗せても開く。Esc / 外を押すと閉じる。
   interface Props { text: string; label?: string; align?: 'left' | 'center' | 'right' }
   let { text, label = '説明', align = 'center' }: Props = $props();
   let pinned = $state(false);

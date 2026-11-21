@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ターン推移 (spec combat-stats.md §3.2)。行を押すとそのターンに使ったカードを開く。
+  // ターン推移 (spec combat-stats.md「ターン推移 (PerTurnTable)」)。行を押すとそのターンに使ったカードを開く。
   import type { TurnPayload } from '../lib/types';
   import { cardTypeLabel } from '../lib/labels';
   import Panel from './ui/Panel.svelte';

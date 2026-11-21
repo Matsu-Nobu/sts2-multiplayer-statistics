@@ -39,6 +39,11 @@ export type EnchantmentEntry = {
   description: string;
 };
 
+export type RestSiteOptionEntry = {
+  id: string;     // ゲームの OptionId ("SMITH" 等)
+  name: string;
+};
+
 export interface ItemCatalog {
   schema_version?: number;
   lang?: string;
@@ -47,6 +52,7 @@ export interface ItemCatalog {
   relics: RelicEntry[];
   potions: PotionEntry[];
   enchantments: EnchantmentEntry[];
+  rest_site_options?: RestSiteOptionEntry[];
 }
 
 export interface CatalogLookup {
@@ -54,6 +60,7 @@ export interface CatalogLookup {
   relic(id: string): RelicEntry | null;
   potion(id: string): PotionEntry | null;
   enchantment(id: string): EnchantmentEntry | null;
+  restSiteOption(id: string): RestSiteOptionEntry | null;
 }
 
 let _cache: { lang: string; catalog: ItemCatalog; lookup: CatalogLookup } | null = null;
@@ -95,6 +102,7 @@ function buildLookup(catalog: ItemCatalog): CatalogLookup {
   const relicMap  = new Map(catalog.relics.map(r => [r.id, r]));
   const potionMap = new Map(catalog.potions.map(p => [p.id, p]));
   const enchMap   = new Map(catalog.enchantments.map(e => [e.id, e]));
+  const restMap   = new Map((catalog.rest_site_options ?? []).map(r => [r.id, r]));
   return {
     card(id, upgraded = false) {
       const c = cardMap.get(id);
@@ -108,6 +116,7 @@ function buildLookup(catalog: ItemCatalog): CatalogLookup {
     relic: id => relicMap.get(id) ?? null,
     potion: id => potionMap.get(id) ?? null,
     enchantment: id => enchMap.get(id) ?? null,
+    restSiteOption: id => restMap.get(id) ?? null,
   };
 }
 
@@ -119,7 +128,7 @@ function buildLookup(catalog: ItemCatalog): CatalogLookup {
 //   [green]X[/green]  → アップグレード差分強調 (緑)
 //   [red]X[/red]      → 警告 (赤)
 //   [purple]X[/purple]→ 紫
-//   [img]res://...[/img] → アイコン (取り扱い不能 → 削除)
+//   [img]res://...[/img] → アイコン (エナジーは 〇、星は ☆、それ以外は削除)
 //
 // 未解決 placeholder:
 //   {Damage:diff()} 等 → 戦闘文脈依存で解決不能 → "XX" 等のフォールバック表示
@@ -139,10 +148,34 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+const UNRESOLVED = '<span class="text-slate-400">XX</span>';
+
+/**
+ * {...} を外側から 1 つずつ置き換える。{...} は入れ子になりうるので正規表現ではなく括弧の深さで区切る。
+ * - "{名前:...:A|B}" のように最上位に "|" があるもの → 最後の選択肢 B (ゲームが戦闘の外で出す文)
+ * - それ以外 ("{Damage:diff()}" 等) → "XX" (戦闘中の値なので解決できない)
+ */
+function resolvePlaceholders(s: string): string {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] !== '{') { out += s[i++]; continue; }
+    let depth = 0, j = i, lastBar = -1;
+    for (; j < s.length; j++) {
+      if (s[j] === '{') depth++;
+      else if (s[j] === '}' && --depth === 0) break;
+      else if (s[j] === '|' && depth === 1) lastBar = j;
+    }
+    out += lastBar >= 0 ? resolvePlaceholders(s.slice(lastBar + 1, j)) : UNRESOLVED;
+    i = j + 1;
+  }
+  return out;
+}
+
 /**
  * カタログ由来 description text を tooltip 用 HTML 文字列に変換する。
  * - [color]X[/color] → <span class="text-...">X</span>
- * - [img]...[/img]   → 削除
+ * - [img]...[/img]   → エナジーは 〇、星は ☆、それ以外は削除
  * - {Damage:...} 等  → "XX" にフォールバック (戦闘文脈依存で解決不能)
  * - 改行           → <br>
  */
@@ -150,8 +183,9 @@ export function renderCardDescription(text: string): string {
   if (!text) return '';
   let s = escapeHtml(text);
 
-  // [img]res://...[/img] は web に対応画像無いので削除
-  s = s.replace(/\[img\][^\[]*\[\/img\]/g, '');
+  // web にはゲームのアイコン画像が無いので、エナジーと星だけ文字に置き換え、それ以外は削除する。
+  s = s.replace(/\[img\]([^\[]*)\[\/img\]/g, (_m, path: string) =>
+    path.endsWith('energy_icon.png') ? '〇' : path.endsWith('star_icon.png') ? '☆' : '');
 
   // [color]X[/color] → span
   s = s.replace(/\[(\w+)\]([\s\S]*?)\[\/\1\]/g, (_m, color: string, inner: string) => {
@@ -159,9 +193,7 @@ export function renderCardDescription(text: string): string {
     return cls ? `<span class="${cls}">${inner}</span>` : inner;
   });
 
-  // 残った {placeholder...} → "XX" (戦闘文脈依存で解決不能なもの)
-  // 例: "{Damage:diff()}ダメージ" → "XXダメージ"
-  s = s.replace(/\{[^}]+\}/g, '<span class="text-slate-400">XX</span>');
+  s = resolvePlaceholders(s);
 
   // 改行
   s = s.replace(/\n/g, '<br>');

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 戦闘セレクタ (spec ui.md §3.4): 「全戦闘の合計」と各戦闘のドロップダウン + 前 / 次。選ぶと URL が変わる。
+  // 戦闘セレクタ (spec ui.md「戦闘」): 「全戦闘の合計」と各戦闘のドロップダウン + 前 / 次。選ぶと URL が変わる。
   import { useSession } from '../lib/session';
   import { navigate, type CombatViewName } from '../lib/router.svelte';
 

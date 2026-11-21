@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 戦闘 (spec ui.md §3.4): 戦闘セレクタ + 全戦闘の合計。
+  // 戦闘 (spec ui.md「戦闘」): 戦闘セレクタ + 全戦闘の合計。
   import { useSession } from '../lib/session';
   import { computeRdps } from '../lib/rdps';
   import { computeRmit } from '../lib/rmit';

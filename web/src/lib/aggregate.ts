@@ -1,9 +1,4 @@
-/**
- * Phase 3.5: events 列から戦闘単位サマリ・ターン単位サマリを導出する純関数群。
- *
- * 既存の表示コンポーネント（CombatView / AllCombatsView 等）の入力 shape は
- * Phase 2 形式（TurnPayload[]）のままで、ここで events から組み立てる。
- */
+/** events から、戦闘ごと・ターンごとのプレイヤーの集計を作る (spec combat-stats.md)。 */
 
 import type {
   Origin,
@@ -27,7 +22,7 @@ export interface CombatInfo {
 // === 公開 API ================================================================
 
 /**
- * 戦闘内 event のうち、各 combat_index の **最後の combat_start 以降** だけを返す (spec combat-stats.md §4)。
+ * 戦闘内 event のうち、各 combat_index の **最後の combat_start 以降** だけを返す (spec combat-stats.md「データソース」)。
  * 中断→再開で同じ階の戦闘をやり直すと combat_start が再び来る。中断前の分はゲーム上無かったことになっているので捨てる。
  * combat_start の無い combat_index (戦闘外に紛れた event) も捨てる。combat_index の無い event はそのまま残す。
  */
@@ -61,7 +56,7 @@ export function splitByStacks(amount: number, appliers: { player_id: string; sta
 
 /**
  * 相手に付けたデバフ (毒・Doom 等) によるダメージ (source_appliers あり) を、付与者ごとの event に分ける。
- * 与ダメージ・カード別の表・最大単発の集計用 (spec combat-stats.md §4)。
+ * 与ダメージ・カード別の表・最大単発の集計用 (spec combat-stats.md「データソース」)。
  */
 export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
   const out: EventRecord[] = [];
@@ -80,7 +75,7 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
       out.push(withOrigin({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload }, a.origin));
     });
     if (trig) {
-      // カードのプレイ中に発動したデバフのダメージ (感染爆発の毒等。spec combat-stats.md §3.3):
+      // カードのプレイ中に発動したデバフのダメージ (感染爆発の毒等。spec combat-stats.md「カード別 (CardTable)」):
       // 使った人の与ダメージはその人の取り分 (スタック比) のまま、カード別の表ではそのカードの行に全量を出す
       const payload: DamageDealtPayload = { ...p, card_amount: p.amount ?? 0 };
       fields.forEach((f, fi) => {
@@ -95,11 +90,11 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
 
 /**
  * パワーによるダメージ・ブロックを、そのパワーを付けた持ち物 (カード・レリック・ポーション等) の行に付け替える
- * (spec combat-stats.md §3.3)。分からなければそのまま (パワー名の行)。
+ * (spec combat-stats.md「カード別 (CardTable)」)。分からなければそのまま (パワー名の行)。
  */
 /**
  * カード別の表の行にする持ち物: カードの効果が直接発動させたもの (オーブの解放等) はそのカード (使った人の event のとき)、
- * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md §3.3)。
+ * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md「カード別 (CardTable)」)。
  */
 function rowOrigin(ev: EventRecord): Origin | null | undefined {
   const p = ev.payload as { triggered_by?: DamageDealtPayload['triggered_by']; source_origin?: Origin | null } | undefined;
@@ -113,20 +108,9 @@ function withOrigin(ev: EventRecord, origin: Origin | null | undefined): EventRe
   return { ...ev, payload: { ...(ev.payload as object), source_card_id: origin.id, source_card_name: origin.name, source_card_type: origin.type } };
 }
 
-/**
- * 按分に使う付与者の内訳。source_appliers があればそれ。
- * 無い旧データ (2026-10-02 以前の mod) の毒・Doom は、記録済みのパワー一覧 (active_on_target) の内訳を使う
- * (rdps.ts の旧データ用の按分と同じ)。
- */
+/** 按分に使う付与者の内訳 (相手に付けたデバフによるダメージのとき)。それ以外は null。 */
 export function sharedAppliers(p: DamageDealtPayload | undefined): { player_id: string; stacks: number; origin?: Origin | null }[] | null {
-  if (!p) return null;
-  if (p.source_appliers && p.source_appliers.length > 0) return p.source_appliers;
-  const powerId = p.source_card_id === 'POISON_POWER' ? 'POISON_POWER'
-                : (p.source_card_id === 'DOOM_POWER' || p.is_doom_kill) ? 'DOOM_POWER' : null;
-  if (!powerId) return null;
-  const snap = (p.active_on_target ?? []).find(s => s.power_id === powerId);
-  const ap = (snap?.appliers ?? []).filter(a => a.stacks > 0);
-  return ap.length > 0 ? ap : null;
+  return p?.source_appliers && p.source_appliers.length > 0 ? p.source_appliers : null;
 }
 
 export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {
@@ -215,7 +199,7 @@ export function buildRunTotals(combats: CombatInfo[]): RunTotals {
   return { perPlayer, perCombatPerPlayer };
 }
 
-export function mergeCardStats(a: CardStats[], b: CardStats[]): CardStats[] {
+function mergeCardStats(a: CardStats[], b: CardStats[]): CardStats[] {
   const map = new Map<string, CardStats>();
   for (const c of a) map.set(c.card_id, { ...c, debuffs_applied: { ...c.debuffs_applied } });
   for (const c of b) {
@@ -274,11 +258,6 @@ export function buildCardNames(events: EventRecord[]): Record<string, string> {
     visit(p.source_card_id, p.source_card_name);
   }
   return out;
-}
-
-export function playerName(doc: SessionDoc, pid: string): string {
-  const p = doc.players.find(p => p.steam_id === pid);
-  return p?.display_name ?? pid;
 }
 
 // === 内部 ===================================================================
@@ -421,8 +400,6 @@ function buildTurnsForCombat(
     result.push({
       combat_index: combatIndex,
       turn_number:  turnNum,
-      is_final:     false,
-      timestamp:    turnEvents[0]?.occurred_at ?? '',
       players,
     });
   }
@@ -598,7 +575,7 @@ function emptyCombat(): PlayerCombatSummary {
 }
 
 function emptyTurnPayload(combatIndex: number, turnNumber: number): TurnPayload {
-  return { combat_index: combatIndex, turn_number: turnNumber, is_final: false, timestamp: '', players: {} };
+  return { combat_index: combatIndex, turn_number: turnNumber, players: {} };
 }
 
 function deepCloneTurn(t: PlayerTurnSummary): PlayerTurnSummary {

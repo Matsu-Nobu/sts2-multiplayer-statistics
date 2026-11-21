@@ -11,16 +11,16 @@ import (
 // (CombatIndex / TurnNumber / Sequence) are nullable: turn-scoped events set
 // them, run/floor-scoped events leave them nil.
 type EventInput struct {
-	EventUUID    string
-	SessionID    string
-	PlayerID     *string
-	EventType    string
-	OccurredAt   string
-	Floor        *int
-	CombatIndex  *int
-	TurnNumber   *int
-	Sequence     *int
-	Payload      json.RawMessage
+	EventUUID   string
+	SessionID   string
+	PlayerID    *string
+	EventType   string
+	OccurredAt  string
+	Floor       *int
+	CombatIndex *int
+	TurnNumber  *int
+	Sequence    *int
+	Payload     json.RawMessage
 }
 
 // InsertEvent inserts an event. Duplicates by event_uuid are silently ignored.
@@ -45,25 +45,6 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 		return false, err
 	}
 	return n > 0, nil
-}
-
-// DeleteCombatEventsAtFloorExcept deletes all combat-scoped events in a session
-// that share the given floor but have a different combat_index. Used to clean up
-// abandoned save-mid-combat data when the player saves and resumes (the resumed
-// combat starts fresh with a new combat_index, and the previous attempt at the
-// same floor should be overwritten).
-func (s *Store) DeleteCombatEventsAtFloorExcept(ctx context.Context, sessionID string, floor int, exceptCombatIndex int) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `
-		DELETE FROM events
-		WHERE session_id = ?
-		  AND floor = ?
-		  AND combat_index IS NOT NULL
-		  AND combat_index != ?
-	`, sessionID, floor, exceptCombatIndex)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
 }
 
 // ListEvents returns all events for a session ordered by combat context first
@@ -92,10 +73,10 @@ func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMes
 	var out []json.RawMessage
 	for rows.Next() {
 		var (
-			uuid, etype, occ, recv string
-			player                 sql.NullString
+			uuid, etype, occ, recv   string
+			player                   sql.NullString
 			floor, combat, turn, seq sql.NullInt64
-			payload                string
+			payload                  string
 		)
 		if err := rows.Scan(&uuid, &etype, &occ, &recv, &player,
 			&floor, &combat, &turn, &seq, &payload); err != nil {

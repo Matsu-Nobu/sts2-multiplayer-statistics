@@ -34,7 +34,7 @@
 | `EventChoices` | `EventSynchronizer` |
 | `AncientChoices` | `AncientEventModel` |
 | `RestSiteChoices` | `RestSiteSynchronizer` |
-| `BoughtRelics` / `BoughtPotions` / `BoughtColorless` | `Merchant*Entry.OnTryPurchase` |
+| `BoughtRelics` / `BoughtPotions` / `BoughtColorless` | `Merchant*Entry.OnTryPurchaseInternal` |
 | `GoldGained` / `GoldSpent` / `GoldLost` / `GoldStolen` | `PlayerCmd.GainGold` / `LoseGold` |
 | `DamageTaken` / `HpHealed` / `MaxHpGained` / `MaxHpLost` | `CreatureCmd.Damage` / `Heal` / `GainMaxHp` / `LoseMaxHp` |
 | `CurrentHp` / `MaxHp` / `CurrentGold` (退出時) | `RunManager.UpdatePlayerStatsInMapPointHistory()` |
@@ -107,7 +107,7 @@ spec の「run_end 以降の hp_changed を除外」ルールは、`OnEnded` を
 | P2-3 | overkill/blocked を snapshot 差分で推定 | `DamageResult` の値をそのまま (1.3) | `DamageModificationLog.TakeLastPost`, `TargetHpSnapshot` (modifications 一覧が要るなら ModifyDamage は残す) |
 | P2-4 | 戦闘 event を async hook の Postfix で取得 | `CombatHistory.Add` Postfix (1.2) を検討 | Before/AfterCardPlayed の scope 管理等。**要 PoC** |
 
-ショップの「どのカードをいくらで買ったか」は history に無い (`BoughtColorless` と `GoldSpent` 合計のみ) → `Merchant*Entry.OnTryPurchase` patch は残す。
+ショップの「どのカードをいくらで買ったか」は history に無い (`BoughtColorless` と `GoldSpent` 合計のみ) → `Merchant*Entry.OnTryPurchaseInternal` patch は残す。
 カード名 / rarity は history に無い (ModelId のみ) → web の catalog で解決 (既に catalog あり)。
 
 ### P3: spec「既知の制約」を解消できるもの

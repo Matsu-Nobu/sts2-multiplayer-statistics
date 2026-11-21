@@ -1,11 +1,10 @@
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace StsStats;
 
 /// <summary>
-/// docs/api.md と一致する JSON ペイロードを構築・直列化する。
+/// docs/spec/api.md と一致する JSON ペイロードを構築・直列化する。
 /// StatsLogger（JSONL 出力）と ApiClient（HTTP 送信）の両方から使う。
 /// </summary>
 internal static class PayloadJson
@@ -33,7 +32,4 @@ internal static class PayloadJson
         sequence     = ev.Sequence,
         payload      = ev.Payload,
     };
-
-    public static string SerializeEvents(System.Collections.Generic.IEnumerable<EventRecord> evs) =>
-        JsonSerializer.Serialize(evs.Select(BuildEventBody), Options);
 }

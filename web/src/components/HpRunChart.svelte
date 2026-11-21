@@ -1,5 +1,5 @@
 <script lang="ts">
-  // HP・ゴールドの推移 (全員。spec ui.md §3.1): プレイヤーごとの線をプレイヤー色で重ねる。
+  // HP・ゴールドの推移 (全員。spec ui.md「ラン全体」): プレイヤーごとの線をプレイヤー色で重ねる。
   // 各階にマウスを乗せると、その階の情報 (選んでいるプレイヤーの変化) を出す。点を押すとその階の詳細へ。
   import { onMount, onDestroy } from 'svelte';
   import { Chart, registerables, type ChartConfiguration } from 'chart.js';
@@ -83,7 +83,7 @@
     };
   }
 
-  // 選んでいるプレイヤーのその階の変化 (spec ui.md §3.1)
+  // 選んでいるプレイヤーのその階の変化 (spec ui.md「ラン全体」)
   function details(floor: number): string[] {
     const s = series.find(x => x.pid === highlight) ?? series[0];
     const f = s?.floors.find(x => x.floor === floor);

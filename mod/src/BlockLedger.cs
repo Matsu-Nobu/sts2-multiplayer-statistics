@@ -7,7 +7,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 namespace StsStats;
 
 /// <summary>
-/// 「誰が付けたブロックが、どれだけ残っているか」を creature ごとに記録する (rMit 用、spec combat-stats.md §3.5)。
+/// 「誰が付けたブロックが、どれだけ残っているか」を creature ごとに記録する (rMit 用、spec combat-stats.md「貢献スコア」)。
 ///
 ///   ブロック獲得 (Hook.AfterBlockGained)  → 付けた人の分に加える
 ///   被弾 (Hook.AfterDamageGiven)          → 防いだ量を、残っている量の比で各人から引く

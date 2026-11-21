@@ -1,9 +1,9 @@
 // Package static embeds the built Svelte SPA from web/dist and exposes it as a
-// fs.FS. The build pipeline (`make build`) is responsible for populating
+// fs.FS. The build pipeline (`make app-build`, Dockerfile) is responsible for populating
 // dist/ from the repo's top-level web/dist/ before `go build` runs.
 //
-// A placeholder dist/index.html is committed so that `go build` always
-// succeeds even without a frontend build (useful for backend-only dev).
+// Only dist/.gitignore is committed, so `go build` succeeds without a frontend
+// build. In that case "/s/{id}" answers 500 "index.html missing from build".
 package static
 
 import (
