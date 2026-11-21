@@ -72,6 +72,14 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
    Fly.io 側でイメージをビルドして入れ替える。手元に Docker は要らない。
 4. `curl https://sts2stats.fly.dev/healthz` と、共有 URL の画面が開くことを確認する。
 
+GitHub Actions からもデプロイできる。Actions の画面で「Deploy」を選んで「Run workflow」を押すと、main の最新のコミットで
+`make deploy` を実行し、最後にヘルスチェックをする (`.github/workflows/deploy.yml`)。デプロイ用のトークンは、
+GitHub の environment「production」(main からしか使えない) の secret `FLY_API_TOKEN` に入れる。
+トークンは `flyctl tokens create deploy -a sts2stats` で作る。このアプリのデプロイにしか使えない。有効期限は 1 年にしているので、切れたら作り直して入れ直す。
+
+main への push とプルリクエストでは、backend のテストと web の型チェック・ビルドが自動で走る (`.github/workflows/ci.yml`)。
+mod はゲーム本体の `sts2.dll` が無いとビルドできず、`sts2.dll` は公開リポジトリに置けないので、CI では扱わない。
+
 前の版に戻すときは、`flyctl releases -a sts2stats` で版を調べ、その版のイメージで `flyctl deploy --image <イメージ>` を実行する。
 
 ## ゲーム更新時の手順
