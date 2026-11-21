@@ -182,6 +182,8 @@ web/public/catalog.{lang}.json   ← リポジトリで version 管理
 }
 ```
 
+カードの description には、ゲームがカードに表示する文と同じく、キーワード (プレイ不可・廃棄など) の行が入る (`CardModel.GetDescriptionForPile` と同じ順)。
+
 description には STS2 内部のタグ (`[gold]X[/gold]` `[blue]X[/blue]` `[green]X[/green]` 等) が
 そのまま残る。WebUI 側 (`web/src/lib/catalog.ts` の `renderCardDescription`) で HTML span に変換。
 

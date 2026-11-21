@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Logging;
 
@@ -280,14 +281,38 @@ internal static class CatalogDumper
             description.GetType().GetMethod("Add", new[] { typeof(string), typeof(bool) })
                 ?.Invoke(description, new object[] { "InCombat", false });
 
-            return description.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)
+            string text = description.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)
                 ?.Invoke(description, null) as string ?? "";
+            return card is CardModel model ? WithKeywordLines(model, text) : text;
         }
         catch (Exception ex)
         {
             Log.Error($"[StsStats][CatalogDumper] ResolveCardDescriptionBase error: {ex.Message}");
             return "";
         }
+    }
+
+    /// <summary>キーワードの行の文 (CardKeywordExtensions.GetCardText。internal なので名前で呼ぶ。tools/verify-game-api/members.txt で確認)。</summary>
+    /// カタログを書き出すときだけ探す (見つからなければ、カタログの書き出しだけが失敗する)。
+    private static readonly Lazy<MethodInfo> KeywordCardText = new(() =>
+        AccessTools.Method(AccessTools.TypeByName("MegaCrit.Sts2.Core.Entities.Cards.CardKeywordExtensions"), "GetCardText")
+        ?? throw new MissingMethodException("CardKeywordExtensions", "GetCardText"));
+
+    /// <summary>
+    /// ゲームがカードに表示する文と同じく、説明文の前後にキーワード (プレイ不可・エセリアル・廃棄等) の行を足す
+    /// (CardModel.GetDescriptionForPile)。キーワードだけのカード (呪いの多く) は、説明文が空でキーワードの行だけになる。
+    /// 戦闘の外で見る文なので、このターンだけの狡猾・保留も、カードが持つキーワードかどうかで決める。
+    /// </summary>
+    private static string WithKeywordLines(CardModel card, string description)
+    {
+        var keywords = card.Keywords;
+        string Text(CardKeyword k) => (string)KeywordCardText.Value.Invoke(null, new object[] { k })!;
+        var lines = new List<string> { description };
+        foreach (var k in CardKeywordOrder.beforeDescription)
+            if (keywords.Contains(k)) lines.Insert(0, Text(k));
+        foreach (var k in CardKeywordOrder.afterDescription.Intersect(keywords))
+            lines.Add(Text(k));
+        return string.Join('\n', lines.Where(l => !string.IsNullOrEmpty(l)));
     }
 
     /// <summary>
