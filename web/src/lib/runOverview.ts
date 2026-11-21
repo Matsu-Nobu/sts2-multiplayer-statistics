@@ -19,6 +19,7 @@ export interface ShopPurchase {
   name: string;
   rarity?: string;
   is_upgraded?: boolean;
+  enchantment_id?: string;
   gold_spent?: number;          // 同じ品物の item_purchased があるときだけ分かる
 }
 
@@ -38,24 +39,25 @@ export interface FloorSummary {
   gold_in: number;
   gold_out: number;
   damage_taken: number;
-  cards_obtained:    { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean }[];
+  cards_obtained:    ChipCard[];
   relics_obtained:   { relic_id: string; relic_name?: string }[];
   potions_obtained:  { potion_id: string; potion_name?: string }[];
   cards_removed:     { card_id: string; card_name?: string }[];
-  cards_upgraded:    { card_id: string; card_name?: string; card_rarity?: string }[];
+  cards_upgraded:    ChipCard[];
   cards_enchanted:   { card_id: string; card_name?: string; enchantment_id: string; enchantment_name?: string }[];
   cards_transformed: { from: ChipCard; to: ChipCard }[];
   rest_options:      string[];          // ゲームの OptionId ("SMITH" / "HEAL" 等)
   shop_purchases:    ShopPurchase[];
   event_choices:     { title: string }[];
   // 提示されたカードの選択肢 (選んだ / 選ばなかった)。ゲームの記録は階ごとに 1 本なので 0 か 1 件。
-  card_choices:      { picked_card_id: string; choices: { card_id: string; card_name: string; card_rarity?: string; is_upgraded?: boolean; was_picked: boolean }[] }[];
+  card_choices:      { picked_card_id: string; choices: (ChipCard & { card_name: string; was_picked: boolean })[] }[];
 }
 
-export interface ChipCard { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean }
+export interface ChipCard { card_id: string; card_name?: string; card_rarity?: string; is_upgraded?: boolean; enchantment_id?: string }
 
 const chip = (c: SnapshotCard): ChipCard => ({
   card_id: c.id, card_name: c.name || undefined, card_rarity: c.rarity || undefined, is_upgraded: (c.upgrade_level ?? 0) > 0,
+  enchantment_id: c.enchantment_id || undefined,
 });
 
 /**
@@ -142,7 +144,7 @@ export function buildFloorSummaries(events: EventRecord[], playerId: string): Fl
         if (i < 0) return undefined;
         return priced.splice(i, 1)[0].gold_spent;
       };
-      for (const c of gainedCards) sum.shop_purchases.push({ kind: 'card', id: c.card_id, name: c.card_name ?? c.card_id, rarity: c.card_rarity, is_upgraded: c.is_upgraded, gold_spent: takePrice('card_id', c.card_id) });
+      for (const c of gainedCards) sum.shop_purchases.push({ kind: 'card', id: c.card_id, name: c.card_name ?? c.card_id, rarity: c.card_rarity, is_upgraded: c.is_upgraded, enchantment_id: c.enchantment_id, gold_spent: takePrice('card_id', c.card_id) });
       for (const r of pickedRelics) sum.shop_purchases.push({ kind: 'relic', id: r.id, name: r.name || r.id, gold_spent: takePrice('relic_id', r.id) });
       for (const p of pickedPotions) sum.shop_purchases.push({ kind: 'potion', id: p.id, name: p.name || p.id, gold_spent: takePrice('potion_id', p.id) });
     } else {
@@ -156,7 +158,7 @@ export function buildFloorSummaries(events: EventRecord[], playerId: string): Fl
     }
 
     sum.cards_removed = me.cards_removed.map(c => ({ card_id: c.id, card_name: c.name || undefined }));
-    sum.cards_upgraded = me.cards_upgraded.map(c => ({ card_id: c.id, card_name: c.name || undefined, card_rarity: c.rarity || undefined }));
+    sum.cards_upgraded = me.cards_upgraded.map(c => ({ ...chip(c), is_upgraded: true }));
     sum.cards_enchanted = me.cards_enchanted.map(e => ({
       card_id: e.card.id, card_name: e.card.name || undefined,
       enchantment_id: e.enchantment_id ?? '', enchantment_name: e.enchantment_name || undefined,

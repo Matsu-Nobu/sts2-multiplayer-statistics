@@ -51,7 +51,7 @@
 
 ### chip 表記ルール
 
-カード chip は **rarity で背景色 + 枠色**、**is_upgraded で文字色**:
+カード chip は **rarity で背景色 + 枠色**、**エンチャントと is_upgraded で文字色**:
 
 | rarity | 背景 | 枠 |
 |---|---|---|
@@ -60,10 +60,11 @@
 | `Rare`     | `yellow-900/60`| `yellow-500`|
 | その他 (Curse / Status / Token / Basic / Event 等) | `bg-2` | `bg-3` |
 
-| is_upgraded | 文字色 |
+| カードの状態 | 文字色 |
 |---|---|
-| true | `lime-300` (黄緑) |
-| false | `slate-200` (通常) |
+| エンチャントが付いている (`enchantment_id` あり) | `purple-300` (紫)。強化済みでも紫を優先する |
+| 強化済み (`is_upgraded`) | `lime-300` (黄緑) |
+| どちらでもない | `slate-200` (通常) |
 
 非カード chip (レリック / ポーション / 休憩所 option / イベント等) は **rarity 概念なしのデフォルト chip** (`bg-2 / bg-3 / slate-200`)。
 
@@ -82,8 +83,9 @@
 
 実装: `web/src/components/CardTooltip.svelte`、レンダラ: `web/src/lib/catalog.ts` `renderCardDescription`。
 
-- 上段: アイテム名 (アップグレード反映: `name_upgraded` if `is_upgraded`)
-- 下段: description text
+- 名前は chip に書いてあるので、popover には description だけを出す
+- エンチャントの付いたカードは、カードの description の下に、区切り線を挟んでエンチャントの名前 (紫) とその description を出す
+- description text
   - STS2 内部装飾タグ → HTML span に変換:
     - `[gold]X[/gold]` → `text-yellow-300`
     - `[blue]X[/blue]` → `text-sky-400`

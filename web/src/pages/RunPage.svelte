@@ -122,8 +122,8 @@
                   <div class="text-[11px] text-slate-500 mb-1">{g.label} <span class="tabular">{g.n}</span></div>
                   <div class="flex flex-wrap gap-1.5">
                     {#each g.items as it (it.card.id + (it.card.upgrade_level ?? 0) + (it.card.enchantment_id ?? ''))}
-                      <CardChip label={it.card.name || it.card.id} rarity={it.card.rarity} upgraded={(it.card.upgrade_level ?? 0) > 0}
-                                count={it.count} tip={cardTip(s.catalog, it.card.id, (it.card.upgrade_level ?? 0) > 0)} />
+                      <CardChip label={it.card.name || it.card.id} rarity={it.card.rarity} upgraded={(it.card.upgrade_level ?? 0) > 0} enchanted={!!it.card.enchantment_id}
+                                count={it.count} tip={cardTip(s.catalog, it.card.id, (it.card.upgrade_level ?? 0) > 0, it.card.enchantment_id)} />
                     {/each}
                   </div>
                 </div>
