@@ -117,7 +117,7 @@ power × applier の行列:
 |---|---|---|
 | `enchant` | カードのエンチャントによる増減量 | 増減量そのまま |
 | `additive` (足し算。筋力・活力など) | 増減量 | 増減量そのまま |
-| `multiplicative` (掛け算。弱体・挟撃・脱力・かばう等) | 倍率 | **対数で按分** (下記) |
+| `multiplicative` (掛け算。弱体・挟撃・脱力・かばう等。ゲームの `ModifyDamageMultiplicative` と、その後に掛ける `ModifyDamageMultiplicativeLate`) | 倍率 | **対数で按分** (下記) |
 | `cap` (上限。霊体等) | 上限で下がった量 (負) | そのまま |
 | `hp_lost` (ブロック後の HP 減少補正。バッファー・霊体等) | 減少量の変化 (負なら軽減) | そのまま |
 

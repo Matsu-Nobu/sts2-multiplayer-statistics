@@ -106,6 +106,12 @@ internal static class ModifierLog
                     if (f != 1m) steps.Add(new Step("multiplicative", m, f));
                     num *= f;
                 }
+                foreach (var m in models)
+                {
+                    decimal f = m.ModifyDamageMultiplicativeLate(target, num, props, dealer, cardSource, cardPlay);
+                    if (f != 1m) steps.Add(new Step("multiplicative", m, f));
+                    num *= f;
+                }
             }
             if (hookType.HasFlag(ModifyDamageHookType.Cap))
             {

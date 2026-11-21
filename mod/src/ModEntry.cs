@@ -44,7 +44,7 @@ public static class ModEntry
     {
         // ラン・戦闘の始まりと終わり
         P(typeof(Hook),       "AfterRoomEntered",   typeof(Lifecycle), null, "AfterRoomEnteredPostfix");
-        P(typeof(Hook),       "BeforeCombatStart",  typeof(Lifecycle), null, "BeforeCombatStartPostfix");
+        P(typeof(Hook),       "BeforeCombatStart",  typeof(Lifecycle), "BeforeCombatStartPrefix", null);
         P(typeof(Hook),       "AfterCombatEnd",     typeof(Lifecycle), null, "AfterCombatEndPostfix");
         P(typeof(Hook),       "AfterSideTurnEnd",   typeof(Lifecycle), null, "AfterSideTurnEndPostfix");
         P(typeof(RunManager), "OnEnded",            typeof(Lifecycle), null, "OnEndedPostfix");

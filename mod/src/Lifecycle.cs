@@ -16,7 +16,7 @@ namespace StsStats;
 /// ラン・戦闘の始まりと終わり (docs/spec/data-sources.md §1.1 / §1.2)。
 ///
 ///   ラン開始   … 最初に部屋に入ったとき (AfterRoomEntered)。1 階 = ネオウから記録される
-///   戦闘開始   … Hook.BeforeCombatStart
+///   戦闘開始   … Hook.BeforeCombatStart の Prefix
 ///   戦闘勝利   … Hook.AfterCombatEnd (ゲームは勝利時にしか呼ばない)
 ///   戦闘敗北   … 戦闘中のラン終了 (RunManager.OnEnded)
 ///   ラン終了   … RunManager.OnEnded(isVictory) の最初の 1 回。放棄は RunManager.IsAbandoned
@@ -134,7 +134,11 @@ internal static class Lifecycle
 
     // === 戦闘 ===================================================================
 
-    public static void BeforeCombatStartPostfix(IRunState? runState, ICombatState? combatState)
+    /// <summary>
+    /// Hook.BeforeCombatStart の Prefix。レリック等が戦闘開始時の効果 (棘・プレートの付与等) を実行するより前に戦闘を始める。
+    /// Postfix だと、非同期の Hook が最初に待つ所まで効果が進んだ後に呼ばれ、付けたパワーの出どころの記録を消してしまう。
+    /// </summary>
+    public static void BeforeCombatStartPrefix(IRunState? runState, ICombatState? combatState)
     {
         try
         {

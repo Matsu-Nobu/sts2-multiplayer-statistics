@@ -29,7 +29,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 
 | 何 | 正規ソース | event |
 |---|---|---|
-| 戦闘開始 | `Hook.BeforeCombatStart` | `combat_start` |
+| 戦闘開始 | `Hook.BeforeCombatStart` の Prefix (レリック等の戦闘開始時の効果より前。v0.113.0 で確認) | `combat_start` |
 | 戦闘勝利 | `Hook.AfterCombatEnd` (**勝ったときしか呼ばれない**) | `combat_end` (`victory: true`) |
 | 戦闘敗北 | 戦闘中の `RunManager.OnEnded` | `combat_end` (`victory: false`) |
 | ターン区切り | `Hook.AfterSideTurnEnd(side=Player)` | (送信の区切り。`turn_number` を進める) |
