@@ -212,3 +212,22 @@ func (s *Server) writeStoreResult(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "failed to update session")
 	}
 }
+
+// getRunRelation は、ログインしている人とランの関係を返す。非公開のランは記録した人にしか存在を明かさない。
+func (s *Server) getRunRelation(w http.ResponseWriter, r *http.Request) {
+	me := s.viewer(r)
+	if me == "" {
+		writeError(w, http.StatusUnauthorized, "not logged in")
+		return
+	}
+	rel, err := s.Store.GetRunRelation(r.Context(), chi.URLParam(r, "id"), me)
+	if errors.Is(err, store.ErrSessionNotFound) || (err == nil && rel.Visibility == "private" && !rel.IsRecorder) {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load session")
+		return
+	}
+	writeJSON(w, http.StatusOK, rel)
+}

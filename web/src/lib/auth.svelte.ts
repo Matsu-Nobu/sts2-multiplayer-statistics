@@ -2,6 +2,9 @@
 
 export interface Me { steam_id: string; display_name: string; profile_public: boolean }
 
+/** ログインしている人とランの関係 (GET /api/sessions/{id}/me。spec ui.md「ランの設定」)。 */
+export interface RunRelation { is_participant: boolean; is_recorder: boolean; visibility: 'public' | 'private'; hidden: boolean }
+
 export const auth = $state<{ me: Me | null; loaded: boolean }>({ me: null, loaded: false });
 
 let started = false;

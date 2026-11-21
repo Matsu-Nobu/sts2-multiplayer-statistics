@@ -173,6 +173,33 @@ func (s *Store) SetListingHidden(ctx context.Context, sessionID, steamID string,
 	return nil
 }
 
+// RunRelation は、ある人とランの関係 (ランの設定を出すかどうか。docs/spec/ui.md「ランの設定」)。
+type RunRelation struct {
+	IsParticipant bool   `json:"is_participant"`
+	IsRecorder    bool   `json:"is_recorder"`
+	Visibility    string `json:"visibility"`
+	Hidden        bool   `json:"hidden"`
+}
+
+func (s *Store) GetRunRelation(ctx context.Context, sessionID, steamID string) (RunRelation, error) {
+	sess, err := s.GetSession(ctx, sessionID)
+	if err != nil {
+		return RunRelation{}, err
+	}
+	rel := RunRelation{Visibility: sess.Visibility, IsRecorder: sess.HostSteamID != nil && *sess.HostSteamID == steamID}
+	var hidden int
+	err = s.db.QueryRowContext(ctx, `SELECT hidden FROM session_players WHERE session_id = ? AND steam_id = ?`, sessionID, steamID).Scan(&hidden)
+	switch {
+	case err == nil:
+		rel.IsParticipant = true
+		rel.Hidden = hidden != 0
+	case errors.Is(err, sql.ErrNoRows):
+	default:
+		return RunRelation{}, err
+	}
+	return rel, nil
+}
+
 func boolInt(b bool) int {
 	if b {
 		return 1

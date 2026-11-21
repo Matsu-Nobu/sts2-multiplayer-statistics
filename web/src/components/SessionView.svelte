@@ -7,8 +7,8 @@
   import { setSession } from '../lib/session';
   import { playerColor } from '../lib/players';
   import Badge from './ui/Badge.svelte';
-  import AuthMenu from './AuthMenu.svelte';
-  import { userHref } from '../lib/auth.svelte';
+  import RunSettings from './RunSettings.svelte';
+  import { auth, loadMe, userHref, type RunRelation } from '../lib/auth.svelte';
   import RunPage from '../pages/RunPage.svelte';
   import FloorPage from '../pages/FloorPage.svelte';
   import CombatsPage from '../pages/CombatsPage.svelte';
@@ -78,10 +78,22 @@
   let activeTab = $derived(route.page.name === 'floor' ? 'floors' : route.page.name === 'combat' ? 'combats' : route.page.name);
 
   function selectPlayer(pid: string) { navigate(route.page, { replace: true, player: pid }); }
+
+  // ログインしている人とこのランの関係 (「‹ 自分のラン」と「このランの設定」を出すか。spec ui.md「画面の骨格 (AppShell)」)
+  let relation = $state<RunRelation | null>(null);
+  async function loadRelation() {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(doc.session.id)}/me`);
+    relation = res.ok ? ((await res.json()) as RunRelation) : null;
+  }
+  $effect(() => { loadMe(); });
+  $effect(() => { if (auth.me) loadRelation(); });
 </script>
 
 <header class="border-b border-bg-3 bg-bg-1">
   <div class="max-w-7xl mx-auto px-4 pt-4">
+    {#if auth.me && relation?.is_participant}
+      <a href={userHref(auth.me.steam_id)} class="inline-block mb-1 text-xs text-slate-400 hover:text-slate-200 focus-ring rounded">‹ 自分のラン</a>
+    {/if}
     <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
       <div class="min-w-0">
         <h1 class="text-xl font-semibold text-slate-100 break-words">
@@ -97,7 +109,9 @@
         </div>
       </div>
       <div class="text-xs text-slate-500 sm:text-right flex sm:block items-center gap-3" aria-live="polite">
-        <div class="sm:mb-1"><AuthMenu /></div>
+        {#if relation?.is_participant}
+          <div class="sm:mb-1.5"><RunSettings sessionId={doc.session.id} {relation} label="このランの設定" onchanged={loadRelation} ondeleted={() => location.assign(auth.me ? userHref(auth.me.steam_id) : '/')} /></div>
+        {/if}
         <div class="flex items-center gap-1.5 sm:justify-end">
           <span class="w-2 h-2 rounded-full inline-block {live === 'live' ? 'bg-ok animate-pulse' : live === 'final' ? 'bg-slate-500' : 'bg-bad'}"></span>
           <span class={live === 'live' ? 'text-ok' : live === 'offline' ? 'text-bad' : ''}>{live === 'live' ? 'ライブ' : live === 'final' ? '完了' : 'オフライン'}</span>

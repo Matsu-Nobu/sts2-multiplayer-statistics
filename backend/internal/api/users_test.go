@@ -304,3 +304,35 @@ func TestVerifyWithSteam_RejectsBeforeAskingSteam(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestGetRunRelation(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id := seedRun(t, srv)
+	rel := func(viewer string) (int, map[string]any) {
+		res := doAs(t, srv, http.MethodGet, "/api/sessions/"+id+"/me", viewer, nil, "")
+		var out map[string]any
+		if res.StatusCode == http.StatusOK {
+			decodeJSON(t, res, &out)
+		}
+		return res.StatusCode, out
+	}
+	if code, out := rel(hostID); code != http.StatusOK || out["is_recorder"] != true || out["is_participant"] != true {
+		t.Fatalf("recorder code=%d out=%v", code, out)
+	}
+	if code, out := rel(friendID); code != http.StatusOK || out["is_recorder"] != false || out["is_participant"] != true {
+		t.Fatalf("participant code=%d out=%v", code, out)
+	}
+	if code, out := rel(otherID); code != http.StatusOK || out["is_participant"] != false {
+		t.Fatalf("other code=%d out=%v", code, out)
+	}
+	if code, _ := rel(""); code != http.StatusUnauthorized {
+		t.Fatalf("anonymous code=%d", code)
+	}
+	doAs(t, srv, http.MethodPatch, "/api/sessions/"+id, hostID, map[string]any{"visibility": "private"}, "")
+	if code, _ := rel(friendID); code != http.StatusNotFound {
+		t.Fatalf("private participant code=%d", code)
+	}
+	if code, _ := rel(hostID); code != http.StatusOK {
+		t.Fatalf("private recorder code=%d", code)
+	}
+}

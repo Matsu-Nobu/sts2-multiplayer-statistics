@@ -27,18 +27,6 @@ func indexHTML() http.HandlerFunc {
 	}
 }
 
-// landingHTML serves the static landing page at "/" — explains what the
-// service is and how to use the mod. Distinct from the SPA which lives at
-// "/s/{id}".
-func landingHTML() http.HandlerFunc {
-	body := static.LandingHTML()
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=300")
-		_, _ = w.Write(body)
-	}
-}
-
 // staticAssets serves files under /assets/* from the embedded FS.
 // Asset filenames are content-hashed by Vite so they are immutable; long cache.
 func staticAssets() http.Handler {

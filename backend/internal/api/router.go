@@ -79,6 +79,7 @@ func (s *Server) Routes() http.Handler {
 	r.Post("/auth/logout", s.logout)
 	r.Get("/api/me", s.getMe)
 	r.Get("/api/users/{steamid}", s.getUser)
+	r.Get("/api/sessions/{id}/me", s.getRunRelation)
 	r.Group(func(r chi.Router) {
 		r.Use(limitBody, s.requireLogin)
 		r.Patch("/api/me", s.patchMe)
@@ -88,9 +89,9 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	// --- 静的配信 ---
-	// "/" はランディングページ（プロジェクト紹介・使い方）
-	// "/s/{id}" は SPA（共有URLで開かれる統計ビュー）
-	r.Get("/", landingHTML())
+	// web の画面 (SPA)。どの URL でも同じ index.html を返し、画面は web 側で決める (spec ui.md「サイトの画面」)
+	r.Get("/", indexHTML())
+	r.Get("/settings", indexHTML())
 	r.Get("/s/{id}", indexHTML())
 	r.Get("/s/{id}/*", indexHTML()) // web 側の画面 (spec ui.md「画面と URL」)
 	r.Get("/u/{steamid}", indexHTML())

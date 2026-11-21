@@ -49,15 +49,15 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | `GET`  | `/api/me` | cookie | ログインしている人 |
 | `PATCH`| `/api/me` | cookie | ユーザーページの公開・非公開 |
 | `GET`  | `/api/users/{steam_id}` | — / cookie | ユーザーページ (参加したランの一覧) |
+| `GET`  | `/api/sessions/{id}/me` | cookie | ログインしている人とそのランの関係 (参加者か・記録した人か・公開か・ページに載せるか) |
 | `PATCH`| `/api/sessions/{id}` | cookie (記録した人) | ランの公開・非公開 |
 | `PATCH`| `/api/sessions/{id}/listing` | cookie (参加者) | ランを自分のユーザーページに載せるか |
 | `DELETE`| `/api/sessions/{id}` | cookie (記録した人) | ランを削除する |
-| `GET`  | `/s/{id}` / `/u/{steam_id}` | — | SPA HTML 配信 |
+| `GET`  | `/`・`/settings`・`/s/{id}`・`/u/{steam_id}` | — | SPA HTML 配信 (画面は web が URL で決める) |
 | `GET`  | `/assets/*` | — | Vite ビルド成果物 |
 | `GET`  | `/catalog.{lang}.json` | — | STS2 カード/レリック/ポーション/エンチャント definitions（静的） |
 | `GET`  | `/favicon.ico` | — | ファビコン |
 | `GET`  | `/healthz` | — | ヘルスチェック |
-| `GET`  | `/` | — | ランディングページ |
 
 ---
 
@@ -402,6 +402,10 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 ```
 
 `character_*` はそのユーザーのキャラクター (`run_start` から)。`is_recorder` はそのユーザーが記録した人か。
+
+### `GET /api/sessions/{id}/me`
+
+`{ "is_participant": true, "is_recorder": false, "visibility": "public", "hidden": false }`。ログインしていなければ 401。非公開のランを記録した人以外が問い合わせると 404 (ランがあることを明かさない)。
 
 ### 変更
 
