@@ -100,7 +100,7 @@
   {#if hasChoice}
     {#snippet choice()}
       {#if f.rest_options.length > 0}
-        {#snippet b()}{#each f.rest_options as o}<Chip label={o} />{/each}{/snippet}
+        {#snippet b()}{#each f.rest_options as o}<Chip label={s.catalog?.restSiteOption(o)?.name ?? o} />{/each}{/snippet}
         {@render kv('休憩所', b)}
       {/if}
       {#if f.event_choices.length > 0}

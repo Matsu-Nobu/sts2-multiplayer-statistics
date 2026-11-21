@@ -173,7 +173,7 @@ mod のコード（`HttpClient` / `OS.Clipboard` / `OS.GetUserDataDir()`）は�
 
 ---
 
-## カタログ (cards / relics / potions / enchantments の definitions)
+## カタログ (cards / relics / potions / enchantments / 休憩所の選択肢の definitions)
 
 UI で chip にホバーした時に「ストライク: 6 ダメージを与える。」のような description を出すために、
 STS2 内部の Card / Relic / Potion / Enchantment のメタデータを **静的 JSON ファイル**として
@@ -214,7 +214,8 @@ web/public/catalog.{lang}.json   ← リポジトリで version 管理
   // cost:      CardModel.EnergyCost.Canonical。X コストは -1
   "relics":       [{ "id", "name", "description", "rarity" }, ...],
   "potions":      [{ "id", "name", "description", "rarity" }, ...],
-  "enchantments": [{ "id", "name", "description" }, ...]
+  "enchantments": [{ "id", "name", "description" }, ...],
+  "rest_site_options": [{ "id", "name" }, ...]
 }
 ```
 

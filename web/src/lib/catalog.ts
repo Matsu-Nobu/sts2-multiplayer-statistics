@@ -39,6 +39,11 @@ export type EnchantmentEntry = {
   description: string;
 };
 
+export type RestSiteOptionEntry = {
+  id: string;     // ゲームの OptionId ("SMITH" 等)
+  name: string;
+};
+
 export interface ItemCatalog {
   schema_version?: number;
   lang?: string;
@@ -47,6 +52,7 @@ export interface ItemCatalog {
   relics: RelicEntry[];
   potions: PotionEntry[];
   enchantments: EnchantmentEntry[];
+  rest_site_options?: RestSiteOptionEntry[];
 }
 
 export interface CatalogLookup {
@@ -54,6 +60,7 @@ export interface CatalogLookup {
   relic(id: string): RelicEntry | null;
   potion(id: string): PotionEntry | null;
   enchantment(id: string): EnchantmentEntry | null;
+  restSiteOption(id: string): RestSiteOptionEntry | null;
 }
 
 let _cache: { lang: string; catalog: ItemCatalog; lookup: CatalogLookup } | null = null;
@@ -95,6 +102,7 @@ function buildLookup(catalog: ItemCatalog): CatalogLookup {
   const relicMap  = new Map(catalog.relics.map(r => [r.id, r]));
   const potionMap = new Map(catalog.potions.map(p => [p.id, p]));
   const enchMap   = new Map(catalog.enchantments.map(e => [e.id, e]));
+  const restMap   = new Map((catalog.rest_site_options ?? []).map(r => [r.id, r]));
   return {
     card(id, upgraded = false) {
       const c = cardMap.get(id);
@@ -108,6 +116,7 @@ function buildLookup(catalog: ItemCatalog): CatalogLookup {
     relic: id => relicMap.get(id) ?? null,
     potion: id => potionMap.get(id) ?? null,
     enchantment: id => enchMap.get(id) ?? null,
+    restSiteOption: id => restMap.get(id) ?? null,
   };
 }
 

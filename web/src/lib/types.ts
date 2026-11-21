@@ -213,13 +213,6 @@ export interface PowerSnapshot {
   appliers?: { player_id: string; stacks: number }[];      // stacks 加重帰属用
 }
 
-export interface DamageModification {
-  pre: number;
-  post: number;
-  modifier_types: string[];           // 例: "VulnerablePower" / "WeakPower" / "PenNibRelic"
-  modifier_ids: string[];             // 例: "VULNERABLE_POWER" or relic id（取れない場合は ""）
-}
-
 export interface DamageDealtPayload {
   amount: number;                     // 敵 HP に通った分
   total_damage?: number;              // 試行された総ダメ（block 吸収前）
@@ -240,7 +233,7 @@ export interface DamageDealtPayload {
   source_kind?: string;               // 'card' | 'power' | 'relic' | 'orb' | 'enchantment' | 'potion' | 'unknown'
   active_on_target: PowerSnapshot[];
   active_on_dealer: PowerSnapshot[];
-  modifications?: DamageModification[] | ModsV2;  // v2: 補正 1 つずつ (ModsV2)。配列は旧データ
+  modifications?: ModsV2 | null;     // 補正 1 つずつ。補正計算を通らないダメージは null
 }
 
 export interface DamageReceivedPayload {
@@ -251,7 +244,7 @@ export interface DamageReceivedPayload {
   source_card_id?: string | null;
   active_on_target: PowerSnapshot[];
   active_on_dealer?: PowerSnapshot[]; // dealer (敵) に乗っていた power（rMit で WEAK 等を見る）
-  modifications?: ModsV2;              // 被ダメ側の補正 1 つずつ (rMit)
+  modifications?: ModsV2 | null;     // 被ダメ側の補正 1 つずつ (rMit)
   block_sources?: { player_id: string; amount: number }[];   // 防いだブロックを付けた人ごとに
 }
 

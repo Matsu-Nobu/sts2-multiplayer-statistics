@@ -94,6 +94,8 @@
 
 変化 (`cards_transformed`) は `変化前 → 変化後` の chip 2 つを矢印でつなぐ。
 
+休憩所の chip は、ゲームの選択肢の ID (`SMITH` 等) をカタログの `rest_site_options` で日本語名 (「鍛冶」等) にして出す。カタログに無い ID はそのまま出す。
+
 各 group は枠付きカード内、label-value 2 列レイアウト (`grid-cols-[6rem_1fr]`)。
 
 戦闘統計 (与ダメ/被ダメ/カード別等) は **per-floor 詳細には出さない**（「戦闘統計」タブで見る）。

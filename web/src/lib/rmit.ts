@@ -1,23 +1,15 @@
 /**
- * Skada 風 rMit（被ダメ軽減貢献度）算出。rDPS の鏡像。
+ * rMit (被ダメージ軽減への貢献。spec combat-stats.md §3.5)。
  *
- * 各 damage_received について、敵 (dealer) に乗っている軽減系 power の
- * applier 群に「無ければ受けていたであろう追加ダメ」相当を配分。
- *
- *   - WEAK on dealer: counterfactual = total / 0.75 → saved = total / 3
- *     stacks 加重で applier 群に配分
- *   - STRENGTH on dealer:
- *     applier ごとに「自分が下げた量（stacks<0 の自applier貢献）」を独立に評価。
- *     合計 stacks がプラスでも、減らした側は減らした分の貢献として加算する。
- *     例: 元 STR +5 の敵に A が −3 撒いた場合（合計 +2 でもよい）、
- *         A は 1 ヒットあたり 3 ダメ軽減として帰属。
- *
- * stacks 情報が無い旧 payload では `applier` 単独に全額帰属（後方互換）。
+ * プレイヤーが受けた 1 ヒットについて、防いだ量を行為者に配る。
+ *   - 補正の負の寄与 (敵に付いた脱力、自分や味方に付いた霊体・バッファー等) → その補正の行為者
+ *   - ブロックで防いだ量 → そのブロックを付けた味方 (block_sources)。自分で張ったブロックは誰の貢献にもしない
+ *   - 正の寄与 (敵の筋力等) は誰の貢献にもしない
  */
 
-import type { EventRecord, DamageReceivedPayload, PowerSnapshot } from './types';
+import type { EventRecord, DamageReceivedPayload } from './types';
 import { latestCombatEvents } from './aggregate';
-import { isModsV2, stepContributions, stepActors, stepLabel } from './contrib';
+import { stepContributions, stepActors, stepLabel } from './contrib';
 
 export interface RmitBreakdown {
   total: number;
@@ -31,12 +23,8 @@ export interface RmitTable {
 }
 
 export function computeRmit(events: EventRecord[]): RmitTable {
-  events = latestCombatEvents(events);
   const byPlayer: Record<string, RmitBreakdown> = {};
-  const ensure = (pid: string): RmitBreakdown => {
-    if (!byPlayer[pid]) byPlayer[pid] = { total: 0, self: 0, from: [], to: [] };
-    return byPlayer[pid];
-  };
+  const ensure = (pid: string): RmitBreakdown => (byPlayer[pid] ??= { total: 0, self: 0, from: [], to: [] });
   const credit = (recipient: string, applier: string, source: string, amount: number) => {
     if (amount <= 0) return;
     if (recipient === applier) ensure(recipient).self += amount;
@@ -46,86 +34,31 @@ export function computeRmit(events: EventRecord[]): RmitTable {
     }
   };
 
-  for (const ev of events) {
+  for (const ev of latestCombatEvents(events)) {
     if (ev.event_type !== 'damage_received') continue;
     const p = ev.payload as DamageReceivedPayload;
     const recipient = ev.player_id;
     if (!recipient) continue;
 
-    // v2 (spec combat-stats.md §3.5): 補正の負の寄与 (= 防いだ量) を行為者へ、防いだブロックを付けた人へ
-    if (isModsV2(p.modifications) || p.block_sources) {
+    if (p.modifications) {
       const acc = new Map<string, number>();
-      if (isModsV2(p.modifications)) {
-        for (const { step, contrib } of stepContributions(p.modifications)) {
-          if (contrib >= 0) continue;                    // 被ダメを増やした補正は誰の貢献でもない
-          for (const a of stepActors(step)) {
-            const k = `${a.player_id}\u0000${stepLabel(step)}`;
-            acc.set(k, (acc.get(k) ?? 0) + (-contrib) * a.weight);
-          }
+      for (const { step, contrib } of stepContributions(p.modifications)) {
+        if (contrib >= 0) continue;
+        for (const a of stepActors(step)) {
+          const k = `${a.player_id}\u0000${stepLabel(step)}`;
+          acc.set(k, (acc.get(k) ?? 0) + (-contrib) * a.weight);
         }
       }
       for (const [k, v] of acc) {
         const [applier, label] = k.split('\u0000');
         credit(recipient, applier, applier === recipient ? 'self' : label, Math.round(v));
       }
-      for (const b of p.block_sources ?? []) credit(recipient, b.player_id, b.player_id === recipient ? 'self' : 'ブロック', b.amount);
-      continue;
     }
-
-    const total = p.total_damage ?? p.amount ?? 0;
-    if (total <= 0) continue;
-    const onDealer = p.active_on_dealer ?? [];
-
-    // WEAK: total/3 を applier 群へ stacks 加重で配分
-    const weak = onDealer.find(s => s.power_id === 'WEAK_POWER');
-    if (weak) {
-      const saved = Math.round(total / 3);
-      distributeAmongAppliers(weak, recipient, 'weak', saved, credit);
-    }
-
-    // STRENGTH: 各 applier の負方向貢献を独立に加算。
-    // 合計 stacks がプラスでも、個別に「減らした人」は貢献ありとして扱う。
-    const str = onDealer.find(s => s.power_id === 'STRENGTH_POWER');
-    if (str) {
-      const appliers = str.appliers && str.appliers.length > 0
-        ? str.appliers
-        : (str.applier && str.stacks < 0
-            ? [{ player_id: str.applier, stacks: str.stacks }]
-            : []);
-      for (const a of appliers) {
-        if (a.stacks >= 0) continue;        // プラス貢献（強化）は rMit ではなく rDPS マイナス側
-        credit(recipient, a.player_id, 'strength_down', -a.stacks);
-      }
+    for (const b of p.block_sources ?? []) {
+      if (b.player_id !== recipient) credit(recipient, b.player_id, 'ブロック', b.amount);
     }
   }
 
-  for (const pid of Object.keys(byPlayer)) {
-    const b = byPlayer[pid];
-    b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
-  }
+  for (const b of Object.values(byPlayer)) b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
   return { byPlayer };
-}
-
-function distributeAmongAppliers(
-  snap: PowerSnapshot,
-  recipient: string,
-  source: string,
-  amount: number,
-  credit: (recipient: string, applier: string, source: string, amt: number) => void,
-): void {
-  if (amount <= 0) return;
-  const appliers = snap.appliers && snap.appliers.length > 0
-    ? snap.appliers
-    : (snap.applier ? [{ player_id: snap.applier, stacks: Math.abs(snap.stacks) }] : []);
-  if (appliers.length === 0) return;
-
-  const totalStacks = appliers.reduce((s, a) => s + a.stacks, 0) || 1;
-  let distributed = 0;
-  for (let i = 0; i < appliers.length - 1; i++) {
-    const share = Math.round(amount * appliers[i].stacks / totalStacks);
-    credit(recipient, appliers[i].player_id, source, share);
-    distributed += share;
-  }
-  const last = appliers[appliers.length - 1];
-  credit(recipient, last.player_id, source, amount - distributed);
 }

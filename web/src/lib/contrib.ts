@@ -24,10 +24,6 @@ export interface ModsV2 {
   steps: ModStep[];
 }
 
-export function isModsV2(m: unknown): m is ModsV2 {
-  return !!m && !Array.isArray(m) && typeof m === 'object' && Array.isArray((m as ModsV2).steps);
-}
-
 export interface StepContribution { step: ModStep; contrib: number }
 
 export function stepContributions(m: ModsV2): StepContribution[] {

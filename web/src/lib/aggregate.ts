@@ -113,20 +113,9 @@ function withOrigin(ev: EventRecord, origin: Origin | null | undefined): EventRe
   return { ...ev, payload: { ...(ev.payload as object), source_card_id: origin.id, source_card_name: origin.name, source_card_type: origin.type } };
 }
 
-/**
- * 按分に使う付与者の内訳。source_appliers があればそれ。
- * 無い旧データ (2026-10-02 以前の mod) の毒・Doom は、記録済みのパワー一覧 (active_on_target) の内訳を使う
- * (rdps.ts の旧データ用の按分と同じ)。
- */
+/** 按分に使う付与者の内訳 (相手に付けたデバフによるダメージのとき)。それ以外は null。 */
 export function sharedAppliers(p: DamageDealtPayload | undefined): { player_id: string; stacks: number; origin?: Origin | null }[] | null {
-  if (!p) return null;
-  if (p.source_appliers && p.source_appliers.length > 0) return p.source_appliers;
-  const powerId = p.source_card_id === 'POISON_POWER' ? 'POISON_POWER'
-                : (p.source_card_id === 'DOOM_POWER' || p.is_doom_kill) ? 'DOOM_POWER' : null;
-  if (!powerId) return null;
-  const snap = (p.active_on_target ?? []).find(s => s.power_id === powerId);
-  const ap = (snap?.appliers ?? []).filter(a => a.stacks > 0);
-  return ap.length > 0 ? ap : null;
+  return p?.source_appliers && p.source_appliers.length > 0 ? p.source_appliers : null;
 }
 
 export function buildCombatInfos(doc: SessionDoc): CombatInfo[] {

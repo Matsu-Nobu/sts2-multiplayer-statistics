@@ -267,7 +267,7 @@ mod が起動時に対象メソッドを自動で列挙して追跡する (`rede
 - `phase`: `enchant` / `additive` (value = 増減量) / `multiplicative` (value = 倍率) / `cap` (value = 上限で下がった量、負) /
   `hp_lost` (ブロック後の HP 減少補正。value = 変化量。damage_received のみ)
 - `appliers`: パワーの付与者ごとのスタック数 (全パワー)。`owner`: レリック・エンチャント等の持ち主
-- v1 形式 (配列で `pre` / `post` / `modifier_types` / `modifier_ids`) は旧データのみ
+- 補正計算を通らないダメージ (破滅による撃破等) は `modifications` が無い (null)
 
 #### `block_sources` (damage_received)
 
