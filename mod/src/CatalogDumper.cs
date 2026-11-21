@@ -338,20 +338,6 @@ internal static class CatalogDumper
         }
     }
 
-    private static string? TryCallStringMethod(object instance, string methodName)
-    {
-        try
-        {
-            var m = instance.GetType().GetMethod(methodName, Type.EmptyTypes);
-            return m?.Invoke(instance, null) as string;
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"[StsStats][CatalogDumper] {instance.GetType().Name}.{methodName}() error: {ex.Message}");
-            return null;
-        }
-    }
-
     private static string GetIdEntry(object? model)
     {
         try

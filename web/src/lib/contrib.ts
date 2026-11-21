@@ -87,3 +87,37 @@ export function allocateInt(total: number, weights: Map<string, number>): Map<st
   for (const r of rows) if (r.n > 0) out.set(r.k, r.n);
   return out;
 }
+
+// === 貢献スコアの表 (rDPS / rMit 共通) ===
+
+export interface ContribBreakdown {
+  total: number;          // self + to の合計
+  self: number;
+  from: { source: string; applier: string; amount: number }[];   // 味方から受けた分
+  to:   { source: string; recipient: string; amount: number }[]; // 味方への貢献
+}
+
+export interface ContribTable {
+  byPlayer: Record<string, ContribBreakdown>;
+}
+
+export type Credit = (recipient: string, applier: string, source: string, amount: number) => void;
+
+/** 貢献を積む関数と、積み終えた表を返す関数。recipient = 恩恵を受けた人、applier = 貢献した人。 */
+export function contribTable(): { credit: Credit; finish: () => ContribTable } {
+  const byPlayer: Record<string, ContribBreakdown> = {};
+  const ensure = (pid: string): ContribBreakdown => (byPlayer[pid] ??= { total: 0, self: 0, from: [], to: [] });
+  const credit: Credit = (recipient, applier, source, amount) => {
+    if (amount <= 0) return;
+    if (recipient === applier) ensure(recipient).self += amount;
+    else {
+      ensure(recipient).from.push({ source, applier, amount });
+      ensure(applier).to.push({ source, recipient, amount });
+    }
+  };
+  const finish = (): ContribTable => {
+    for (const b of Object.values(byPlayer)) b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
+    return { byPlayer };
+  };
+  return { credit, finish };
+}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EventRecord } from '../lib/types';
+  import type { EventRecord, PowerSnapshot } from '../lib/types';
   import { formatPowerName } from '../lib/powers';
 
   interface Props {
@@ -70,10 +70,10 @@
     }
   }
 
-  function activeOnLabel(snap: any[]): string {
+  function activeOnLabel(snap: PowerSnapshot[]): string {
     if (!snap || snap.length === 0) return '';
     return snap
-      .map((s: any) => `${formatPowerName(s.power_id, powerNames)}×${s.stacks}` + (s.applier ? ` by ${pname(s.applier)}` : ''))
+      .map((s: PowerSnapshot) => `${formatPowerName(s.power_id, powerNames)}×${s.stacks}` + (s.appliers.length > 0 ? ` by ${s.appliers.map(a => pname(a.player_id)).join('・')}` : ''))
       .join(', ');
   }
 </script>

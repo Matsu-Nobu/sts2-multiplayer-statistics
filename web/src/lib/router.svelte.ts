@@ -18,11 +18,10 @@ export type Page =
 
 export type CombatViewName = 'summary' | 'turns' | 'timeline';
 
-interface Route { sessionId: string | null; isDemo: boolean; page: Page; player: string | null }
+interface Route { sessionId: string | null; page: Page; player: string | null }
 
 function parse(loc: Location): Route {
   const url = new URL(loc.href);
-  const isDemo = url.searchParams.has('demo');
   const player = url.searchParams.get('p');
   const m = url.pathname.match(/^\/s\/([^/]+)(?:\/(.*))?$/);
   const sessionId = m ? m[1] : null;
@@ -37,7 +36,7 @@ function parse(loc: Location): Route {
     const view: CombatViewName = v === 'turns' || v === 'timeline' ? v : 'summary';
     page = Number.isInteger(n) ? { name: 'combat', combat: n, view } : { name: 'combats' };
   }
-  return { sessionId, isDemo: isDemo || !sessionId, page, player };
+  return { sessionId, page, player };
 }
 
 export const route = $state<Route>(parse(window.location));
@@ -54,11 +53,10 @@ function pagePath(p: Page): string {
   }
 }
 
-/** ページの URL (現在のプレイヤー選択とデモ指定を引き継ぐ)。 */
+/** ページの URL (現在のプレイヤー選択を引き継ぐ)。 */
 export function href(p: Page, player: string | null = route.player): string {
-  const base = route.sessionId ? `/s/${route.sessionId}` : '/s/demo';
+  const base = `/s/${route.sessionId}`;
   const q: string[] = [];
-  if (route.isDemo) q.push('demo');
   if (player) q.push(`p=${encodeURIComponent(player)}`);
   if (p.name === 'combat' && p.view !== 'summary') q.push(`view=${p.view}`);
   const qs = q.join('&');

@@ -296,16 +296,15 @@ web はカード別の表でだけ使う (combat-stats.md §3.3)。
     "power_id":   "VULNERABLE_POWER",
     "power_name": "脆弱",
     "stacks":     5,
-    "applier":    "76561...B",
     "appliers":   [ { "player_id": "76561...A", "stacks": 2 },
                     { "player_id": "76561...B", "stacks": 3 } ]
   }
 ]
 ```
 
-- `applier` は最大 stacks の applier（後方互換）。
-- `appliers` は各プレイヤーの寄与 stacks 内訳。複数人が同じデバフを撒いた場合は stacks 比で按分する rDPS / rMit 計算に使う。
-- whitelist: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` / `WEAK_POWER` / `STRENGTH_POWER`。
+- 戦闘詳細のタイムラインに、攻撃した側・受けた側に付いていたパワーを出すためのもの。貢献スコアの計算には使わない (`modifications` を使う)。
+- `appliers` はプレイヤーごとの付与スタック数。
+- 対象のパワー: `VULNERABLE_POWER` / `POISON_POWER` / `DOOM_POWER` / `WEAK_POWER` / `STRENGTH_POWER`。
 
 ### 冪等性
 

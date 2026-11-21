@@ -1,13 +1,12 @@
 <script lang="ts">
   // プレイヤー比較 (全員。spec ui.md §3.4): プレイヤーを行にした表、各列に横棒。
   import type { PlayerCombatSummary } from '../lib/types';
-  import type { RdpsTable } from '../lib/rdps';
-  import type { RmitTable } from '../lib/rmit';
+  import type { ContribTable } from '../lib/contrib';
   import { useSession } from '../lib/session';
   import { playerColor } from '../lib/players';
   import Panel from './ui/Panel.svelte';
 
-  interface Props { stats: Record<string, PlayerCombatSummary | undefined>; rdps: RdpsTable; rmit: RmitTable }
+  interface Props { stats: Record<string, PlayerCombatSummary | undefined>; rdps: ContribTable; rmit: ContribTable }
   let { stats, rdps, rmit }: Props = $props();
   const s = useSession();
 

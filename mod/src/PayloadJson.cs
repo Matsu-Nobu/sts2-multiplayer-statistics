@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -33,7 +32,4 @@ internal static class PayloadJson
         sequence     = ev.Sequence,
         payload      = ev.Payload,
     };
-
-    public static string SerializeEvents(System.Collections.Generic.IEnumerable<EventRecord> evs) =>
-        JsonSerializer.Serialize(evs.Select(BuildEventBody), Options);
 }

@@ -204,7 +204,7 @@ export function buildRunTotals(combats: CombatInfo[]): RunTotals {
   return { perPlayer, perCombatPerPlayer };
 }
 
-export function mergeCardStats(a: CardStats[], b: CardStats[]): CardStats[] {
+function mergeCardStats(a: CardStats[], b: CardStats[]): CardStats[] {
   const map = new Map<string, CardStats>();
   for (const c of a) map.set(c.card_id, { ...c, debuffs_applied: { ...c.debuffs_applied } });
   for (const c of b) {
@@ -263,11 +263,6 @@ export function buildCardNames(events: EventRecord[]): Record<string, string> {
     visit(p.source_card_id, p.source_card_name);
   }
   return out;
-}
-
-export function playerName(doc: SessionDoc, pid: string): string {
-  const p = doc.players.find(p => p.steam_id === pid);
-  return p?.display_name ?? pid;
 }
 
 // === 内部 ===================================================================

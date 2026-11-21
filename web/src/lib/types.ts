@@ -209,8 +209,7 @@ export interface PowerSnapshot {
   power_id: string;
   power_name?: string | null;
   stacks: number;
-  applier: string | null;                                  // 後方互換: 最大 stacks の applier
-  appliers?: { player_id: string; stacks: number }[];      // stacks 加重帰属用
+  appliers: { player_id: string; stacks: number }[];       // 付与者ごとのスタック数
 }
 
 export interface DamageDealtPayload {
@@ -284,11 +283,6 @@ export interface CardDrawnPayload {
 export interface EnergySpentPayload {
   amount: number;
   source_card_id?: string | null;
-}
-
-export interface PotionUsedPayload {
-  potion_id?: string | null;
-  target_creature_id?: string | null;
 }
 
 export interface SessionDoc {

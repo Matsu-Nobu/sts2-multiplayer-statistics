@@ -9,30 +9,10 @@
 
 import type { EventRecord, DamageReceivedPayload } from './types';
 import { latestCombatEvents } from './aggregate';
-import { stepContributions, stepActors, stepLabel } from './contrib';
+import { stepContributions, stepActors, stepLabel, contribTable, type ContribTable } from './contrib';
 
-export interface RmitBreakdown {
-  total: number;
-  self: number;
-  from: { source: string; applier: string; amount: number }[];
-  to:   { source: string; recipient: string; amount: number }[];
-}
-
-export interface RmitTable {
-  byPlayer: Record<string, RmitBreakdown>;
-}
-
-export function computeRmit(events: EventRecord[]): RmitTable {
-  const byPlayer: Record<string, RmitBreakdown> = {};
-  const ensure = (pid: string): RmitBreakdown => (byPlayer[pid] ??= { total: 0, self: 0, from: [], to: [] });
-  const credit = (recipient: string, applier: string, source: string, amount: number) => {
-    if (amount <= 0) return;
-    if (recipient === applier) ensure(recipient).self += amount;
-    else {
-      ensure(recipient).from.push({ source, applier, amount });
-      ensure(applier).to.push({ source, recipient, amount });
-    }
-  };
+export function computeRmit(events: EventRecord[]): ContribTable {
+  const { credit, finish } = contribTable();
 
   for (const ev of latestCombatEvents(events)) {
     if (ev.event_type !== 'damage_received') continue;
@@ -59,6 +39,5 @@ export function computeRmit(events: EventRecord[]): RmitTable {
     }
   }
 
-  for (const b of Object.values(byPlayer)) b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
-  return { byPlayer };
+  return finish();
 }

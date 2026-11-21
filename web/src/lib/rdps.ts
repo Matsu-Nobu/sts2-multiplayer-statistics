@@ -10,32 +10,10 @@
 
 import type { EventRecord, DamageDealtPayload } from './types';
 import { latestCombatEvents, splitByStacks, sharedAppliers } from './aggregate';
-import { stepContributions, stepActors, stepLabel, allocateInt, type ModsV2 } from './contrib';
+import { stepContributions, stepActors, stepLabel, allocateInt, contribTable, type ModsV2, type Credit, type ContribTable } from './contrib';
 
-export interface RdpsBreakdown {
-  total: number;          // self + to の合計
-  self: number;
-  from: { source: string; applier: string; amount: number }[];
-  to:   { source: string; recipient: string; amount: number }[];
-}
-
-export interface RdpsTable {
-  byPlayer: Record<string, RdpsBreakdown>;
-}
-
-type Credit = (recipient: string, applier: string, source: string, amount: number) => void;
-
-export function computeRdps(events: EventRecord[]): RdpsTable {
-  const byPlayer: Record<string, RdpsBreakdown> = {};
-  const ensure = (pid: string): RdpsBreakdown => (byPlayer[pid] ??= { total: 0, self: 0, from: [], to: [] });
-  const credit: Credit = (recipient, applier, source, amount) => {
-    if (amount <= 0) return;
-    if (recipient === applier) ensure(recipient).self += amount;
-    else {
-      ensure(recipient).from.push({ source, applier, amount });
-      ensure(applier).to.push({ source, recipient, amount });
-    }
-  };
+export function computeRdps(events: EventRecord[]): ContribTable {
+  const { credit, finish } = contribTable();
 
   for (const ev of latestCombatEvents(events)) {
     if (ev.event_type !== 'damage_dealt') continue;
@@ -57,8 +35,7 @@ export function computeRdps(events: EventRecord[]): RdpsTable {
     }
   }
 
-  for (const b of Object.values(byPlayer)) b.total = b.self + b.to.reduce((s, x) => s + x.amount, 0);
-  return { byPlayer };
+  return finish();
 }
 
 /**

@@ -12,4 +12,3 @@ export const BADGE_RARITY: Record<string, { label: string; color: string }> = {
   Gold:   { label: '金', color: '#facc15' },
 };
 
-export const OUTCOME_LABEL: Record<string, string> = { victory: '勝利', death: '死亡', abandoned: '放棄' };

@@ -1,12 +1,12 @@
 <script lang="ts">
   // 貢献スコアのパネル (rDPS / rMit 共通。内容は spec combat-stats.md §3.5)。全員の表。
-  import type { RdpsTable } from '../lib/rdps';
+  import type { ContribTable } from '../lib/contrib';
   import { useSession } from '../lib/session';
   import { playerColor } from '../lib/players';
   import Panel from './ui/Panel.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
-  interface Props { table: RdpsTable; title: string; help: string; scope?: string }
+  interface Props { table: ContribTable; title: string; help: string; scope?: string }
   let { table, title, help, scope = '全員' }: Props = $props();
   const s = useSession();
 
