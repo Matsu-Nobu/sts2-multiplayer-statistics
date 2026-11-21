@@ -27,9 +27,9 @@ DOCKER_DATA_DIR := $(PWD)/.docker-data
         web-dev web-dev-prod \
         app-build app-run \
         docker-build docker-run \
-        dump-catalog
+        dump-catalog deploy
 
-# メンテナ専用ターゲット（fly-deploy 等）は Makefile.local に置いて gitignore する。
+# 個人の PC だけで使うターゲットは Makefile.local に置く (git 管理しない)。
 -include Makefile.local
 
 help:
@@ -51,6 +51,9 @@ help:
 	@echo ""
 	@echo "make docker-build     コンテナイメージ生成"
 	@echo "make docker-run       :8080 で起動 (./.docker-data に永続化)"
+	@echo ""
+	@echo "make deploy           backend のテストと web の型チェックの後、公開サーバ (Fly.io) にデプロイ"
+	@echo "                      (flyctl を入れて flyctl auth login しておく。イメージは Fly.io 側でビルドする)"
 	@echo ""
 	@echo "make dump-catalog [LANG=ja]  STS2 アップデート時にカタログ更新"
 	@echo "                              → STS2 を起動してランを 1 つ開始 → mod が dump"
@@ -167,3 +170,12 @@ dump-catalog:
 	@echo "  git add $(DUMP_DST) && git commit -m 'chore: update catalog ($(LANG)) for STS2 v...'"
 	@echo "  make deploy"
 
+
+# --- 公開サーバ (Fly.io) へのデプロイ -------------------------------------------
+# 設定は fly.toml。--remote-only で Fly.io 側の builder がイメージを作るので、手元に Docker は要らない。
+
+FLYCTL ?= $(shell command -v flyctl 2>/dev/null || echo $(HOME)/.fly/bin/flyctl)
+
+deploy: backend-test
+	cd $(WEB_DIR) && npm run check
+	$(FLYCTL) deploy --remote-only

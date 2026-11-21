@@ -61,6 +61,19 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
 
 ---
 
+## 公開サーバへのデプロイ
+
+公開サーバは Fly.io のアプリ `sts2stats` で動いている。設定はリポジトリ直下の `fly.toml` にあり、秘密の値は入っていない。
+どの PC からも、次の手順でデプロイできる。
+
+1. Fly.io のコマンドを入れる (`curl -L https://fly.io/install.sh | sh`。Windows は WSL の中で入れる)。
+2. `flyctl auth login` でログインする (ブラウザで承認する)。
+3. デプロイするコミットを手元で選んだ状態で `make deploy` を実行する。backend のテストと web の型チェックが通った後に、
+   Fly.io 側でイメージをビルドして入れ替える。手元に Docker は要らない。
+4. `curl https://sts2stats.fly.dev/healthz` と、共有 URL の画面が開くことを確認する。
+
+前の版に戻すときは、`flyctl releases -a sts2stats` で版を調べ、その版のイメージで `flyctl deploy --image <イメージ>` を実行する。
+
 ## ゲーム更新時の手順
 
 Slay the Spire 2 が更新されたら、mod が依存する内部実装が変わっていないかを **実装に触る前に** 確認する。
