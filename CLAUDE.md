@@ -16,6 +16,7 @@
 - `docs/spec/ui.md` — 画面の構成・URL・共通部品・見た目
 - `docs/spec/combat-stats.md` — 戦闘の画面に出す値と集計方法
 - `docs/spec/run-overview.md` — ラン全体・階の画面に出す値と集計方法
+- `docs/spec/user-pages.md` — ログイン、ユーザーページ、ランの公開・非公開・削除
 - `docs/spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
 - `docs/spec/api.md` — HTTP / event_type 契約
 - `docs/architecture.md` — アーキテクチャ全体像

@@ -18,6 +18,7 @@ type Session struct {
 	Outcome     *string `json:"outcome"`
 	FinalFloor  *int    `json:"final_floor"`
 	FinishedAt  *string `json:"finished_at"`
+	Visibility  string  `json:"visibility"` // public / private (docs/spec/user-pages.md)
 	WriteToken  string  `json:"-"`
 }
 
@@ -47,11 +48,11 @@ var ErrSessionNotFound = errors.New("session not found")
 func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, created_at, host_name, host_steam_id, character_id, ascension, seed,
-		        outcome, final_floor, finished_at, write_token
+		        outcome, final_floor, finished_at, visibility, write_token
 		 FROM sessions WHERE id = ?`, id)
 	var sess Session
 	err := row.Scan(&sess.ID, &sess.CreatedAt, &sess.HostName, &sess.HostSteamID, &sess.CharacterID,
-		&sess.Ascension, &sess.Seed, &sess.Outcome, &sess.FinalFloor, &sess.FinishedAt, &sess.WriteToken)
+		&sess.Ascension, &sess.Seed, &sess.Outcome, &sess.FinalFloor, &sess.FinishedAt, &sess.Visibility, &sess.WriteToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrSessionNotFound
 	}

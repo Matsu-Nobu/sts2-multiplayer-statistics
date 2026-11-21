@@ -7,6 +7,8 @@
   import { setSession } from '../lib/session';
   import { playerColor } from '../lib/players';
   import Badge from './ui/Badge.svelte';
+  import AuthMenu from './AuthMenu.svelte';
+  import { userHref } from '../lib/auth.svelte';
   import RunPage from '../pages/RunPage.svelte';
   import FloorPage from '../pages/FloorPage.svelte';
   import CombatsPage from '../pages/CombatsPage.svelte';
@@ -82,7 +84,11 @@
   <div class="max-w-7xl mx-auto px-4 pt-4">
     <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
       <div class="min-w-0">
-        <h1 class="text-xl font-semibold text-slate-100 break-words">{doc.players.map(p => p.display_name).join('・') || (doc.session.host_name ?? '不明なプレイヤー')}</h1>
+        <h1 class="text-xl font-semibold text-slate-100 break-words">
+          {#if doc.players.length > 0}
+            {#each doc.players as p, i (p.steam_id)}{#if i > 0}・{/if}<a href={userHref(p.steam_id)} class="hover:underline focus-ring rounded">{p.display_name || p.steam_id}</a>{/each}
+          {:else}{doc.session.host_name ?? '不明なプレイヤー'}{/if}
+        </h1>
         <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
           {#if playerIds.length > 1}<Badge label={`${playerIds.length} 人`} />{:else if characterName}<Badge label={characterName} />{/if}
           {#if doc.session.ascension != null}<Badge label={`アセンション ${doc.session.ascension}`} />{/if}
@@ -91,6 +97,7 @@
         </div>
       </div>
       <div class="text-xs text-slate-500 sm:text-right flex sm:block items-center gap-3" aria-live="polite">
+        <div class="sm:mb-1"><AuthMenu /></div>
         <div class="flex items-center gap-1.5 sm:justify-end">
           <span class="w-2 h-2 rounded-full inline-block {live === 'live' ? 'bg-ok animate-pulse' : live === 'final' ? 'bg-slate-500' : 'bg-bad'}"></span>
           <span class={live === 'live' ? 'text-ok' : live === 'offline' ? 'text-bad' : ''}>{live === 'live' ? 'ライブ' : live === 'final' ? '完了' : 'オフライン'}</span>

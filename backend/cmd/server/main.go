@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/api"
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 )
 
@@ -31,10 +33,20 @@ func main() {
 	}
 	defer st.Close()
 
+	// ログインの cookie の署名の鍵。DB が漏れても、なりすましてログインできないように DB には置かない
+	// (本番は Fly.io の secrets。docs/operations.md「公開サーバへのデプロイ」)
+	cookieKey, err := hex.DecodeString(os.Getenv("AUTH_COOKIE_KEY"))
+	if err != nil || len(cookieKey) < 32 {
+		slog.Error("AUTH_COOKIE_KEY must be at least 32 random bytes in hex (openssl rand -hex 32)")
+		os.Exit(1)
+	}
+
 	srv := &api.Server{
 		Store:          st,
 		BaseURL:        baseURL,
 		AllowedOrigins: allowed,
+		Signer:         auth.Signer{Key: cookieKey},
+		Verify:         auth.VerifyWithSteam(auth.DefaultHTTPClient),
 	}
 
 	httpSrv := &http.Server{

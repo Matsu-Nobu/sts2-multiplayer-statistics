@@ -2,6 +2,7 @@
   import type { SessionDoc } from './lib/types';
   import { fetchSession } from './lib/api';
   import SessionView from './components/SessionView.svelte';
+  import UserPage from './pages/UserPage.svelte';
   import Skeleton from './components/ui/Skeleton.svelte';
   import { route } from './lib/router.svelte';
 
@@ -35,6 +36,7 @@
 
   // 起動時に1度だけ実行されるよう、effect の本体は何も読まない構成にする
   $effect(() => {
+    if (route.userId != null) return;
     if (id == null) { error = 'URL にセッションの ID がありません'; return; }
     iv = setInterval(() => fetchOnce(id), 10_000);
     fetchOnce(id);
@@ -42,7 +44,9 @@
   });
 </script>
 
-{#if doc}
+{#if route.userId != null}
+  <UserPage steamId={route.userId} />
+{:else if doc}
   <SessionView {doc} {live} {lastUpdated} />
 {:else if error}
   <div class="max-w-xl mx-auto mt-16 px-4 text-center">

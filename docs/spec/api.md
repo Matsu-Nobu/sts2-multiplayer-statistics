@@ -42,8 +42,17 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 |--------|------|------|------|
 | `POST` | `/sessions` | — | セッション作成 |
 | `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿（戦闘内・外いずれも） |
-| `GET`  | `/api/sessions/{id}` | — | セッション全データ取得（WebUI用） |
-| `GET`  | `/s/{id}` | — | SPA HTML 配信 |
+| `GET`  | `/api/sessions/{id}` | — (非公開のランは記録した人のログインが要る) | セッション全データ取得（WebUI用） |
+| `GET`  | `/auth/steam/login?return={path}` | — | Steam のログイン画面へ移る |
+| `GET`  | `/auth/steam/callback` | — | Steam から戻る。ログインの cookie を付けて `return` へ移る |
+| `POST` | `/auth/logout` | — | ログインの cookie を消す |
+| `GET`  | `/api/me` | cookie | ログインしている人 |
+| `PATCH`| `/api/me` | cookie | ユーザーページの公開・非公開 |
+| `GET`  | `/api/users/{steam_id}` | — / cookie | ユーザーページ (参加したランの一覧) |
+| `PATCH`| `/api/sessions/{id}` | cookie (記録した人) | ランの公開・非公開 |
+| `PATCH`| `/api/sessions/{id}/listing` | cookie (参加者) | ランを自分のユーザーページに載せるか |
+| `DELETE`| `/api/sessions/{id}` | cookie (記録した人) | ランを削除する |
+| `GET`  | `/s/{id}` / `/u/{steam_id}` | — | SPA HTML 配信 |
 | `GET`  | `/assets/*` | — | Vite ビルド成果物 |
 | `GET`  | `/catalog.{lang}.json` | — | STS2 カード/レリック/ポーション/エンチャント definitions（静的） |
 | `GET`  | `/favicon.ico` | — | ファビコン |
@@ -363,6 +372,48 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 
 ---
 
+## ログイン
+
+画面の挙動は [`user-pages.md`](./user-pages.md)。Steam の公式のログイン (OpenID 2.0) で、Steam ID だけを受け取る。
+
+- `GET /auth/steam/login?return={path}`: Steam のログイン画面へ 302。`return` は自分のサイトの中のパス (`/` で始まり `//` で始まらないもの) だけを受け付け、それ以外は `/` にする。
+- `GET /auth/steam/callback`: Steam へ `check_authentication` を問い合わせ、`is_valid:true` なら cookie `sts2stats_auth` (HttpOnly・Secure・SameSite=Lax、30 日) を付けて `return` へ 302。検証できなければ 401。
+- cookie の中身は `{steam_id}.{有効期限の UNIX 時刻}.{HMAC-SHA256 の署名}`。署名の鍵は環境変数 `AUTH_COOKIE_KEY` (32 バイト以上の hex)。
+- ログインが要る変更 (`PATCH` / `DELETE`) は、cookie が無ければ 401、`Origin` が自分のサイトでなければ 403。
+
+## ユーザー
+
+### `GET /api/users/{steam_id}`
+
+本人がログインして開いたときは全部のランを返す。本人以外は、ユーザーページが公開のときだけ、公開で本人がページに載せているランを返す。非公開なら 403、知らない Steam ID なら 404。
+
+```json
+{
+  "user": { "steam_id": "765...", "display_name": "Nobu", "profile_public": false },
+  "is_me": true,
+  "runs": [{
+    "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
+    "character_id": "FOOL", "character_name": "フール", "ascension": 3,
+    "outcome": "victory", "final_floor": 48,
+    "visibility": "public", "hidden": false, "is_recorder": true,
+    "participants": [{ "steam_id": "765...", "display_name": "Nobu" }]
+  }]
+}
+```
+
+`character_*` はそのユーザーのキャラクター (`run_start` から)。`is_recorder` はそのユーザーが記録した人か。
+
+### 変更
+
+| リクエスト | body | 権限が無いとき |
+|---|---|---|
+| `PATCH /api/me` | `{ "profile_public": true }` | — |
+| `PATCH /api/sessions/{id}` | `{ "visibility": "public" \| "private" }` | 記録した人でなければ 403 |
+| `PATCH /api/sessions/{id}/listing` | `{ "hidden": true }` | 参加者でなければ 403 |
+| `DELETE /api/sessions/{id}` | — | 記録した人でなければ 403。消すと記録・参加者もまとめて消える |
+
+成功は 204。
+
 ## `GET /healthz`
 
 **Response 200** `ok`
@@ -440,6 +491,7 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 | 時期 | 変更 |
 |------|------|
+| 2026-11 | ログインとユーザーページ (`/auth/steam/*`、`/api/me`、`/api/users/{steam_id}`、ランの公開・非公開・削除)。`GET /api/sessions/{id}` の `session` に `visibility`。`POST /sessions/{id}/events` の body の上限を 2MB に上げる (ほかは 256KB) |
 | 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |
 | 2026-10 | v2: ラン全体の event を `floor_snapshot` に統合 (`room_entered` / `hp_changed` / `gold_changed` / `act_entered` / `rest_action` / `reward_taken` / `card_obtained` / `card_upgraded` / `card_enchanted` / `card_removed` / `relic_obtained` / `potion_obtained` / `potion_discarded` / `event_choice` を廃止)。`player_id` を全 event で正規化。`run_end` に `final_hp`。出どころをモデル ID に変更。`hit_index` 廃止 |
 | 2026-05 | `GET /catalog.{lang}.json` 追加（chip tooltip 用 STS2 definitions、静的） |
