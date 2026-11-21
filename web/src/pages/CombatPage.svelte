@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 戦闘詳細 (spec ui.md §3.5): パンくず・前後の戦闘・メタ情報・サマリ / ターン / タイムライン。
+  // 戦闘詳細 (spec ui.md「戦闘詳細」): パンくず・前後の戦闘・メタ情報・サマリ / ターン / タイムライン。
   import { useSession } from '../lib/session';
   import { computeRdps } from '../lib/rdps';
   import { computeRmit } from '../lib/rmit';

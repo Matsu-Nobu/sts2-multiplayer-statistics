@@ -7,16 +7,16 @@
 
 ---
 
-## 1. 対象のプレイヤー
+## 対象のプレイヤー
 
-階の詳細とプレイヤーの最終状態は、AppShell のプレイヤー切り替えで選んでいるプレイヤーの視点で出す (ui.md §2)。
+階の詳細とプレイヤーの最終状態は、AppShell のプレイヤー切り替えで選んでいるプレイヤーの視点で出す (ui.md「画面の骨格 (AppShell)」)。
 推移のグラフは全員の線を重ねる。
 
 ---
 
-## 2. 表示
+## 表示
 
-### 2.1 部屋の種類の表示
+### 部屋の種類の表示
 
 部屋の種類 (`room_type`) ごとの絵文字・日本語ラベル・色 (`runOverview.ts` の `ROOM_TYPE_VISUAL`)。推移のグラフの点の色と、階セレクタ・階の見出しに使う。
 
@@ -30,7 +30,7 @@
 | RestSite | 🔥 | 休憩所 | green |
 | Treasure | 📦 | 宝箱 | amber |
 
-### 2.2 階の詳細
+### 階の詳細
 
 詳細グループ (該当データありの group のみ表示。全部空なら「変化なし」表示):
 
@@ -49,7 +49,7 @@
 
 戦闘の統計 (与ダメ・被ダメ・カード別等) は階の詳細には出さない (戦闘詳細の画面で見る)。
 
-### 2.3 chip 表記ルール
+### chip 表記ルール
 
 カード chip は **rarity で背景色 + 枠色**、**is_upgraded で文字色**:
 
@@ -70,12 +70,12 @@
 提示カード選択肢:
 - pick されたものは通常の rarity chip
 - skip されたものは `opacity-60 line-through text-slate-500`、rarity 色は維持
-- 階ごとに 1 本の並び (報酬ごとの `#1 #2` 区切りは無い。ゲームの記録に区切りが無いため。2026-10-01 確定)
+- 階ごとに 1 本の並び (報酬ごとの `#1 #2` 区切りは無い。ゲームの記録に区切りが無いため)
 - **ショップの階では出さない** (ゲームの記録に、買わなかった商品カードが「選ばなかった」として入るため)
 
 ショップ購入の chip には末尾に `NNNG` (値段) を黄色で付加する。
 
-### 2.4 chip ホバー tooltip (description)
+### chip ホバー tooltip (description)
 
 カード / レリック / ポーション / エンチャント の chip に hover すると、
 カタログ (`docs/architecture.md` 「カタログ」節参照) から取得した description を popover で表示する。
@@ -98,23 +98,23 @@
   - 条件で文が変わる `{名前:...:A|B}` (中に `{...}` を含むこともある) → 最後の選択肢 `B` を出す。
     ゲームが戦闘の外でカードを表示するときと同じ文になる。
     - 例: `{TargetType:choose(AllEnemies):すべての敵に|}XXダメージ` → `XXダメージ`
-- バッジ (§3.6) の説明も同じ変換を通して出す
+- バッジ (「プレイヤーの最終状態 (ラン全体の画面)」) の説明も同じ変換を通して出す
 - カードの description は `is_upgraded` に応じて base / upgraded を出し分け
 - カタログに該当 id が無い場合は tooltip を出さない (chip だけ表示)
 - カタログ未ロード中 (`catalog == null`) も tooltip 出さない
 
 ---
 
-## 3. データ集計 (`runOverview.ts`)
+## データ集計 (`runOverview.ts`)
 
-データの出処は [`data-sources.md`](./data-sources.md) §2.1。
+データの出処は [`data-sources.md`](./data-sources.md) の「ラン全体 (`runOverview.ts`)」。
 
-### 3.1 入力
+### 入力
 
 - `events: EventRecord[]` — セッション全 event
 - `playerId: string` — 表示するプレイヤー (単一プレイでもその人の ID を渡す)
 
-### 3.2 出力
+### 出力
 
 `FloorSummary[]` — 階番号順。
 
@@ -138,7 +138,7 @@ interface FloorSummary {
 }
 ```
 
-### 3.3 floor 列の構築ロジック
+### floor 列の構築ロジック
 
 1. `floor_snapshot` を階ごとに集め、**各階で最後に受け取ったもの** だけを使う
 2. 階の並び = snapshot のある階を番号順に (1 階 = ネオウも記録から必ず来る)
@@ -146,14 +146,14 @@ interface FloorSummary {
 4. `room_type` / `encounter_name` は `rooms[]` の最後の部屋 (「？」マスから戦闘になった場合は戦闘の部屋)。
    `combat_index` / `victory` は同じ階の `combat_start` / `combat_end` (最後の `combat_start` 以降) から
 
-### 3.4 HP / ゴールド
+### HP / ゴールド
 
 - `hp_out` / `max_hp_out` / `gold_out` = その階の `hp.current` / `hp.max` / `gold.current`
 - `hp_in` / `max_hp_in` / `gold_in` = 1 つ前の階の退出値。1 階は `run_start` (そのプレイヤー) の `hp` / `max_hp` / `gold`
 - **勝利・放棄のランの最後の階**: ゲームがラン終了処理で全員を倒すため記録の HP は 0。`run_end.final_hp[playerId]` を `hp_out` に使う
 - 全滅のランの最後の階は記録どおり 0
 
-### 3.5 ショップ
+### ショップ
 
 - ショップの階 (`room_type == Shop`) で入手したもの (`cards_gained` / `relic_choices` の選んだもの / `potion_choices` の選んだもの)
   は **すべて購入品** として「ショップ購入」欄に出し、「入手」欄には出さない (CLAUDE.md §6「ショップで買ったカードが二重表示されない」)。
@@ -164,14 +164,14 @@ interface FloorSummary {
 
 ---
 
-### 3.6 プレイヤーの最終状態 (ラン全体の画面)
+### プレイヤーの最終状態 (ラン全体の画面)
 
 - デッキ・レリック・ポーション: 最後の `floor_snapshot` の `players[].deck` / `relics` / `potions` (その階を出た時点。ラン終了時は終了時点)
-- 最終 HP / ゴールド: §3.4 の最後の階の `hp_out` / `gold_out`
+- 最終 HP / ゴールド: 「HP / ゴールド」 の最後の階の `hp_out` / `gold_out`
 - バッジ: `run_end.badges[player_id]`。`run_end` が無い (ラン中) ときは出さない
 
-## 4. 既知の制約
+## 既知の制約
 
-- **v1 形式のセッション** (2026-10 以前) は表示できない (DB を空にして v2 から取り直す方針、2026-10-01 確定)
+- 2026-10 より前の mod で記録したセッションは表示できない
 - **Event の選択肢**はタイトルだけ。結果 (HP・カード・レリック等) は同じ階の各欄に出る
 - **ライブ表示**: 今いる階の内容は送信の区切り (ターン終了・戦闘終了・報酬・購入・休憩所・イベント選択) ごとに更新される

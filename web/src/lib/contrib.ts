@@ -1,5 +1,5 @@
 /**
- * ダメージ補正の内訳 (modifications v2) から、補正ごとの寄与を求める (spec combat-stats.md §3.5)。
+ * ダメージ補正の内訳 (modifications v2) から、補正ごとの寄与を求める (spec combat-stats.md「貢献スコア」)。
  * rDPS (rdps.ts) と rMit (rmit.ts) の両方がこれを使う。
  *
  *   足し算 (additive / enchant / cap / other / hp_lost): 記録された増減量そのまま

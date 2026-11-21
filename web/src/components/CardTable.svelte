@@ -1,5 +1,5 @@
 <script lang="ts">
-  // カード別 (選んだプレイヤー)。上位 10 件 + 「すべて表示」(spec ui.md §3.4)。
+  // カード別 (選んだプレイヤー)。上位 10 件 + 「すべて表示」(spec ui.md「戦闘」)。
   import type { CardStats } from '../lib/types';
   import { formatPowerName } from '../lib/powers';
   import { cardTypeLabel } from '../lib/labels';

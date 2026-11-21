@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 画面の骨格 (AppShell。spec ui.md §2): ヘッダー・タブ・プレイヤー切り替え・本文。
+  // 画面の骨格 (AppShell。spec ui.md「画面の骨格 (AppShell)」): ヘッダー・タブ・プレイヤー切り替え・本文。
   import type { SessionDoc, RunStartPayload } from '../lib/types';
   import { buildCombatInfos, buildRunTotals, buildPowerNames, buildCardNames, latestCombatEvents } from '../lib/aggregate';
   import { loadCatalog, type CatalogLookup } from '../lib/catalog';
@@ -33,7 +33,7 @@
     }
     return m;
   });
-  // 選んでいるプレイヤー (?p=)。無い・知らない ID なら先頭 (spec ui.md §1)
+  // 選んでいるプレイヤー (?p=)。無い・知らない ID なら先頭 (spec ui.md「画面と URL」)
   let player = $derived(route.player && playerIds.includes(route.player) ? route.player : (playerIds[0] ?? ''));
 
   setSession({
@@ -110,7 +110,7 @@
 
       {#if playerIds.length > 1}
         <div class="pb-1.5 shrink-0">
-          <!-- 広い画面: ボタン列 / 狭い画面: セレクトボックス (spec ui.md §2) -->
+          <!-- 広い画面: ボタン列 / 狭い画面: セレクトボックス (spec ui.md「画面の骨格 (AppShell)」) -->
           <div class="hidden sm:flex items-center gap-1" role="group" aria-label="プレイヤー">
             {#each playerIds as pid (pid)}
               <button type="button" aria-pressed={pid === player} onclick={() => selectPlayer(pid)}

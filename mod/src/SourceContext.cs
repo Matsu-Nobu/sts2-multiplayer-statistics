@@ -18,7 +18,7 @@ namespace StsStats;
 
 /// <summary>
 /// 「いま何のモデル (パワー・レリック・オーブ・エンチャント・ポーション) の処理が走っているか」を追跡する
-/// (docs/redesign-v2.md §2.4-2)。
+/// (docs/spec/data-sources.md「カードの無いダメージ」)。
 ///
 /// ゲームには共通の「実行中モデル」の記録が無い (PlayerChoiceContext.PushModel は一部の Hook だけ)。
 /// そこで **呼ばれる側に目印を付ける**: 起動時に、上記モデルのクラスが宣言している全メソッド
@@ -40,7 +40,7 @@ internal static class SourceContext
     /// <param name="InReaction">
     /// この処理が「ゲームのイベントへの反応」(AbstractModel で宣言された Hook の上書き) の中か。
     /// カードの効果が直接発動させたもの (毒の Trigger・オーブの Evoke / Passive・破滅の DoomKill 等) と区別する
-    /// (spec combat-stats.md §3.3、api.md「triggered_by」)。
+    /// (spec combat-stats.md「カード別 (CardTable)」、api.md「triggered_by」)。
     /// </param>
     internal sealed record Frame(AbstractModel? Instance, Type ModelType, bool InReaction);
 
@@ -78,7 +78,7 @@ internal static class SourceContext
     private static readonly AsyncLocal<bool> _inHookDispatch = new();
 
     // オーブの生成 (OrbCmd.Channel) の中か。枠がいっぱいだと生成の中で古いオーブが解放される (EvokeNext)。
-    // これはカードに書かれた解放ではないので、カードの効果にしない (spec combat-stats.md §3.3)。
+    // これはカードに書かれた解放ではないので、カードの効果にしない (spec combat-stats.md「カード別 (CardTable)」)。
     private static readonly AsyncLocal<bool> _inChannel = new();
 
     public static void ChannelPrefix(out bool __state)
@@ -215,7 +215,7 @@ internal static class SourceContext
     /// <summary>
     /// 出どころが「<paramref name="target"/> 自身に付いているパワー」(毒・Doom・絞殺など相手に付けたデバフ) なら、
     /// その付与者ごとのスタック数 (多い順)。そうでなければ null。
-    /// web は与ダメージ・カード別の表・rDPS をこの比で按分する (spec combat-stats.md §4)。
+    /// web は与ダメージ・カード別の表・rDPS をこの比で按分する (spec combat-stats.md「データソース」)。
     /// </summary>
     public static List<(string PlayerId, int Stacks)>? DebuffAppliers(Creature? target)
     {

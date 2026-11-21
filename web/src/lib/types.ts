@@ -1,4 +1,4 @@
-// docs/api.md と一致させること。v2 形式 (docs/redesign-v2.md)。
+// docs/spec/api.md と一致させること。
 import type { ModsV2 } from './contrib';
 export type { ModsV2 } from './contrib';
 
@@ -77,7 +77,7 @@ export interface TurnPayload {
 }
 
 /**
- * docs/api.md POST /sessions/{id}/events の各要素 + サーバ付与の received_at。
+ * docs/spec/api.md POST /sessions/{id}/events の各要素 + サーバ付与の received_at。
  * 戦闘内 event は combat_index / turn_number / sequence を持ち、
  * 戦闘外 event はそれらが null。
  */
@@ -94,7 +94,7 @@ export interface EventRecord<P = unknown> {
   payload: P;
 }
 
-// === ラン全体ビュー用 events (v2: docs/api.md「floor_snapshot」) ==========
+// === ラン全体ビュー用 events (docs/spec/api.md「floor_snapshot」) ==========
 
 export type RoomTypeName = 'Monster' | 'Elite' | 'Boss' | 'Event' | 'Shop' | 'RestSite' | 'Treasure' | string;
 
@@ -214,7 +214,7 @@ export interface DamageDealtPayload {
   overkill_damage?: number;           // HP を超えた分
   was_target_killed?: boolean;
   is_doom_kill?: boolean;             // Doom による撃破 (source_card_id = DOOM_POWER)
-  // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md §4)
+  // 相手に付けたデバフ (毒・Doom 等) によるダメージの付与者ごとのスタック数。全欄でこの比で按分する (spec combat-stats.md「データソース」)
   source_appliers?: { player_id: string; stacks: number; origin?: Origin | null }[];
   source_origin?: Origin | null;      // 自分側のパワーが出どころのとき、そのパワーを付けた持ち物 (api.md)
   triggered_by?: { player_id: string; id: string; name: string; type: string } | null;   // カードのプレイ中に発動したデバフのダメージ (api.md)

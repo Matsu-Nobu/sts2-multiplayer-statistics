@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ラン全体 (spec ui.md §3.1): 貢献度スコア、HP・ゴールドの推移 (全員)、プレイヤーごとのデッキとバッジ。
+  // ラン全体 (spec ui.md「ラン全体」): 貢献度スコア、HP・ゴールドの推移 (全員)、プレイヤーごとのデッキとバッジ。
   import { useSession } from '../lib/session';
   import { buildFloorSummaries, buildPlayerFinalState } from '../lib/runOverview';
   import { navigate } from '../lib/router.svelte';
@@ -18,7 +18,7 @@
 
   const s = useSession();
   let metric: 'hp' | 'gold' = $state('hp');
-  // プレイヤー数ぶんの列 (最大 4)。1024px 以上で 2 列、1280px 以上でプレイヤー数ぶん (spec ui.md §3.1)
+  // プレイヤー数ぶんの列 (最大 4)。1024px 以上で 2 列、1280px 以上でプレイヤー数ぶん (spec ui.md「ラン全体」)
   const GRID: Record<number, string> = { 2: 'lg:grid-cols-2', 3: 'lg:grid-cols-2 xl:grid-cols-3', 4: 'lg:grid-cols-2 xl:grid-cols-4' };
 
   let perPlayer = $derived(s.playerIds.map(pid => {

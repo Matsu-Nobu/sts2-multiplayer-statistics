@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 階セレクタ (spec ui.md §3.2): 各階のドロップダウン + 前 / 次。選ぶと URL が変わる。
+  // 階セレクタ (spec ui.md「階」): 各階のドロップダウン + 前 / 次。選ぶと URL が変わる。
   import { roomVisual, type FloorSummary } from '../lib/runOverview';
   import { navigate } from '../lib/router.svelte';
 

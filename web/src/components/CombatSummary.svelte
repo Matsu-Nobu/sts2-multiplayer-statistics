@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 戦闘の統計 (全戦闘の合計 / 1 戦闘のサマリ共通。spec ui.md §3.4・§3.5)。
+  // 戦闘の統計 (全戦闘の合計 / 1 戦闘のサマリ共通。spec ui.md「戦闘」・§3.5)。
   //   主要数値 (選んだプレイヤー) → プレイヤー比較 (全員) → 貢献スコア (全員) → カード別・デバフ付与 (選んだプレイヤー)
   import type { PlayerCombatSummary } from '../lib/types';
   import type { ContribTable } from '../lib/contrib';

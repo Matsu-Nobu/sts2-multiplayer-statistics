@@ -11,7 +11,7 @@ using MegaCrit.Sts2.Core.ValueProps;
 namespace StsStats;
 
 /// <summary>
-/// ダメージ補正・HP 減少補正を「補正 1 つずつ」記録する (spec combat-stats.md §3.5、貢献スコア用)。
+/// ダメージ補正・HP 減少補正を「補正 1 つずつ」記録する (spec combat-stats.md「貢献スコア」、貢献スコア用)。
 ///
 /// ゲームの Hook.ModifyDamage / Hook.ModifyHpLost は「値を変えたモデルの一覧」を計算順に返す
 /// (Hook.ModifyDamageInternal: 足し算 → 掛け算 → 上限。デコンパイル確認済 v0.111.0)。

@@ -1,6 +1,6 @@
 # API契約
 
-mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装されている API のみを記述する**。将来追加予定のエンドポイント・event_type は `roadmap.md` 側に記載し、このドキュメントには含めない。
+mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装されている API のみを記述する**。
 
 実装変更時はまずこのドキュメントを更新し、それから mod / backend / WebUI のコードを揃える。
 
@@ -156,7 +156,7 @@ Content-Type: application/json
 
 戦闘内 event は `combat_index` / `turn_number` / `sequence` をすべて set。戦闘外 event はそれらが NULL。
 
-### event_type カタログ（v2。設計は [`redesign-v2.md`](./redesign-v2.md)）
+### event_type カタログ
 
 `player_id` は全 event で **正規化済み** (シングルプレイ・LAN ホストの `NetId=1` はローカルの Steam ID に置換)。
 プレイヤーに属さない event (`combat_start` / `combat_end` / `floor_snapshot` 等) だけ空。
@@ -166,7 +166,7 @@ Content-Type: application/json
 | event_type | payload | player_id | context |
 |-----------|---------|-----------|---------|
 | `run_start` | `character_id`, `character_name` (表示名), `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
-| `floor_snapshot` | §floor_snapshot | 空 | floor のみ |
+| `floor_snapshot` | 「floor_snapshot」 | 空 | floor のみ |
 | `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
 | `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`), `badges` (`{ player_id: [{ id, name, description, rarity }] }`) | 空 | floor のみ |
 | `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 空 | floor + combat_index |
@@ -243,9 +243,9 @@ Content-Type: application/json
 `source_card_type` にはモデルの種類 (`Power` / `Relic` / `Orb` / `Enchantment` / `Potion`)、`source_card_name` には表示名が入る。
 カードかどうかは `source_kind` (`card` / `power` / `relic` / `orb` / `enchantment` / `potion` / `unknown`) で判定する
 (`source_card_type` の `Power` はカードの種類「パワー」と同じ文字列なので判定に使わない)。`damage_dealt` / `block_gained` に付く。
-mod が起動時に対象メソッドを自動で列挙して追跡する (`redesign-v2.md` §2.4)。v1 の合成タグ (`(poison)` 等) は廃止。
+mod が起動時に対象メソッドを自動で列挙して追跡する (spec data-sources.md「カードの無いダメージ」)。
 
-#### `modifications` (damage_dealt / damage_received。貢献スコア用、spec combat-stats.md §3.5)
+#### `modifications` (damage_dealt / damage_received。貢献スコア用、spec combat-stats.md「貢献スコア」)
 
 ゲームの補正計算で値を変えたモデルを、計算順に 1 つずつ並べたもの。
 
@@ -282,7 +282,7 @@ web は与ダメージ・カード別の表・rDPS をこの比で按分する�
 `triggered_by` (`{ "player_id", "id", "name", "type" }`, damage_dealt / block_gained): カード以外が出どころのダメージ・ブロックを、
 **カードの効果が直接発動させた** ときの、そのカードと使った人。判定: カードのプレイ中 (`CardModel.OnPlayWrapper` の実行中) で、
 出どころの処理が Hook の上書き (ゲームのイベントへの反応) の中からではなく、オーブの生成 (`OrbCmd.Channel`) で押し出された解放でもないこと。例: 感染爆発の毒の発動、デュアルキャストのオーブの解放。
-web はカード別の表でだけ使う (combat-stats.md §3.3)。
+web はカード別の表でだけ使う (combat-stats.md「カード別 (CardTable)」)。
 
 `source_origin` (`{ "id", "name", "type", "kind" }`, damage_dealt / block_gained): 出どころが **自分側に付いているパワー** (トゲ・プレート等) のとき、
 そのパワーを付けたカード・レリック・ポーション。カード別の表はこれで集計する。分からなければ無し。
@@ -378,8 +378,8 @@ WebUI が tooltip 表示用に 1 度だけ fetch する。
 - 内容は `web/public/catalog.{lang}.json` に commit 済の静的ファイル
 - backend は embed FS で同梱配信（`/assets/*` と同じ embed ソース）
 - 更新は STS2 アップデート時のみ手動: `make dump-catalog LANG=ja`
-- 詳細運用フロー / 構造 / mod 側 dumper 実装は [`architecture.md` のカタログ節](./architecture.md#カタログ-cards--relics--potions--enchantments-の-definitions) 参照
-- web 側ローダ仕様は [`spec/run-overview.md` §2.6](./spec/run-overview.md) 参照
+- 詳細運用フロー / 構造 / mod 側 dumper 実装は [`architecture.md`](../architecture.md) の「カタログ」の節 参照
+- web 側ローダ仕様は [`run-overview.md`](./run-overview.md) の「chip ホバー tooltip (description)」参照
 
 ### Response 200 (Content-Type: application/json)
 
@@ -450,8 +450,6 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 ## 関連ドキュメント
 
-- `spec/combat-stats.md` — 戦闘統計画面の表示仕様
-- `spec/run-overview.md` — ラン全体統計画面の表示仕様
-- `spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
-- `roadmap.md` — events カタログの将来追加予定と派生統計のアイデア
-- `archive/phase35-plan.md` — 旧 phase 計画 (歴史的経緯)
+- `combat-stats.md` — 戦闘の画面に出す値と集計方法
+- `run-overview.md` — ラン全体・階の画面に出す値と集計方法
+- `data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ

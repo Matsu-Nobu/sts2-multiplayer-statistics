@@ -1,5 +1,5 @@
 <script lang="ts">
-  // カードのチップ (spec run-overview.md §2.3): レアリティで背景色と枠、強化済みは文字色、選ばなかったものは打ち消し線。
+  // カードのチップ (spec run-overview.md「chip 表記ルール」): レアリティで背景色と枠、強化済みは文字色、選ばなかったものは打ち消し線。
   import CardTooltip from '../CardTooltip.svelte';
   interface Props { label: string; rarity?: string; upgraded?: boolean; suffix?: string; skipped?: boolean; tip?: string; count?: number }
   let { label, rarity, upgraded = false, suffix = '', skipped = false, tip = '', count = 1 }: Props = $props();

@@ -35,7 +35,7 @@ public static class ModEntry
     internal static RunSessionStore? SessionStore { get; private set; }
 
     /// <summary>
-    /// patch の一覧 (docs/spec/data-sources.md §1)。
+    /// patch の一覧 (docs/spec/data-sources.md「mod: ゲーム内のどこから取るか」)。
     /// 1 行 = 1 patch。tools/verify-game-api がこの表を読み、ゲーム更新後の sts2.dll に対して
     /// 「対象が存在するか」「postfix の引数がすべて結び付くか」を確認する。書式を崩さないこと:
     ///   P(typeof(対象の型), "メソッド名", typeof(patch のクラス), "prefix名 or null", "postfix名 or null"[, 引数の型...]);

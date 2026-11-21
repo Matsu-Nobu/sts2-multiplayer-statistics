@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 貢献スコアのパネル (rDPS / rMit 共通。内容は spec combat-stats.md §3.5)。全員の表。
+  // 貢献スコアのパネル (rDPS / rMit 共通。内容は spec combat-stats.md「貢献スコア」)。全員の表。
   import type { ContribTable } from '../lib/contrib';
   import { useSession } from '../lib/session';
   import { playerColor } from '../lib/players';

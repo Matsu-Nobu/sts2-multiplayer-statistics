@@ -22,7 +22,7 @@ export interface CombatInfo {
 // === 公開 API ================================================================
 
 /**
- * 戦闘内 event のうち、各 combat_index の **最後の combat_start 以降** だけを返す (spec combat-stats.md §4)。
+ * 戦闘内 event のうち、各 combat_index の **最後の combat_start 以降** だけを返す (spec combat-stats.md「データソース」)。
  * 中断→再開で同じ階の戦闘をやり直すと combat_start が再び来る。中断前の分はゲーム上無かったことになっているので捨てる。
  * combat_start の無い combat_index (戦闘外に紛れた event) も捨てる。combat_index の無い event はそのまま残す。
  */
@@ -56,7 +56,7 @@ export function splitByStacks(amount: number, appliers: { player_id: string; sta
 
 /**
  * 相手に付けたデバフ (毒・Doom 等) によるダメージ (source_appliers あり) を、付与者ごとの event に分ける。
- * 与ダメージ・カード別の表・最大単発の集計用 (spec combat-stats.md §4)。
+ * 与ダメージ・カード別の表・最大単発の集計用 (spec combat-stats.md「データソース」)。
  */
 export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
   const out: EventRecord[] = [];
@@ -75,7 +75,7 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
       out.push(withOrigin({ ...ev, player_id: a.player_id, event_uuid: `${ev.event_uuid}#${i}`, payload }, a.origin));
     });
     if (trig) {
-      // カードのプレイ中に発動したデバフのダメージ (感染爆発の毒等。spec combat-stats.md §3.3):
+      // カードのプレイ中に発動したデバフのダメージ (感染爆発の毒等。spec combat-stats.md「カード別 (CardTable)」):
       // 使った人の与ダメージはその人の取り分 (スタック比) のまま、カード別の表ではそのカードの行に全量を出す
       const payload: DamageDealtPayload = { ...p, card_amount: p.amount ?? 0 };
       fields.forEach((f, fi) => {
@@ -90,11 +90,11 @@ export function splitSharedDamage(events: EventRecord[]): EventRecord[] {
 
 /**
  * パワーによるダメージ・ブロックを、そのパワーを付けた持ち物 (カード・レリック・ポーション等) の行に付け替える
- * (spec combat-stats.md §3.3)。分からなければそのまま (パワー名の行)。
+ * (spec combat-stats.md「カード別 (CardTable)」)。分からなければそのまま (パワー名の行)。
  */
 /**
  * カード別の表の行にする持ち物: カードの効果が直接発動させたもの (オーブの解放等) はそのカード (使った人の event のとき)、
- * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md §3.3)。
+ * それ以外は自分側のパワーを付けた持ち物 (spec combat-stats.md「カード別 (CardTable)」)。
  */
 function rowOrigin(ev: EventRecord): Origin | null | undefined {
   const p = ev.payload as { triggered_by?: DamageDealtPayload['triggered_by']; source_origin?: Origin | null } | undefined;

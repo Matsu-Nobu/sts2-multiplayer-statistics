@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 1 階分の詳細 (spec run-overview.md §2.2): 入手・デッキ改造・ショップ購入・選択。空のグループは出さない (CLAUDE.md §3.3)。
+  // 1 階分の詳細 (spec run-overview.md「階の詳細」): 入手・デッキ改造・ショップ購入・選択。空のグループは出さない (CLAUDE.md §3.3)。
   import type { FloorSummary } from '../lib/runOverview';
   import { useSession } from '../lib/session';
   import { cardTip, relicTip, potionTip, enchantmentTip } from '../lib/tips';

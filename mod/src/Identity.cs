@@ -9,7 +9,7 @@ using MegaCrit.Sts2.Core.Runs;
 namespace StsStats;
 
 /// <summary>
-/// プレイヤー ID の正規化と名前の解決 (docs/redesign-v2.md §1.1)。
+/// プレイヤー ID の正規化と名前の解決 (docs/spec/data-sources.md「プレイヤーの識別子」)。
 ///
 /// `Player.NetId` は通信方式で意味が変わる (デコンパイル確認済 v0.111.0):
 ///   - シングルプレイ: 常に 1 (NetSingleplayerGameService.NetId => 1uL)

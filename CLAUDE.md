@@ -17,7 +17,7 @@
 - `docs/spec/combat-stats.md` — 戦闘の画面に出す値と集計方法
 - `docs/spec/run-overview.md` — ラン全体・階の画面に出す値と集計方法
 - `docs/spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
-- `docs/api.md` — HTTP / event_type 契約
+- `docs/spec/api.md` — HTTP / event_type 契約
 - `docs/architecture.md` — アーキテクチャ全体像
 
 ---
@@ -33,7 +33,7 @@
 ### Step 2: 仕様を更新する (実装より先)
 - 期待挙動を `docs/spec/*.md` に **コードを書く前に** 反映する。
 - 「何を出すか」「どの canonical path から取るか」「rarity / upgraded 等の表示ルール」を明文化。
-- API スキーマが変わるなら同時に `docs/api.md` を更新。
+- API スキーマが変わるなら同時に `docs/spec/api.md` を更新。
 - 影響を受ける `docs/spec/data-sources.md` (canonical path) も更新。
 
 ### Step 3: 実装する
@@ -71,8 +71,8 @@
 
 ### 2.2 Canonical path 厳守
 
-`docs/spec/data-sources.md` §1 に列挙したものが各データの **唯一の正規経路** (v2: ゲーム自身の記録を正とする。
-全体設計は `docs/redesign-v2.md`)。他の経路から二重に拾うと dedup が必要になり、データ抜けと誤計上の温床になる:
+`docs/spec/data-sources.md` §1 に列挙したものが各データの **唯一の正規経路** (ゲーム自身の記録を正とする)。
+他の経路から二重に拾うと dedup が必要になり、データ抜けと誤計上の温床になる:
 
 | 何 | canonical |
 |---|---|
@@ -155,28 +155,18 @@ force-cache は cache エントリを問答無用で返すモード。一度 4xx
 
 ユーザが「古いセッションのデータは消していい」と何度も明言している。
 スキーマ変更や event_type 構造変更で、互換シムを残す必要はない。
-ただし破壊的変更は `docs/api.md` を更新してから入れる。
+ただし破壊的変更は `docs/spec/api.md` を更新してから入れる。
 
 ---
 
 ## 5. ドキュメント更新ルール
 
-### 5.1 spec を更新した時に同時に直すべきもの
+ドキュメントの置き場所と書き方の規則は [`docs/README.md`](docs/README.md) にある。ドキュメントを足す・直す・移す前に読む。
+特に次の 3 つを守る。
 
-- `docs/api.md` (event_type の payload に項目追加 / 削除した時)
-- `docs/spec/data-sources.md` (canonical path や section 対応の更新)
-- `docs/architecture.md` (アーキテクチャ的な変更)
-- 関連ファイルのコードコメント中の `docs/...md` への参照
-
-### 5.2 古い記述を残さない
-
-実装が変わったら spec も同じコミットで直す。
-「後で直す」コメントは残さない。直さないなら spec を更新しない理由がない。
-
-### 5.3 archive/ に置いたものは更新しない
-
-歴史的経緯を保存する場所。新しい情報を書き足さない。
-新規ドキュメントは `docs/` 直下か `docs/spec/` に書く。
+- 実装が変わったら、仕様書も同じコミットで直す。「後で直す」コメントは残さない。
+- 仕様書には今の挙動だけを書く。置き換えた古い節は消し、経緯はコミットメッセージに書く。
+- `docs/archive/` は更新しない。
 
 ---
 

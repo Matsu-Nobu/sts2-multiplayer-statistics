@@ -13,7 +13,7 @@ using MegaCrit.Sts2.Core.Saves;
 namespace StsStats;
 
 /// <summary>
-/// ラン・戦闘の始まりと終わり (docs/spec/data-sources.md §1.1 / §1.2)。
+/// ラン・戦闘の始まりと終わり (docs/spec/data-sources.md「ラン・階」 / §1.2)。
 ///
 ///   ラン開始   … 最初に部屋に入ったとき (AfterRoomEntered)。1 階 = ネオウから記録される
 ///   戦闘開始   … Hook.BeforeCombatStart の Prefix

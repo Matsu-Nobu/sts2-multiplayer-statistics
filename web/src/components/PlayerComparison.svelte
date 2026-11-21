@@ -1,5 +1,5 @@
 <script lang="ts">
-  // プレイヤー比較 (全員。spec ui.md §3.4): プレイヤーを行にした表、各列に横棒。
+  // プレイヤー比較 (全員。spec ui.md「戦闘」): プレイヤーを行にした表、各列に横棒。
   import type { PlayerCombatSummary } from '../lib/types';
   import type { ContribTable } from '../lib/contrib';
   import { useSession } from '../lib/session';

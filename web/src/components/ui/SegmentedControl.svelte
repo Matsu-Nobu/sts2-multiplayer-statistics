@@ -1,5 +1,5 @@
 <script lang="ts" generics="T extends string">
-  // 同じ画面内の表示の切り替え (spec ui.md §4.2)。画面の移動には使わない。
+  // 同じ画面内の表示の切り替え (spec ui.md「共通部品」)。画面の移動には使わない。
   interface Props { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void; label?: string }
   let { options, value, onChange, label }: Props = $props();
 </script>

@@ -15,7 +15,7 @@ using MegaCrit.Sts2.Core.ValueProps;
 namespace StsStats;
 
 /// <summary>
-/// 戦闘内 event (docs/spec/data-sources.md §1.2)。
+/// 戦闘内 event (docs/spec/data-sources.md「戦闘」)。
 ///
 /// 与ダメ・被ダメは Hook.AfterDamageGiven の 1 か所から作る。この Hook は終了処理中でも、
 /// 攻撃者が空でも、致死の一撃でも必ず呼ばれる (CreatureCmd.Damage、デコンパイル確認済 v0.111.0)。
@@ -91,7 +91,7 @@ internal static class CombatRecorder
             if (receiver.Side == CombatSide.Enemy)
             {
                 // 相手に付けたデバフ (毒など) が出どころなら、そのダメージは付与者全員のもの (スタック比で按分。
-                // spec combat-stats.md §4)。player_id は最大スタックの人、内訳は source_appliers。
+                // spec combat-stats.md「データソース」)。player_id は最大スタックの人、内訳は source_appliers。
                 // 毒はターン開始時の発動でも、カード効果 (Outbreak 等) からの発動でも同じ扱い (SourceContext)。
                 var appliers = cardSource == null ? SourceContext.DebuffOrigins(receiver) : null;
                 // 自分側のパワー (トゲ等) が出どころなら、そのパワーを付けた持ち物 (カード別の表用)

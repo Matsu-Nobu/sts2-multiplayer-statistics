@@ -1,5 +1,5 @@
 /**
- * events から「階ごとのサマリ」を導出する (docs/spec/run-overview.md §3、data-sources.md §2.1)。
+ * events から「階ごとのサマリ」を導出する (docs/spec/run-overview.md「データ集計 (`runOverview.ts`)」、data-sources.md「ラン全体 (`runOverview.ts`)」)。
  *
  * v2: ゲーム自身の階ごとの記録 (floor_snapshot) を、階ごとに最後に受け取った 1 件だけ使う。
  * HP・ゴールド・入手物・選択などの推測や重複除去は行わない。
@@ -189,7 +189,7 @@ export function roomVisual(type: string) {
   return ROOM_TYPE_VISUAL[type] ?? { emoji: '·', label: type, color: '#64748b' };
 }
 
-// === プレイヤーの最終状態 (ラン全体の画面。spec run-overview.md §3.6) ===
+// === プレイヤーの最終状態 (ラン全体の画面。spec run-overview.md「プレイヤーの最終状態 (ラン全体の画面)」) ===
 
 export interface PlayerFinalState {
   deck: SnapshotCard[] | null;      // 記録の無い (古い mod の) セッションは null

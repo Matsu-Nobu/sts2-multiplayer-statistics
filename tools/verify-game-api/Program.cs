@@ -151,7 +151,7 @@ foreach (var raw in File.ReadAllLines(membersFile))
 
 // === 3) 出どころの自動追跡で選ばれるメソッド (SourceContext.SelectTargets) ====================
 // ゲームと同じ選び方を本物の sts2.dll に対して実行する (読み込むだけで実行はしない)。
-// 毒など「カード効果からも呼ばれる処理」に目印が付くことを確認する (docs/redesign-v2.md §2.4-2)。
+// 毒など「カード効果からも呼ばれる処理」に目印が付くことを確認する (docs/spec/data-sources.md「カードの無いダメージ」)。
 Console.WriteLine("== 出どころの自動追跡 (SourceContext.SelectTargets)");
 try
 {

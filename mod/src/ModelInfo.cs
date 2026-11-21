@@ -8,7 +8,7 @@ namespace StsStats;
 /// <summary>
 /// ゲームのモデル (カード・レリック・ポーション等) を、送信用の ID・名前・レアリティに変換する。
 /// ゲームの階ごとの記録は ID しか持たないので、送信時に ModelDb から名前を引いて付ける
-/// (web がカタログ無しでもチップを描けるようにするため。docs/redesign-v2.md §2.3)。
+/// (web がカタログ無しでもチップを描けるようにするため。docs/spec/api.md「floor_snapshot」)。
 /// </summary>
 internal static class ModelInfo
 {

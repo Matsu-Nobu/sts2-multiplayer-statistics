@@ -72,7 +72,7 @@ Slay the Spire 2 が更新されたら、mod が依存する内部実装が変�
    - `tools/verify-game-api/members.txt` に書いた「名前で参照しているメンバー」が存在するかを確認する
 2. NG が出たら、デコンパイル (`ilspycmd -p <sts2.dll> -o <出力先>`) で新しいシグネチャ・呼び出し元を読んでから直す
    (CLAUDE.md §2.1)。呼ばれるタイミングの変化は検証ツールでは分からないので、NG になった箇所は中身も読む。
-3. ゲームを起動し、ログ (`~/Library/Application Support/SlayTheSpire2/logs/godot.log`) で次を確認する:
+3. ゲームを起動し、ログ (Mac は `~/Library/Application Support/SlayTheSpire2/logs/godot.log`、Windows は `%APPDATA%\SlayTheSpire2\logs\godot.log`) で次を確認する。
    - `[StsStats] Patch table: N ok, 0 failed`
    - `[StsStats] SourceContext: ... patched N ..., failed 0`
 4. カタログを作り直す (`make dump-catalog`)。新しいカード・レリック等が増えている。
@@ -80,5 +80,5 @@ Slay the Spire 2 が更新されたら、mod が依存する内部実装が変�
 ## 関連ドキュメント
 
 - `architecture.md` — 全体アーキテクチャ
-- `api.md` — HTTP API 仕様
+- `spec/api.md` — HTTP API 仕様
 - `archive/phase2-plan.md` — バックエンド・WebUI 実装計画 (歴史的経緯)

@@ -1,4 +1,4 @@
-/** チップのホバー説明 (カタログの説明文を HTML に)。spec run-overview.md §2.4。 */
+/** チップのホバー説明 (カタログの説明文を HTML に)。spec run-overview.md「chip ホバー tooltip (description)」。 */
 import { renderCardDescription, type CatalogLookup } from './catalog';
 
 export const cardTip = (cat: CatalogLookup | null, id: string, upgraded: boolean): string => {
