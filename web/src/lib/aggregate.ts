@@ -1,9 +1,4 @@
-/**
- * Phase 3.5: events 列から戦闘単位サマリ・ターン単位サマリを導出する純関数群。
- *
- * 既存の表示コンポーネント（CombatView / AllCombatsView 等）の入力 shape は
- * Phase 2 形式（TurnPayload[]）のままで、ここで events から組み立てる。
- */
+/** events から、戦闘ごと・ターンごとのプレイヤーの集計を作る (spec combat-stats.md)。 */
 
 import type {
   Origin,
@@ -405,8 +400,6 @@ function buildTurnsForCombat(
     result.push({
       combat_index: combatIndex,
       turn_number:  turnNum,
-      is_final:     false,
-      timestamp:    turnEvents[0]?.occurred_at ?? '',
       players,
     });
   }
@@ -582,7 +575,7 @@ function emptyCombat(): PlayerCombatSummary {
 }
 
 function emptyTurnPayload(combatIndex: number, turnNumber: number): TurnPayload {
-  return { combat_index: combatIndex, turn_number: turnNumber, is_final: false, timestamp: '', players: {} };
+  return { combat_index: combatIndex, turn_number: turnNumber, players: {} };
 }
 
 function deepCloneTurn(t: PlayerTurnSummary): PlayerTurnSummary {

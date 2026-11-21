@@ -10,9 +10,11 @@ Slay the Spire 2 マルチプレイ統計 mod + バックエンド + WebUI の�
 | [`api.md`](./api.md) | mod ⇄ backend ⇄ WebUI の HTTP API 契約 (event_type カタログ含む) |
 | [`operations.md`](./operations.md) | サーバ運用 / 配布モデル |
 | [`roadmap.md`](./roadmap.md) | 将来構想 |
-| [`spec/combat-stats.md`](./spec/combat-stats.md) | **戦闘統計**画面の表示仕様 |
-| [`spec/run-overview.md`](./spec/run-overview.md) | **ラン全体統計**画面の表示仕様 |
+| [`spec/ui.md`](./spec/ui.md) | 画面の構成・URL・共通部品・見た目 |
+| [`spec/combat-stats.md`](./spec/combat-stats.md) | 戦闘の画面に出す値と集計方法 |
+| [`spec/run-overview.md`](./spec/run-overview.md) | ラン全体・階の画面に出す値と集計方法 |
 | [`spec/data-sources.md`](./spec/data-sources.md) | UI に出るデータの正規経路 (mod hook ⇄ event ⇄ UI section) |
+| [`redesign-v2.md`](./redesign-v2.md) / [`game-api-inventory.md`](./game-api-inventory.md) | v2 (2026-10) の設計判断とゲーム API の調査記録 (当時の版。今の仕様は spec/ が正) |
 | [`archive/`](./archive/) | 過去の phase plan / 旧版 spec (履歴目的、追従しない) |
 
 ## 仕様ドキュメントの読み方

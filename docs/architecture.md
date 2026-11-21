@@ -133,18 +133,11 @@ STS2 のマルチプレイは決定論的ロックステップ方式で、全ク
 
 ## WebUI
 
-クライアント側でイベント列から集計を導出する。主なビュー / パネル:
+クライアント側でイベント列から集計を導出する。画面の構成は [`spec/ui.md`](./spec/ui.md)。
 
-- `SessionView` — トップビュー（戦闘セレクタ + 統計）
-- `AllCombatsView` — ラン全体サマリ
-- `CombatView` — 戦闘単位ビュー
-- `TimelineView` — イベント列のタイムライン表示
-- `RdpsPanel` / `RmitPanel` — 観測ベースの貢献度スコア
-- `DamageChart` — ターン推移折れ線・戦闘単位棒グラフ
-- `CardTable` — カード別ダメージ／ブロック
-- `DebuffTable` — 状態異常付与
-
-集計ロジックは `web/src/lib/aggregate.ts` / `rdps.ts` 等にまとまっている。
+- `web/src/components/SessionView.svelte` — 画面の骨格 (ヘッダー・タブ・プレイヤー切り替え)。集計結果を context で各画面に配る
+- `web/src/pages/` — 画面ごとの部品 (ラン全体 `RunPage` / 階 `FloorPage` / 戦闘 `CombatsPage` / 戦闘詳細 `CombatPage`)
+- `web/src/lib/` — 集計 (`aggregate.ts` 戦闘、`runOverview.ts` 階、`rdps.ts` / `rmit.ts` / `contrib.ts` 貢献スコア)、カタログ (`catalog.ts`)、URL (`router.svelte.ts`)
 
 ---
 

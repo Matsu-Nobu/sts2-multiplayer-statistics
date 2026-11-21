@@ -1,65 +1,44 @@
-# 戦闘統計画面 仕様
+# 戦闘の画面 仕様
 
-`SessionView` 上部タブ「戦闘統計」の挙動を定義する。実装は `web/src/components/SessionView.svelte` (タブ + 戦闘セレクタ)、`web/src/components/AllCombatsView.svelte` (全体集計)、`web/src/components/CombatView.svelte` (個別戦闘)。
-
-集計ロジックは `web/src/lib/aggregate.ts` (events → CombatInfo[]、turn / cum 累計)、`web/src/lib/rdps.ts` (rDPS / rMit 観測ベース算出)。
-
----
-
-> 画面の構成・ナビゲーション・配置は [`ui.md`](./ui.md) (2026-10-03) が正。本書の §1・§2 の配置の記述は古い。表示する値・集計方法は本書のまま。
-
-## 1. ナビゲーション
-
-`SessionView` 上部タブ:
-- `戦闘統計` (`combats`) — このドキュメントの対象
-- `ラン全体` (`run`) — `spec/run-overview.md` 参照
-
-戦闘統計タブ内のサブセレクタ (プルダウン):
-- `全体（N戦闘）` — `AllCombatsView`
-- 各戦闘 — `CombatView` (combat_index 指定)
-
-ラベル形式: `${ordinal}. ${encounter_name} [Elite|Boss]?`
-ordinal は出現順 1 始まり。
+戦闘の画面 (全戦闘の合計) と戦闘詳細の画面に **何を出すか** (値の定義・集計方法) を定める。
+画面の構成・配置・URL は [`ui.md`](./ui.md) §3.4 / §3.5 に従う。
+実装は `web/src/lib/aggregate.ts` (events → 戦闘ごと・ターンごとの集計)、`web/src/lib/rdps.ts` / `rmit.ts` / `contrib.ts` (貢献スコア)、
+`web/src/pages/CombatsPage.svelte` / `CombatPage.svelte` と、そこから使う `web/src/components/` の部品。
 
 ---
 
-## 2. AllCombatsView (累計表示)
+## 1. 主要数値
 
-全戦闘合計のサマリ + 全戦闘横断のテーブル。
+選んだプレイヤーの値。全戦闘の合計の画面では全戦闘を足し、戦闘詳細の画面ではその戦闘だけを数える。
 
-### 2.1 StatCard 群 (累計)
+| 表示名 | 値 |
+|---|---|
+| 有効与ダメージ | `damage_dealt` の `amount` (敵 HP に通った分) + `blocked_damage` (敵のブロックを削った分) の合計 |
+| 与ダメージ(HP) | `damage_dealt` の `amount` の合計 |
+| オーバーキル | `damage_dealt` の `overkill_damage` の合計 |
+| 被ダメージ | `damage_received` の `amount` の合計 |
+| 有効ブロック | `damage_received` の `blocked_damage` (自分のブロックが吸収した分) の合計 |
+| 総獲得ブロック | 自分が受け取った `block_gained` の `amount` の合計 (味方に付けてもらった分を含む) |
+| 味方付与ブロック | 自分が味方に付けた `block_gained` (`from_player` が自分で、受け取った人が別) の `amount` の合計 |
+| エナジー使用 | `energy_spent` の `amount` の合計 |
+| カード使用枚数 | `card_played` の件数 |
+| ポーション使用 | `potion_used` の件数 |
+| 最大カードダメージ | 1 回のカードのプレイ (同じカードの連続したヒット) で敵 HP に通したダメージの最大と、そのカード名 |
+| 与ダメ貢献 (rDPS) / 被ダメ軽減貢献 (rMit) | §3.5 |
 
-プレイヤーごとに以下の数値カード:
-- 与ダメージ
-- 被ダメージ
-- 有効ブロック (ダメージ吸収量)
-- カード使用枚数 / カードドロー枚数
-- エナジー使用量
-- ポーション使用回数
-- カード単価ダメージ (与ダメ / カード使用枚数)
-- エナジー単価ダメージ (与ダメ / エナジー使用量)
-- 最大単発ダメージ + 使用カード名
-
-各 StatCard には `STAT_HELP` の説明文が tooltip で出る。
-
-### 2.2 累計テーブル
-
-- カード別累計テーブル: `card_id` ごとの play_count / total_damage / max_single_hit / debuffs_applied
-- デバフ付与テーブル: `power_id` ごとの累計付与量 (player x power 行列)
-- 貢献スコア (rDPS / rMit): `RdpsPanel` / `RmitPanel`
-
-詳細は `web/src/components/CardTable.svelte`, `DebuffTable.svelte`, `RdpsPanel.svelte`, `RmitPanel.svelte`。
-
-### 2.3 戦闘横断ビュー
-
-- 戦闘ごとの簡易統計を表で見せる
-- 戦闘間の比較・推移把握用
+相手に付けたデバフによるダメージ (`source_appliers` あり) は、与ダメージの各値・カード別の表・最大カードダメージでも、付与者ごとにスタック比で分けて数える (§4)。
 
 ---
 
-## 3. CombatView (個別戦闘表示)
+## 2. プレイヤー比較
 
-選ばれた `combat_index` の 1 戦闘。
+全員の主要数値 (§1) を、プレイヤーを行にした表で並べる。プレイヤーが 1 人なら出さない。
+
+---
+
+## 3. 戦闘ごとの表示
+
+カード別・デバフ付与・貢献スコアは、全戦闘の合計の画面では全戦闘を、戦闘詳細の画面ではその戦闘を対象にする。メタ情報とターン推移は戦闘詳細の画面だけに出す。
 
 ### 3.1 メタ情報
 
@@ -103,7 +82,7 @@ ordinal は出現順 1 始まり。
 power × applier の行列:
 - `power_changed` event を `power_id × applier` で集計
 
-### 3.5 貢献スコア (2026-10-02 改訂)
+### 3.5 貢献スコア
 
 観測ベース。係数を仮定せず、ゲームが実際に計算したダメージ補正を 1 つずつ記録して按分する。
 対象はダメージ補正・HP 減少補正・ブロック。**カードの発動回数を増やす効果 (TagTeam 等) と、味方へのエナジー譲渡は扱わない** (2026-10-02 確定)。
@@ -166,13 +145,13 @@ power × applier の行列:
 | ターン毎 与ダメ | `damage_dealt`, group by (combat_index, turn_number, player_id) |
 | 戦闘毎 与ダメ | 同上 + combat_index 集計 |
 | 被ダメ | `damage_received` |
-| 有効ブロック | `block_gained` の差分 |
+| 有効ブロック | `damage_received.payload.blocked_damage` |
 | カード使用 | `card_played` |
 | カードドロー | `card_drawn` |
 | エナジー使用 | `energy_spent` |
 | デバフ付与 | `power_changed` の applier ベース集計 |
 | ポーション使用 | `potion_used` |
-| 最大単発 | `damage_dealt.payload.amount` の max + `source_card_id` |
+| 最大カードダメージ | 同じカードの連続した `damage_dealt` の `amount` の合計の最大 + `source_card_id` |
 | オーバーキル | `damage_dealt.payload.overkill_damage` |
 | rDPS | `damage_dealt` の `modifications` (補正 1 つずつ) と `source_appliers` (§3.5) |
 | rMit | `damage_received` の `modifications` と `block_sources` (§3.5) |
@@ -185,7 +164,7 @@ mod 側で patch している hook と event_type の対応は [`spec/data-sourc
 
 ## 5. 単一プレイ vs MP
 
-- player_id ごとに集計。MP は per-player tab で切り替え。
+- player_id ごとに集計する。どのプレイヤーの値を出すかは AppShell のプレイヤー切り替えで選ぶ (ui.md §2)。
 - プレイヤー ID は mod が正規化して送る (シングルプレイでも Steam ID)。web 側の読み替えは無い。
 
 ---

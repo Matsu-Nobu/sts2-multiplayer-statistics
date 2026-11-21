@@ -1,87 +1,36 @@
-# ラン全体統計画面 仕様
+# ラン全体・階の画面 仕様
 
-`SessionView` 上部タブ「ラン全体」の挙動を定義する。実装は `web/src/components/RunOverview.svelte` および `web/src/lib/runOverview.ts`。
-
-戦闘単位の統計（`combats` タブ）とは独立。互いの実装に依存しない。
-
----
-
-
-> 画面の構成・ナビゲーション・配置は [`ui.md`](./ui.md) (2026-10-03) が正 (ラン全体 / 階の一覧 / 階の詳細に分割)。表示するデータ・集計方法・チップの決まりは本書のまま。
-
-## 1. ナビゲーション
-
-`SessionView` 上部に 2 つのタブ:
-
-- `戦闘統計` (`combats`) — 既存ビュー
-- `ラン全体` (`run`) — このドキュメントの対象
-
-タブ state は `SessionView.svelte` 内の `topTab: 'combats' | 'run'` で持つ。URL 反映なし。
-
-階詳細パネル内の **「この戦闘の統計を見る →」** ボタンを押すと、`topTab='combats'` に切り替えつつ `activeTab=combat_index` を設定して該当戦闘の統計に飛ぶ。
+ラン全体の画面と階の画面に **何を出すか** (データ・集計方法・チップの規則) を定める。
+画面の構成・配置・URL は [`ui.md`](./ui.md) に従う。
+実装は `web/src/lib/runOverview.ts` (集計)、`web/src/pages/RunPage.svelte` / `FloorPage.svelte`、
+`web/src/components/HpRunChart.svelte` (推移のグラフ) / `FloorDetail.svelte` (階の詳細)。
 
 ---
 
-## 2. 画面構成
+## 1. 対象のプレイヤー
 
-```
-┌───────────────────────────────┐
-│ プレイヤータブ (MP のみ)        │ ← playerIds.length > 1 のとき表示
-├───────────────────────────────┤
-│ HP 折れ線グラフ                  │
-├───────────────────────────────┤
-│ 階セレクタ (プルダウン)          │
-├───────────────────────────────┤
-│ 階詳細パネル (展開時)            │
-└───────────────────────────────┘
-```
+階の詳細とプレイヤーの最終状態は、AppShell のプレイヤー切り替えで選んでいるプレイヤーの視点で出す (ui.md §2)。
+推移のグラフは全員の線を重ねる。
 
-### 2.1 プレイヤータブ
+---
 
-- `playerIds.length > 1` のときのみ表示。
-- 表示順は `doc.players` の順。
-- `activePlayer` が選ばれてる player は accent 背景。
-- タブ切り替えで `selectedFloor = null` にリセット。
+## 2. 表示
 
-プレイヤー ID は mod が正規化して送る (シングルプレイ・LAN ホストの `NetId=1` → Steam ID)。web 側の読み替えは無い。
+### 2.1 部屋の種類の表示
 
-### 2.2 HP 折れ線グラフ
+部屋の種類 (`room_type`) ごとの絵文字・日本語ラベル・色 (`runOverview.ts` の `ROOM_TYPE_VISUAL`)。推移のグラフの点の色と、階セレクタ・階の見出しに使う。
 
-実装: `web/src/components/HpChart.svelte`
+| room_type | 絵文字 | ラベル | 色 |
+|---|---|---|---|
+| Monster | ⚔️ | 通常戦闘 | slate |
+| Elite | 💀 | エリート | orange |
+| Boss | 👑 | ボス | red |
+| Event | ❓ | イベント | purple |
+| Shop | 🏪 | ショップ | yellow |
+| RestSite | 🔥 | 休憩所 | green |
+| Treasure | 📦 | 宝箱 | amber |
 
-- x 軸: 階番号 (1 開始)
-- y 軸: その階の **退出時 HP** (`hp_out`)
-  - 入場時 HP ではない（理由: 階内の戦闘結果が反映される）
-- 線は完全な直線 (`tension: 0`)
-- ノード色: `room_type` ごとに色分け (`runOverview.ts` の `ROOM_TYPE_VISUAL`)
-  - Monster: slate / Elite: orange / Boss: red / Event: purple / Shop: yellow / RestSite: green / Treasure: amber
-- 選択中の階のノードは半径拡大
-- ノードクリックで `selectedFloor` を更新
-- ホバーでツールチップ:
-  - 階番号 + room_type + encounter 名
-  - HP `hp_in/max_hp_in → hp_out/max_hp_out (Δ)`
-  - ゴールド `gold_in → gold_out (Δ)`
-  - 入手物 / アップグレード / 除去 / エンチャント / イベント選択 (空でない要素のみ)
-
-### 2.3 階セレクタ
-
-- ドロップダウン形式（48 ボタンを並べる UI は廃止）
-- 表示: `{floor} - {label}` または `{floor} - {label} ({encounter_name})` (戦闘あり時)
-  - label は `room_type` の日本語ラベル (例: "通常戦闘 / エリート / ボス / イベント / ショップ / 休憩所 / 宝箱")
-- 「— 階を選んでください —」がデフォルト
-- 選択値を `selectedFloor` に同期
-
-### 2.4 階詳細パネル
-
-`selectedFloor != null` のとき表示。
-
-ヘッダー:
-- `room_type 絵文字` `階 N` `room_type ラベル` `— encounter_name`
-- 右側: 戦闘階のとき「**この戦闘の統計を見る →**」ボタン (combat_index 紐付き) + 「閉じる ✕」ボタン
-
-サマリ (HP / ゴールド の 2 枠):
-- HP: `hp_in/max_hp_in → hp_out/max_hp_out`
-- ゴールド: `gold_in → gold_out (±delta)`
+### 2.2 階の詳細
 
 詳細グループ (該当データありの group のみ表示。全部空なら「変化なし」表示):
 
@@ -98,9 +47,9 @@
 
 各 group は枠付きカード内、label-value 2 列レイアウト (`grid-cols-[6rem_1fr]`)。
 
-戦闘統計 (与ダメ/被ダメ/カード別等) は **per-floor 詳細には出さない**（「戦闘統計」タブで見る）。
+戦闘の統計 (与ダメ・被ダメ・カード別等) は階の詳細には出さない (戦闘詳細の画面で見る)。
 
-### 2.5 chip 表記ルール
+### 2.3 chip 表記ルール
 
 カード chip は **rarity で背景色 + 枠色**、**is_upgraded で文字色**:
 
@@ -126,7 +75,7 @@
 
 ショップ購入の chip には末尾に `NNNG` (値段) を黄色で付加する。
 
-### 2.6 chip ホバー tooltip (description)
+### 2.4 chip ホバー tooltip (description)
 
 カード / レリック / ポーション / エンチャント の chip に hover すると、
 カタログ (`docs/architecture.md` 「カタログ」節参照) から取得した description を popover で表示する。

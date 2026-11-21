@@ -13,8 +13,9 @@
 
 仕様と実装の二重管理を避けるため、**spec を一次情報** として扱う:
 
-- `docs/spec/combat-stats.md` — 戦闘統計画面 UI の期待挙動
-- `docs/spec/run-overview.md` — ラン全体統計画面 UI の期待挙動
+- `docs/spec/ui.md` — 画面の構成・URL・共通部品・見た目
+- `docs/spec/combat-stats.md` — 戦闘の画面に出す値と集計方法
+- `docs/spec/run-overview.md` — ラン全体・階の画面に出す値と集計方法
 - `docs/spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
 - `docs/api.md` — HTTP / event_type 契約
 - `docs/architecture.md` — アーキテクチャ全体像

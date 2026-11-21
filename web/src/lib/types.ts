@@ -69,15 +69,10 @@ export interface PlayerEntry {
   combat: PlayerCombatSummary;
 }
 
-/**
- * 1 ターンぶんのスナップショット（既存表示コンポーネントの入力形式）。
- * Phase 3.5 では events 列から aggregate.ts で導出される。
- */
+/** 1 ターンが終わった時点の、プレイヤーごとのそのターンの値と戦闘の累計 (aggregate.ts が events から作る)。 */
 export interface TurnPayload {
   combat_index: number;
   turn_number: number;
-  is_final: boolean;
-  timestamp: string;
   players: Record<string, PlayerEntry>;
 }
 
