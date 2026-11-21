@@ -139,9 +139,15 @@
     - `[green]X[/green]` → `text-lime-300` (アップグレード差分強調)
     - `[red]X[/red]` → `text-red-400`
     - `[purple]X[/purple]` → `text-purple-400`
-    - `[img]res://...[/img]` → 削除
+    - `[img]res://.../*energy_icon.png[/img]` (エナジーのアイコン) → `〇`
+    - `[img]res://.../star_icon.png[/img]` (星のアイコン) → `☆`
+    - それ以外の `[img]res://...[/img]` → 削除
   - 戦闘文脈依存で解決不能な `{...}` placeholder → `XX` にフォールバック (灰色)
     - 例: `{CalculatedDamage}ダメージ` → `XXダメージ`
+  - 条件で文が変わる `{名前:...:A|B}` (中に `{...}` を含むこともある) → 最後の選択肢 `B` を出す。
+    ゲームが戦闘の外でカードを表示するときと同じ文になる。
+    - 例: `{TargetType:choose(AllEnemies):すべての敵に|}XXダメージ` → `XXダメージ`
+- バッジ (§3.6) の説明も同じ変換を通して出す
 - カードの description は `is_upgraded` に応じて base / upgraded を出し分け
 - カタログに該当 id が無い場合は tooltip を出さない (chip だけ表示)
 - カタログ未ロード中 (`catalog == null`) も tooltip 出さない

@@ -6,6 +6,7 @@
   import { playerColor } from '../lib/players';
   import { BADGE_RARITY } from '../lib/labels';
   import { cardTip } from '../lib/tips';
+  import { renderCardDescription } from '../lib/catalog';
   import type { RunStartPayload, SnapshotCard } from '../lib/types';
   import Panel from '../components/ui/Panel.svelte';
   import CardChip from '../components/ui/CardChip.svelte';
@@ -100,7 +101,7 @@
               <div class="flex flex-wrap gap-1.5">
                 {#each p.final.badges as b (b.id)}
                   {@const r = BADGE_RARITY[b.rarity] ?? { label: '', color: '#94a3b8' }}
-                  <CardTooltip descriptionHtml={b.description}>
+                  <CardTooltip descriptionHtml={renderCardDescription(b.description)}>
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border cursor-help"
                           style:color={r.color} style:border-color={r.color + '66'} style:background-color={r.color + '14'}>
                       <span aria-hidden="true">●</span>{b.name}{#if r.label}<span class="sr-only">（{r.label}）</span>{/if}
