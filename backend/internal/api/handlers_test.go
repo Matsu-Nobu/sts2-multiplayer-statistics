@@ -86,19 +86,6 @@ func TestCreateSession(t *testing.T) {
 	createSession(t, srv)
 }
 
-// Phase 3.5: /turns は廃止、常に 410 を返す
-func TestPostTurns_Gone(t *testing.T) {
-	srv, _ := newTestServer(t)
-	id, _ := createSession(t, srv)
-
-	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/turns", "any", map[string]any{
-		"combat_index": 1, "turn_number": 1,
-	})
-	if res.StatusCode != http.StatusGone {
-		t.Fatalf("expected 410 Gone, got %d", res.StatusCode)
-	}
-}
-
 func TestPostEvents_Auth(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, _ := createSession(t, srv)

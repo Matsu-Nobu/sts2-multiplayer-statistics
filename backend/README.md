@@ -49,12 +49,6 @@ curl -sS -X POST http://localhost:8080/sessions \
   -d '{"host_name":"Nobu","host_steam_id":"76561199000000000","character_id":"IRONCLAD","ascension":5}'
 # => {"session_id":"...","write_token":"...","share_url":"..."}
 
-# ターン投稿
-curl -sS -X POST http://localhost:8080/sessions/<id>/turns \
-  -H "Authorization: Bearer <write_token>" \
-  -H "Content-Type: application/json" \
-  -d @turn.json
-
 # イベント投稿（bulk）
 curl -sS -X POST http://localhost:8080/sessions/<id>/events \
   -H "Authorization: Bearer <write_token>" \

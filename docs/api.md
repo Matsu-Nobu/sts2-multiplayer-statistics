@@ -42,7 +42,6 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 |--------|------|------|------|
 | `POST` | `/sessions` | — | セッション作成 |
 | `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿（戦闘内・外いずれも） |
-| `POST` | `/sessions/{id}/turns` | — | **410 Gone**（旧形式、廃止済） |
 | `GET`  | `/api/sessions/{id}` | — | セッション全データ取得（WebUI用） |
 | `GET`  | `/s/{id}` | — | SPA HTML 配信 |
 | `GET`  | `/assets/*` | — | Vite ビルド成果物 |
@@ -318,12 +317,6 @@ web はカード別の表でだけ使う (combat-stats.md §3.3)。
 
 ---
 
-## `POST /sessions/{id}/turns` （廃止）
-
-旧形式（ターン集計済 payload）。Phase 3.5 で廃止、常に **`410 Gone`** を返す。古い mod クライアントには「mod を更新してください」のメッセージを返す。
-
----
-
 ## `GET /api/sessions/{id}`
 
 WebUI 用の閲覧エンドポイント。セッション全データを返す。
@@ -441,12 +434,13 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 ## バージョニング方針
 
-このドキュメントは常に「現在実装されている API」を表す。Phase 3.5 で `POST /turns` を破壊的に廃止した。今後は後方互換な追加（フィールド追加・新エンドポイント・新 event_type）を基本とし、破壊的変更時は本セクションに履歴を追加する。
+このドキュメントは常に「現在実装されている API」を表す。破壊的変更をしたときは、下の表に履歴を足す。
 
 ### バージョン履歴
 
 | 時期 | 変更 |
 |------|------|
+| 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |
 | 2026-10 | v2: ラン全体の event を `floor_snapshot` に統合 (`room_entered` / `hp_changed` / `gold_changed` / `act_entered` / `rest_action` / `reward_taken` / `card_obtained` / `card_upgraded` / `card_enchanted` / `card_removed` / `relic_obtained` / `potion_obtained` / `potion_discarded` / `event_choice` を廃止)。`player_id` を全 event で正規化。`run_end` に `final_hp`。出どころをモデル ID に変更。`hit_index` 廃止 |
 | 2026-05 | `GET /catalog.{lang}.json` 追加（chip tooltip 用 STS2 definitions、静的） |
 | Phase 3.5 | `POST /turns` 廃止（410 Gone）、`turns` テーブル削除、`events` テーブルに combat_index / turn_number / sequence 追加。すべての出来事を `events` 1 表に統合 |

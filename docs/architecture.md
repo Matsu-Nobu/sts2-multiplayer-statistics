@@ -101,7 +101,6 @@ STS2 のマルチプレイは決定論的ロックステップ方式で、全ク
 |--------|------|------|------|
 | `POST` | `/sessions` | — | セッション作成（write_token 発行） |
 | `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿 |
-| `POST` | `/sessions/{id}/turns` | — | **410 Gone**（Phase 3.5 で廃止） |
 | `GET`  | `/api/sessions/{id}` | — | WebUI 用 session 全データ取得（ETag 対応） |
 | `GET`  | `/s/{id}` | — | SPA HTML 配信 |
 | `GET`  | `/healthz` | — | ヘルスチェック |

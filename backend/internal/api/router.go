@@ -62,8 +62,6 @@ func (s *Server) Routes() http.Handler {
 		r.With(rateLimit(rateSessionsPerMin, time.Minute)).Post("/sessions", s.createSession)
 
 		r.Route("/sessions/{id}", func(r chi.Router) {
-			// /turns は Phase 3.5 で廃止。古い mod クライアントには 410 を返す。
-			r.Post("/turns", postTurnGone)
 			r.With(s.requireWriteToken, rateLimit(rateEventsPerMin, time.Minute)).
 				Post("/events", s.postEvents)
 		})
