@@ -117,12 +117,9 @@
           {#each filtered as g (g.session_id)}
             {@const o = outcomeOf(g)}
             {@const others = g.participants.filter(p => p.steam_id !== doc!.user.steam_id)}
-            <li class="px-4 py-3 space-y-1.5">
-              <div class="flex items-start justify-between gap-3">
-                <a href={`/s/${g.session_id}`} class="text-accent hover:underline focus-ring rounded text-sm">{fmtDate(g.created_at)}</a>
-                {#if doc.is_me}<RunSettings sessionId={g.session_id} relation={relationOf(g)} label="…" onchanged={load} ondeleted={load} />{/if}
-              </div>
-              <div class="flex flex-wrap gap-1.5">
+            <li class="px-4 py-2.5 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1.5">
+              <a href={`/s/${g.session_id}`} class="order-1 shrink-0 sm:w-32 text-accent hover:underline focus-ring rounded text-sm tabular">{fmtDate(g.created_at)}</a>
+              <div class="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap sm:flex-nowrap gap-1.5 sm:shrink-0">
                 <Badge label={characterOf(g)} tone="accent" />
                 <Badge label={`アセンション ${g.ascension ?? '—'}`} />
                 <Badge label={modeOf(g)} />
@@ -131,9 +128,8 @@
                 {#if doc.is_me && g.visibility === 'private'}<Badge label="非公開" tone="warn" />{/if}
                 {#if doc.is_me && g.hidden}<Badge label="非表示" tone="warn" />{/if}
               </div>
-              {#if others.length > 0}
-                <div class="text-xs text-slate-400">{#each others as p, i (p.steam_id)}{#if i > 0}、{/if}<a href={userHref(p.steam_id)} class="hover:underline focus-ring rounded">{p.display_name || p.steam_id}</a>{/each}</div>
-              {/if}
+              <div class="order-4 sm:order-3 w-full sm:w-auto min-w-0 sm:flex-1 truncate text-xs text-slate-400">{#each others as p, i (p.steam_id)}{#if i > 0}、{/if}<a href={userHref(p.steam_id)} class="hover:underline focus-ring rounded">{p.display_name || p.steam_id}</a>{/each}</div>
+              {#if doc.is_me}<div class="order-2 sm:order-4 shrink-0 ml-auto"><RunSettings sessionId={g.session_id} relation={relationOf(g)} label="…" onchanged={load} ondeleted={load} /></div>{/if}
             </li>
           {/each}
         </ul>
