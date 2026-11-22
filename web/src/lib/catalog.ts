@@ -144,7 +144,7 @@ const TAG_COLOR: Record<string, string> = {
   purple: 'text-purple-400',
 };
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
