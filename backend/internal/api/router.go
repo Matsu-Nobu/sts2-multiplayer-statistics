@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/steam"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,9 +17,10 @@ type Server struct {
 	Store          *store.Store
 	BaseURL        string // for share_url construction (no trailing slash)
 	AllowedOrigins []string
-	Signer         auth.Signer      // ログインの cookie の署名
-	Verify         auth.Verifier    // Steam から戻ってきたログインの検証 (テストでは差し替える)
-	Now            func() time.Time // nil なら time.Now
+	Signer         auth.Signer         // ログインの cookie の署名
+	Verify         auth.Verifier       // Steam から戻ってきたログインの検証 (テストでは差し替える)
+	Friends        steam.FriendChecker // Steam のフレンドかどうか (テストでは差し替える)
+	Now            func() time.Time    // nil なら time.Now
 }
 
 // 防御パラメータ

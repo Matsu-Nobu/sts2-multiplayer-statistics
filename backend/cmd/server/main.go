@@ -14,6 +14,7 @@ import (
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/api"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/steam"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 )
 
@@ -41,12 +42,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	steamKey := os.Getenv("STEAM_WEB_API_KEY")
+	if steamKey == "" {
+		slog.Error("STEAM_WEB_API_KEY is required (Steam のフレンドに公開したユーザーページの判定に使う)")
+		os.Exit(1)
+	}
+
 	srv := &api.Server{
 		Store:          st,
 		BaseURL:        baseURL,
 		AllowedOrigins: allowed,
 		Signer:         auth.Signer{Key: cookieKey},
 		Verify:         auth.VerifyWithSteam(auth.DefaultHTTPClient),
+		Friends:        &steam.WebAPI{Key: steamKey, Client: auth.DefaultHTTPClient},
 	}
 
 	httpSrv := &http.Server{

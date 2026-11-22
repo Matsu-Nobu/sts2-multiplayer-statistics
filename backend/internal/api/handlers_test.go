@@ -20,7 +20,7 @@ func newTestServer(t *testing.T) (*Server, *store.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return &Server{Store: st, BaseURL: "http://test", Signer: auth.Signer{Key: []byte("test-key")}, Verify: stubVerify}, st
+	return &Server{Store: st, BaseURL: "http://test", Signer: auth.Signer{Key: []byte("test-key")}, Verify: stubVerify, Friends: stubFriends{}}, st
 }
 
 func do(t *testing.T, srv *Server, method, path, token string, body any) *http.Response {

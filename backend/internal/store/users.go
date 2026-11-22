@@ -24,35 +24,33 @@ func (s *Store) UpsertSessionPlayer(ctx context.Context, sessionID, steamID stri
 
 // UserProfile はユーザーページの持ち主の情報。players に無い Steam ID は Known=false。
 type UserProfile struct {
-	SteamID       string `json:"steam_id"`
-	DisplayName   string `json:"display_name"`
-	ProfilePublic bool   `json:"profile_public"`
-	Known         bool   `json:"-"`
+	SteamID     string `json:"steam_id"`
+	DisplayName string `json:"display_name"`
+	Visibility  string `json:"profile_visibility"` // public / friends / private
+	Known       bool   `json:"-"`
 }
 
 func (s *Store) GetUserProfile(ctx context.Context, steamID string) (UserProfile, error) {
-	p := UserProfile{SteamID: steamID}
-	var public int
-	err := s.db.QueryRowContext(ctx, `SELECT display_name, profile_public FROM players WHERE steam_id = ?`, steamID).
-		Scan(&p.DisplayName, &public)
+	p := UserProfile{SteamID: steamID, Visibility: "private"}
+	err := s.db.QueryRowContext(ctx, `SELECT display_name, profile_visibility FROM players WHERE steam_id = ?`, steamID).
+		Scan(&p.DisplayName, &p.Visibility)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, nil
 	}
 	if err != nil {
 		return p, err
 	}
-	p.ProfilePublic = public != 0
 	p.Known = true
 	return p, nil
 }
 
-// SetProfilePublic は本人がユーザーページの公開・非公開を切り替える。players に行が無ければ作る。
-func (s *Store) SetProfilePublic(ctx context.Context, steamID, displayName string, public bool) error {
+// SetProfileVisibility は本人がユーザーページの公開範囲を変える。players に行が無ければ作る。
+func (s *Store) SetProfileVisibility(ctx context.Context, steamID, displayName, visibility string) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO players (steam_id, display_name, first_seen_at, last_seen_at, profile_public)
+		INSERT INTO players (steam_id, display_name, first_seen_at, last_seen_at, profile_visibility)
 		VALUES (?, ?, datetime('now'), datetime('now'), ?)
-		ON CONFLICT(steam_id) DO UPDATE SET profile_public = excluded.profile_public
-	`, steamID, displayName, boolInt(public))
+		ON CONFLICT(steam_id) DO UPDATE SET profile_visibility = excluded.profile_visibility
+	`, steamID, displayName, visibility)
 	return err
 }
 

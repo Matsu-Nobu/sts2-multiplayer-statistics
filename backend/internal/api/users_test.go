@@ -76,8 +76,8 @@ func seedRun(t *testing.T, srv *Server) string {
 
 type userPage struct {
 	User struct {
-		DisplayName   string `json:"display_name"`
-		ProfilePublic bool   `json:"profile_public"`
+		DisplayName       string `json:"display_name"`
+		ProfileVisibility string `json:"profile_visibility"`
 	} `json:"user"`
 	IsMe bool `json:"is_me"`
 	Runs []struct {
@@ -130,7 +130,7 @@ func TestGetUser_PrivateProfile(t *testing.T) {
 func TestGetUser_PublicProfileListsOnlyPublicListedRuns(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id := seedRun(t, srv)
-	if res := doAs(t, srv, http.MethodPatch, "/api/me", friendID, map[string]any{"profile_public": true}, ""); res.StatusCode != http.StatusNoContent {
+	if res := doAs(t, srv, http.MethodPatch, "/api/me", friendID, map[string]any{"profile_visibility": "public"}, ""); res.StatusCode != http.StatusNoContent {
 		t.Fatalf("patch me status=%d", res.StatusCode)
 	}
 
@@ -335,5 +335,33 @@ func TestGetRunRelation(t *testing.T) {
 	}
 	if code, _ := rel(hostID); code != http.StatusOK {
 		t.Fatalf("private recorder code=%d", code)
+	}
+}
+
+// stubFriends は、friendID と hostID の組だけを Steam のフレンドとする。
+type stubFriends struct{}
+
+func (stubFriends) AreFriends(_ context.Context, owner, viewer string) (bool, error) {
+	pair := map[string]bool{hostID + friendID: true, friendID + hostID: true}
+	return pair[owner+viewer], nil
+}
+
+func TestGetUser_FriendsProfile(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedRun(t, srv)
+	if res := doAs(t, srv, http.MethodPatch, "/api/me", friendID, map[string]any{"profile_visibility": "friends"}, ""); res.StatusCode != http.StatusNoContent {
+		t.Fatalf("patch status=%d", res.StatusCode)
+	}
+	if code, page := getUserPage(t, srv, friendID, hostID); code != http.StatusOK || len(page.Runs) != 1 || page.User.ProfileVisibility != "friends" {
+		t.Fatalf("steam friend code=%d page=%+v", code, page)
+	}
+	if code, _ := getUserPage(t, srv, friendID, otherID); code != http.StatusForbidden {
+		t.Fatalf("not a friend code=%d", code)
+	}
+	if code, _ := getUserPage(t, srv, friendID, ""); code != http.StatusForbidden {
+		t.Fatalf("anonymous code=%d", code)
+	}
+	if res := doAs(t, srv, http.MethodPatch, "/api/me", friendID, map[string]any{"profile_visibility": "everyone"}, ""); res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad value status=%d", res.StatusCode)
 	}
 }
