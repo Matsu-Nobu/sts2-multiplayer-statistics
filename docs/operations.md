@@ -66,11 +66,14 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
 公開サーバは Fly.io のアプリ `sts2stats` で動いている。設定はリポジトリ直下の `fly.toml` にあり、秘密の値は入っていない。
 どの PC からも、次の手順でデプロイできる。
 
-1. Fly.io のコマンドを入れる (`curl -L https://fly.io/install.sh | sh`。Windows は WSL の中で入れる)。
-2. `flyctl auth login` でログインする (ブラウザで承認する)。
-3. デプロイするコミットを手元で選んだ状態で `make deploy` を実行する。backend のテストと web の型チェックが通った後に、
+1. 初めて設定するときだけ、ログインの cookie の署名の鍵を Fly.io の secrets に入れる。鍵は DB に置かない (DB が漏れても、なりすましてログインできないように)。
+   `openssl rand -hex 32 | sed 's/^/AUTH_COOKIE_KEY=/' | flyctl secrets import --stage -a sts2stats`。
+   鍵を入れ替えると、全員のログインが切れる。
+2. Fly.io のコマンドを入れる (`curl -L https://fly.io/install.sh | sh`。Windows は WSL の中で入れる)。
+3. `flyctl auth login` でログインする (ブラウザで承認する)。
+4. デプロイするコミットを手元で選んだ状態で `make deploy` を実行する。backend のテストと web の型チェックが通った後に、
    Fly.io 側でイメージをビルドして入れ替える。手元に Docker は要らない。
-4. `curl https://sts2stats.fly.dev/healthz` と、共有 URL の画面が開くことを確認する。
+5. `curl https://sts2stats.fly.dev/healthz` と、共有 URL の画面が開くことを確認する。
 
 前の版に戻すときは、`flyctl releases -a sts2stats` で版を調べ、その版のイメージで `flyctl deploy --image <イメージ>` を実行する。
 

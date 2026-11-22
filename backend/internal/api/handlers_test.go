@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 )
 
@@ -19,7 +20,7 @@ func newTestServer(t *testing.T) (*Server, *store.Store) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return &Server{Store: st, BaseURL: "http://test"}, st
+	return &Server{Store: st, BaseURL: "http://test", Signer: auth.Signer{Key: []byte("test-key")}, Verify: stubVerify}, st
 }
 
 func do(t *testing.T, srv *Server, method, path, token string, body any) *http.Response {
@@ -299,5 +300,21 @@ func eventFixture(uuid, eventType string, combat, turn, seq int) map[string]any 
 		"turn_number":  turn,
 		"sequence":     seq,
 		"payload":      map[string]any{},
+	}
+}
+
+func TestPostEvents_BodyLimit(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, token := createSession(t, srv)
+	big := func(n int) []map[string]any {
+		ev := eventFixture("big-"+strings.Repeat("x", 1), "floor_snapshot", 1, 1, 0)
+		ev["payload"] = map[string]any{"pad": strings.Repeat("a", n)}
+		return []map[string]any{ev}
+	}
+	if res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, big(500*1024)); res.StatusCode != http.StatusNoContent {
+		t.Fatalf("500KB status=%d", res.StatusCode)
+	}
+	if res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, big(3*1024*1024)); res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("3MB status=%d", res.StatusCode)
 	}
 }

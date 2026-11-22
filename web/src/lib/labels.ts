@@ -12,3 +12,6 @@ export const BADGE_RARITY: Record<string, { label: string; color: string }> = {
   Gold:   { label: '金', color: '#facc15' },
 };
 
+
+/** ゲームモード (run_start の game_mode。spec user-pages.md「画面」)。 */
+export const GAME_MODE_LABEL: Record<string, string> = { Standard: '通常', Blitz: 'ブリッツ', Daily: 'デイリー', Dread: 'ドレッド' };

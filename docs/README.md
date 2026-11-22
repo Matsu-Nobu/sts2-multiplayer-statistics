@@ -11,6 +11,7 @@
 | [`spec/ui.md`](./spec/ui.md) | 画面の構成・URL・共通部品・見た目 |
 | [`spec/run-overview.md`](./spec/run-overview.md) | ラン全体・階の画面に出す値と集計方法 |
 | [`spec/combat-stats.md`](./spec/combat-stats.md) | 戦闘の画面に出す値と集計方法 |
+| [`spec/user-pages.md`](./spec/user-pages.md) | ログイン、ユーザーページ、ランの公開・非公開・削除 |
 | [`spec/data-sources.md`](./spec/data-sources.md) | mod がゲームのどこから何を取るか、誰の行為として送るか、その根拠にしたゲームの挙動 |
 | [`spec/api.md`](./spec/api.md) | mod ⇄ backend ⇄ web の HTTP API と event の形 |
 | [`architecture.md`](./architecture.md) | 3 層の構成、データの流れ、デプロイ、カタログの作り方 |

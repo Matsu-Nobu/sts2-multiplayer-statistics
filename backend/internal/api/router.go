@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,13 +16,18 @@ type Server struct {
 	Store          *store.Store
 	BaseURL        string // for share_url construction (no trailing slash)
 	AllowedOrigins []string
+	Signer         auth.Signer      // ログインの cookie の署名
+	Verify         auth.Verifier    // Steam から戻ってきたログインの検証 (テストでは差し替える)
+	Now            func() time.Time // nil なら time.Now
 }
 
 // 防御パラメータ
 const (
-	// POST body の最大サイズ（バイト）。turns/events は cards / debuffs / event payload で
-	// それなりに膨らむ可能性があるが 256KB あれば実用上充分。
+	// POST / PATCH の body の最大サイズ (バイト)。
 	maxBodyBytes int64 = 256 * 1024
+	// POST /sessions/{id}/events の body の最大サイズ。4 人のマルチプレイでは、階の記録 (全員のデッキ入り) が
+	// mod の 1 回の送信に重なって 256KB に近づく。mod は断られた送信を捨てるので、余裕を大きく取る。
+	maxEventsBodyBytes int64 = 2 * 1024 * 1024
 
 	// rate limit: IP あたり N req / windowSec
 	// POST /sessions: ボットによる無制限 session 作成を防ぐ。1分10件もあれば実用上十分。
@@ -30,13 +36,17 @@ const (
 	rateEventsPerMin = 300
 )
 
-// limitBody wraps the body in MaxBytesReader so reading panics with 413 if exceeded.
-func limitBody(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-		next.ServeHTTP(w, r)
-	})
+// limitBodyTo は body を n バイトまでにする。超えると読み出しが失敗し、handler は 400 を返す。
+func limitBodyTo(n int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, n)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
+
+var limitBody = limitBodyTo(maxBodyBytes)
 
 // rateLimit returns an httprate middleware keyed by IP address.
 func rateLimit(reqs int, window time.Duration) func(http.Handler) http.Handler {
@@ -57,24 +67,34 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	// POST endpoints は rate limit + body size limit で保護
-	r.Group(func(r chi.Router) {
-		r.Use(limitBody)
-		r.With(rateLimit(rateSessionsPerMin, time.Minute)).Post("/sessions", s.createSession)
-
-		r.Route("/sessions/{id}", func(r chi.Router) {
-			r.With(s.requireWriteToken, rateLimit(rateEventsPerMin, time.Minute)).
-				Post("/events", s.postEvents)
-		})
-	})
+	r.With(limitBody, rateLimit(rateSessionsPerMin, time.Minute)).Post("/sessions", s.createSession)
+	r.With(limitBodyTo(maxEventsBodyBytes), s.requireWriteToken, rateLimit(rateEventsPerMin, time.Minute)).
+		Post("/sessions/{id}/events", s.postEvents)
 
 	r.Get("/api/sessions/{id}", s.getSession)
 
+	// ログインとユーザーページ (docs/spec/user-pages.md)
+	r.Get("/auth/steam/login", s.steamLogin)
+	r.Get("/auth/steam/callback", s.steamCallback)
+	r.Post("/auth/logout", s.logout)
+	r.Get("/api/me", s.getMe)
+	r.Get("/api/users/{steamid}", s.getUser)
+	r.Get("/api/sessions/{id}/me", s.getRunRelation)
+	r.Group(func(r chi.Router) {
+		r.Use(limitBody, s.requireLogin)
+		r.Patch("/api/me", s.patchMe)
+		r.Patch("/api/sessions/{id}", s.patchSession)
+		r.Patch("/api/sessions/{id}/listing", s.patchListing)
+		r.Delete("/api/sessions/{id}", s.deleteSession)
+	})
+
 	// --- 静的配信 ---
-	// "/" はランディングページ（プロジェクト紹介・使い方）
-	// "/s/{id}" は SPA（共有URLで開かれる統計ビュー）
-	r.Get("/", landingHTML())
+	// web の画面 (SPA)。どの URL でも同じ index.html を返し、画面は web 側で決める (spec ui.md「サイトの画面」)
+	r.Get("/", indexHTML())
+	r.Get("/settings", indexHTML())
 	r.Get("/s/{id}", indexHTML())
 	r.Get("/s/{id}/*", indexHTML()) // web 側の画面 (spec ui.md「画面と URL」)
+	r.Get("/u/{steamid}", indexHTML())
 	r.Mount("/assets/", staticAssets())
 	r.Get("/favicon.ico", staticAssets().ServeHTTP)
 	// /catalog.{lang}.json — STS2 のカード/レリック/ポーション/エンチャント definitions。

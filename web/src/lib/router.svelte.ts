@@ -7,6 +7,8 @@
  *   /s/{id}/combats                戦闘
  *   /s/{id}/combats/{combat_index} 戦闘詳細 (?view=summary|turns|timeline)
  *   共通クエリ ?p={player_id}
+ *   /u/{steam_id}                  ユーザーページ (spec user-pages.md)
+ *   /                              ホーム、/settings 設定 (spec ui.md「サイトの画面」)
  */
 
 export type Page =
@@ -18,11 +20,15 @@ export type Page =
 
 export type CombatViewName = 'summary' | 'turns' | 'timeline';
 
-interface Route { sessionId: string | null; page: Page; player: string | null }
+export type Section = 'home' | 'settings' | 'user' | 'session' | 'unknown';
+
+interface Route { section: Section; sessionId: string | null; userId: string | null; page: Page; player: string | null }
 
 function parse(loc: Location): Route {
   const url = new URL(loc.href);
   const player = url.searchParams.get('p');
+  const u = url.pathname.match(/^\/u\/([^/]+)\/?$/);
+  const userId = u ? decodeURIComponent(u[1]) : null;
   const m = url.pathname.match(/^\/s\/([^/]+)(?:\/(.*))?$/);
   const sessionId = m ? m[1] : null;
   const rest = (m?.[2] ?? '').replace(/\/+$/, '').split('/').filter(Boolean);
@@ -36,7 +42,9 @@ function parse(loc: Location): Route {
     const view: CombatViewName = v === 'turns' || v === 'timeline' ? v : 'summary';
     page = Number.isInteger(n) ? { name: 'combat', combat: n, view } : { name: 'combats' };
   }
-  return { sessionId, page, player };
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const section: Section = sessionId ? 'session' : userId ? 'user' : path === '/' ? 'home' : path === '/settings' ? 'settings' : 'unknown';
+  return { section, sessionId, userId, page, player };
 }
 
 export const route = $state<Route>(parse(window.location));

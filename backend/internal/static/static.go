@@ -14,9 +14,6 @@ import (
 //go:embed all:dist
 var raw embed.FS
 
-//go:embed landing.html
-var landing []byte
-
 // FS returns the embedded SPA filesystem rooted at the dist/ directory
 // (so callers see "index.html", "assets/..." rather than "dist/index.html").
 func FS() fs.FS {
@@ -27,6 +24,3 @@ func FS() fs.FS {
 	}
 	return sub
 }
-
-// LandingHTML returns the static landing page bytes (served at "/").
-func LandingHTML() []byte { return landing }
