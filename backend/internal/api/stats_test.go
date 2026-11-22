@@ -10,57 +10,44 @@ import (
 
 // プレイヤーの統計の API (docs/spec/api.md「GET /api/users/{steam_id}/stats」) のテスト。
 
-type statsGame struct {
-	SessionID   string   `json:"session_id"`
-	Outcome     string   `json:"outcome"`
-	GameVersion *string  `json:"game_version"`
-	MaxActIndex int      `json:"max_act_index"`
-	DamageShare *float64 `json:"damage_share"`
-	Partners    []struct {
-		SteamID string `json:"steam_id"`
-	} `json:"partners"`
-	CardOffers []struct {
-		ID      string `json:"id"`
-		Offered int    `json:"offered"`
-		Picked  int    `json:"picked"`
-		Act     int    `json:"act_index"`
-	} `json:"card_offers"`
-	Relics []struct {
-		ID string `json:"id"`
-	} `json:"relics"`
-	Fights []struct {
-		ModelID     string `json:"model_id"`
-		RoomType    string `json:"room_type"`
-		DamageTaken int    `json:"damage_taken"`
-		Died        bool   `json:"died"`
-	} `json:"fights"`
-	RestChoices []string `json:"rest_choices"`
-	Ancients    []struct {
-		ModelID string `json:"model_id"`
-		Options []struct {
-			Title  string `json:"title"`
-			Chosen bool   `json:"chosen"`
-		} `json:"options"`
-	} `json:"ancients"`
-	Events []struct {
-		ModelID string   `json:"model_id"`
-		Choices []string `json:"choices"`
-	} `json:"events"`
-}
-
 type statsPage struct {
-	IsMe  bool        `json:"is_me"`
-	Games []statsGame `json:"games"`
+	IsMe      bool    `json:"is_me"`
+	GameCount int     `json:"game_count"`
+	Character *string `json:"character"`
+	Options   struct {
+		Characters []struct {
+			Key string `json:"key"`
+		} `json:"characters"`
+	} `json:"options"`
+	Stats *struct {
+		Games int `json:"games"`
+		Wins  int `json:"wins"`
+	} `json:"stats"`
 }
 
 func getStats(t *testing.T, srv *Server, userID, viewer string) (int, statsPage) {
 	t.Helper()
-	res := doAs(t, srv, http.MethodGet, "/api/users/"+userID+"/stats", viewer, nil, "")
+	return getStatsQuery(t, srv, userID, viewer, "")
+}
+
+func getStatsQuery(t *testing.T, srv *Server, userID, viewer, query string) (int, statsPage) {
+	t.Helper()
+	res := doAs(t, srv, http.MethodGet, "/api/users/"+userID+"/stats"+query, viewer, nil, "")
 	var page statsPage
 	if res.StatusCode == http.StatusOK {
 		decodeJSON(t, res, &page)
 	}
 	return res.StatusCode, page
+}
+
+// ownSummaries は hostID のゲームごとの集計を、本人が見るときの範囲で返す。
+func ownSummaries(t *testing.T, srv *Server) []store.GameSummary {
+	t.Helper()
+	games, err := srv.Store.ListUserGameSummaries(context.Background(), hostID, false)
+	if err != nil {
+		t.Fatalf("summaries: %v", err)
+	}
+	return games
 }
 
 func snapshot(uuid string, floor, act int, rooms []map[string]any, host map[string]any) map[string]any {
@@ -133,14 +120,14 @@ func seedFinishedRun(t *testing.T, srv *Server, outcome string) (id, token strin
 	return id, token
 }
 
-func TestGetUserStats_Summary(t *testing.T) {
+func TestListUserGameSummaries(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, _ := seedFinishedRun(t, srv, "death")
-	code, page := getStats(t, srv, hostID, hostID)
-	if code != http.StatusOK || !page.IsMe || len(page.Games) != 1 {
-		t.Fatalf("status=%d page=%+v", code, page)
+	games := ownSummaries(t, srv)
+	if len(games) != 1 {
+		t.Fatalf("games=%+v", games)
 	}
-	g := page.Games[0]
+	g := games[0]
 
 	t.Run("ゲームの結果と一緒に遊んだ人", func(t *testing.T) {
 		if g.SessionID != id || g.Outcome != "death" || g.MaxActIndex != 1 || len(g.Partners) != 1 || g.Partners[0].SteamID != friendID {
@@ -196,14 +183,45 @@ func TestGetUserStats_OnlyVictoryAndDeath(t *testing.T) {
 	seedFinishedRun(t, srv, "abandoned")
 	seedFinishedRun(t, srv, "")
 	_, page := getStats(t, srv, hostID, hostID)
-	if len(page.Games) != 1 || page.Games[0].Outcome != "victory" {
-		t.Fatalf("games=%+v", page.Games)
+	if page.GameCount != 1 || page.Stats == nil || page.Stats.Wins != 1 {
+		t.Fatalf("page=%+v", page)
 	}
+}
+
+func TestGetUserStats_Filters(t *testing.T) {
+	srv, _ := newTestServer(t)
+	seedFinishedRun(t, srv, "victory")
+	seedFinishedRun(t, srv, "death")
+
+	t.Run("条件が無ければ、ゲーム数の多いキャラクターのゲームを集計する", func(t *testing.T) {
+		_, page := getStats(t, srv, hostID, hostID)
+		if page.GameCount != 2 || page.Character == nil || *page.Character != "FOOL" || page.Stats.Games != 2 || page.Stats.Wins != 1 {
+			t.Fatalf("page=%+v", page)
+		}
+	})
+	t.Run("絞り込みの条件をクエリで受け取る", func(t *testing.T) {
+		_, page := getStatsQuery(t, srv, hostID, hostID, "?players=multi&ascension=5&mode=Standard&version="+testGameVersion)
+		if page.Stats == nil || page.Stats.Games != 2 {
+			t.Fatalf("page=%+v", page)
+		}
+	})
+	t.Run("条件に合うゲームが無ければ、キャラクターも集計も返さない", func(t *testing.T) {
+		_, page := getStatsQuery(t, srv, hostID, hostID, "?players=solo")
+		if page.GameCount != 2 || page.Character != nil || page.Stats != nil || len(page.Options.Characters) != 0 {
+			t.Fatalf("page=%+v", page)
+		}
+	})
+	t.Run("知らないキャラクターなら、先頭のキャラクターを集計する", func(t *testing.T) {
+		_, page := getStatsQuery(t, srv, hostID, hostID, "?character=NOPE")
+		if page.Character == nil || *page.Character != "FOOL" {
+			t.Fatalf("page=%+v", page)
+		}
+	})
 }
 
 func TestGetUserStats_Visibility(t *testing.T) {
 	srv, _ := newTestServer(t)
-	listed, _ := seedFinishedRun(t, srv, "victory")
+	seedFinishedRun(t, srv, "victory")
 	hidden, _ := seedFinishedRun(t, srv, "victory")
 
 	t.Run("非公開のユーザーページなら本人以外には 403", func(t *testing.T) {
@@ -218,11 +236,11 @@ func TestGetUserStats_Visibility(t *testing.T) {
 		if res := doAs(t, srv, http.MethodPatch, "/api/sessions/"+hidden+"/listing", hostID, map[string]any{"hidden": true}, ""); res.StatusCode != http.StatusNoContent {
 			t.Fatalf("patch listing status=%d", res.StatusCode)
 		}
-		if _, page := getStats(t, srv, hostID, otherID); len(page.Games) != 1 || page.Games[0].SessionID != listed {
-			t.Fatalf("games=%+v", page.Games)
+		if _, page := getStats(t, srv, hostID, otherID); page.GameCount != 1 {
+			t.Fatalf("games=%d", page.GameCount)
 		}
-		if _, page := getStats(t, srv, hostID, hostID); len(page.Games) != 2 {
-			t.Fatalf("own games=%d", len(page.Games))
+		if _, page := getStats(t, srv, hostID, hostID); page.GameCount != 2 {
+			t.Fatalf("own games=%d", page.GameCount)
 		}
 	})
 }
@@ -230,15 +248,15 @@ func TestGetUserStats_Visibility(t *testing.T) {
 func TestGetUserStats_RebuildsAfterNewEvents(t *testing.T) {
 	srv, _ := newTestServer(t)
 	id, token := seedFinishedRun(t, srv, "victory")
-	if _, page := getStats(t, srv, hostID, hostID); *page.Games[0].DamageShare != 0.75 {
-		t.Fatalf("share=%v", *page.Games[0].DamageShare)
+	if g := ownSummaries(t, srv); *g[0].DamageShare != 0.75 {
+		t.Fatalf("share=%v", *g[0].DamageShare)
 	}
 	// 集計を保存した後に、同じゲームへ記録が届いたら作り直す
 	if res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, []map[string]any{damage(id+"d3", friendID, 60)}); res.StatusCode != http.StatusNoContent {
 		t.Fatalf("post status=%d", res.StatusCode)
 	}
-	if _, page := getStats(t, srv, hostID, hostID); *page.Games[0].DamageShare != 0.3 {
-		t.Fatalf("share after new event=%v", *page.Games[0].DamageShare)
+	if g := ownSummaries(t, srv); *g[0].DamageShare != 0.3 {
+		t.Fatalf("share after new event=%v", *g[0].DamageShare)
 	}
 }
 

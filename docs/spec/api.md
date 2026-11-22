@@ -49,7 +49,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | `GET`  | `/api/me` | cookie | ログインしている人 |
 | `PATCH`| `/api/me` | cookie | ユーザーページの公開・非公開 |
 | `GET`  | `/api/users/{steam_id}` | — / cookie | ユーザーページ (参加したランの一覧) |
-| `GET`  | `/api/users/{steam_id}/stats` | — / cookie | プレイヤーの統計に使う、ゲームごとの集計 |
+| `GET`  | `/api/users/{steam_id}/stats` | — / cookie | プレイヤーの統計の、1 キャラクター分の集計 |
 | `GET`  | `/api/sessions/{id}/me` | cookie | ログインしている人とそのランの関係 (参加者か・記録した人か・公開か・ページに載せるか) |
 | `PATCH`| `/api/sessions/{id}` | cookie (記録した人) | ランの公開・非公開 |
 | `PATCH`| `/api/sessions/{id}/listing` | cookie (参加者) | ランを自分のユーザーページに載せるか |
@@ -410,35 +410,64 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 
 ### `GET /api/users/{steam_id}/stats`
 
-プレイヤーの統計 ([`player-stats.md`](./player-stats.md)) に使う、ゲームごとの集計を返す。見られる人と、403・404 を返す条件は `GET /api/users/{steam_id}` と同じ。
-返すのは、そのユーザーが参加したゲームのうち結果が `victory` か `death` のもので、本人以外には、公開で本人がページに載せているものだけ。キャラクターと絞り込みでの集計は web が行う。
+プレイヤーの統計 ([`player-stats.md`](./player-stats.md)) の、1 キャラクター分の集計を返す。見られる人と、403・404 を返す条件は `GET /api/users/{steam_id}` と同じ。
+集計に使うのは、そのユーザーが参加したゲームのうち結果が `victory` か `death` のもので、本人以外には、公開で本人がページに載せているものだけ。
+
+クエリのパラメータは、player-stats.md「絞り込み」のドロップダウンに当たる。どれも省略でき、省略するか空にすると絞り込まない。
+
+| パラメータ | 値 |
+|---|---|
+| `character` | キャラクターの ID。省略するか、絞り込んだ後のゲームに無ければ、`options.characters` の先頭のキャラクター |
+| `version` | ゲームのバージョン。バージョンの記録が無いゲームは `unknown` |
+| `mode` | ゲームモード (`Standard` など) |
+| `ascension` | アセンション (数字) |
+| `players` | `solo` か `multi` |
+| `period` | `30d` なら、サーバの今の時刻から 30 日以内に始めたゲームだけ |
 
 ```json
 {
   "user": { "steam_id": "765...", "display_name": "Nobu", "profile_visibility": "public" },
   "is_me": true,
-  "games": [{
-    "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
-    "character_id": "FOOL", "character_name": "フール", "game_mode": "Standard", "ascension": 3, "game_version": "v0.113.1",
-    "outcome": "victory", "final_floor": 48, "max_act_index": 2,
-    "partners": [{ "steam_id": "765...", "display_name": "agapants" }],
-    "damage_share": 0.42,
-    "card_offers": [{ "id": "WAR_TOUCH", "name": "ワー・タッチ", "offered": 2, "picked": 1, "act_index": 0 }],
-    "relics": [{ "id": "WAR_PAINT", "name": "戦化粧" }],
-    "fights": [{ "model_id": "CULTIST_BOSS", "model_name": "儀式の獣", "room_type": "Boss", "damage_taken": 31, "died": false }],
-    "rest_choices": ["SMITH", "HEAL"],
-    "ancients": [{ "model_id": "NEOW", "model_name": "ネオー", "options": [{ "title": "絹の髪束", "chosen": true }] }],
-    "events": [{ "model_id": "...", "model_name": "...", "choices": ["..."] }]
-  }]
+  "game_count": 40,
+  "options": {
+    "versions": [{ "key": "v0.113.1", "games": 12 }, { "key": "unknown", "games": 3 }],
+    "modes": ["Standard"],
+    "ascensions": [0, 3],
+    "characters": [{ "key": "FOOL", "name": "フール", "games": 23 }]
+  },
+  "character": "FOOL",
+  "stats": {
+    "games": 23, "wins": 9, "avg_floor": 31.4, "best_ascension": 3, "longest_streak": 2,
+    "acts": [{ "act": 1, "rate": 0.8 }],
+    "death_floors": [{ "floor": 17, "games": 4 }],
+    "rest": [{ "id": "SMITH", "count": 20 }],
+    "cards": [{ "id": "WAR_TOUCH", "name": "ワー・タッチ", "games": 5, "wins": 2,
+                "offered": [4, 1], "picks": [2, 1], "picked_games": [2, 1], "cleared": [2, 0] }],
+    "card_total": { "games": 23, "wins": 9, "picked_games": [23, 18], "cleared": [18, 9] },
+    "relics": [{ "id": "WAR_PAINT", "name": "戦化粧", "games": 3, "wins": 1 }],
+    "enemies": [{ "id": "CULTIST_BOSS", "name": "儀式の獣", "room_type": "Boss", "fights": 4, "damage": 120, "deaths": 1 }],
+    "ancients": [{ "id": "NEOW", "name": "ネオー", "visits": 23, "rows": [{ "title": "絹の髪束", "offered": 5, "chosen": 2, "wins": 1 }] }],
+    "events": [{ "id": "...", "name": "...", "visits": 4, "rows": [{ "title": "...", "offered": 0, "chosen": 3, "wins": 1 }] }],
+    "solo": { "games": 10, "wins": 4 }, "multi": { "games": 13, "wins": 5 },
+    "partners": [{ "steam_id": "765...", "name": "agapants", "games": 13, "wins": 5, "share_sum": 5.2, "share_games": 13 }]
+  }
 }
 ```
 
-- `partners`: 一緒に遊んだ人 (そのユーザーを除く参加者)。ソロなら空。
-- `damage_share`: そのゲームで全員の `damage_dealt` の `amount` の合計のうち、そのユーザーの分の割合。ソロか、だれもダメージを与えていなければ `null`。
-- `max_act_index`: そのゲームの `floor_snapshot` の `act_index` の最大 (0 始まり)。
-- `card_offers`: カードと Act の組ごとに 1 つ。`act_index` はそのカードが提示された階の `act_index`。同じカードが複数の Act で提示されたら、Act ごとに分ける。
-- `card_offers`・`relics`・`fights`・`rest_choices`・`ancients`・`events` の中身は player-stats.md「数字の出どころ」の記録から作る。`fights` の `died` は、死んだゲームの最後の戦闘なら `true`。`events` には、部屋が `NEOW` の階を入れない。
-- backend はゲームと人の組ごとに集計を保存しておき、そのゲームに新しい記録が届いていたら作り直す。
+- `game_count`: 絞り込む前のゲームの数。
+- `options.versions`: 絞り込む前のゲームにあるバージョンと、そのゲーム数。新しいバージョンから並べ、`unknown` は最後に置く。
+- `options.modes`・`options.ascensions`: 絞り込む前のゲームにある値。`modes` は新しいゲームに出てきた順、`ascensions` は小さい順。
+- `options.characters`: キャラクター以外の絞り込みをかけた後のゲームにあるキャラクター。ゲーム数の多い順に並べる。
+- `character`: 集計したキャラクターの ID。`options.characters` が空なら `null` で、そのとき `stats` も `null`。
+- `stats` の数字は、`character` のキャラクターの、絞り込んだ後のゲームから出す。出し方は player-stats.md の各区画のとおり。
+- `acts`: Act 1 から、ゲームの中で一番先に進んだ Act まで。`rate` は 0〜1。
+- `cards`: 配列はどれも Act ごと (`acts` と同じ長さ)。`offered`・`picks` はその Act で提示された回数と取った回数、`picked_games` はその Act で取ったゲームの数、`cleared` はそのうちその Act を突破したゲームの数。`games`・`wins` は、どれかの Act で取ったゲームの数と、そのうち勝ったゲームの数。
+- `card_total`: カードの表の 1 行目。`picked_games` は Act N に進んだゲームの数、`cleared` はそのうち Act N を突破したゲームの数。
+- `rest`: 休憩所で選んだ行動の ID ごとの回数。多い順。
+- `ancients`・`events`: 出会った回数 (`visits`) の多い順。`events` の `offered` は数えないので 0。
+- `partners`: `share_sum` は、一緒に遊んだゲームのうち与ダメージの割合があるゲームの割合の合計で、`share_games` はそのゲームの数。
+- カード・レリック・休憩所の行動の表示名は、web が `catalog` から引く。`catalog` に無ければ `name` (休憩所の行動は `id`) を出す。
+- backend はゲームと人の組ごとに集計を保存しておき、そのゲームに新しい記録が届いていたら作り直す (player-stats.md「ゲームごとの集計の保存」)。保存する集計の中身は player-stats.md「数字の出どころ」の記録から作る。
 
 ### `GET /api/sessions/{id}/me`
 

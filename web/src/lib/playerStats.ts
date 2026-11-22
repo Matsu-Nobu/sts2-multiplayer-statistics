@@ -1,26 +1,43 @@
-// プレイヤーの統計の集計 (spec player-stats.md)。
-// backend が返すゲームごとの集計 (spec api.md「GET /api/users/{steam_id}/stats」) を、絞り込んでからキャラクターごとにまとめる。
-import type { CatalogLookup } from './catalog';
+// プレイヤーの統計 (spec player-stats.md)。
+// 集計はサーバが行い (spec api.md「GET /api/users/{steam_id}/stats」)、web は受け取った数字を表に並べる。
 
-export interface StatsGame {
-  session_id: string; created_at: string;
-  character_id: string | null; character_name: string | null; game_mode: string | null; ascension: number | null;
-  game_version: string | null;
-  outcome: 'victory' | 'death'; final_floor: number | null; max_act_index: number;
-  partners: { steam_id: string; display_name: string }[];
-  damage_share: number | null;
-  card_offers: { id: string; name: string; offered: number; picked: number; act_index: number }[];
-  relics: { id: string; name: string }[];
-  fights: { model_id: string; model_name: string; room_type: string; damage_taken: number; died: boolean }[];
-  rest_choices: string[];
-  ancients: { model_id: string; model_name: string; options: { title: string; chosen: boolean }[] }[];
-  events: { model_id: string; model_name: string; choices: string[] }[];
+export interface CharacterOption { key: string; name: string; games: number }
+export interface VersionOption { key: string; games: number }
+
+// 配列は Act ごと (0 始まり)。offered と picks は提示回数と取った回数、picked_games はその Act で取ったゲームの数、
+// cleared はそのうちその Act を突破したゲームの数。games と wins は、どれかの Act で取ったゲームの数とそのうち勝った数。
+// total は表の 1 行目に置く「{キャラクター名}全体」の行。
+export interface CardRow {
+  id: string; name: string; games: number; wins: number;
+  offered: number[]; picks: number[]; picked_games: number[]; cleared: number[];
+  total?: boolean;
+}
+export interface RelicRow { id: string; name: string; games: number; wins: number }
+export interface EnemyRow { id: string; name: string; room_type: string; fights: number; damage: number; deaths: number }
+export interface ChoiceRow { title: string; offered: number; chosen: number; wins: number }
+export interface VisitGroup { id: string; name: string; visits: number; rows: ChoiceRow[] }
+export interface PartnerRow { steam_id: string; name: string; games: number; wins: number; share_sum: number; share_games: number }
+
+export interface CharacterStats {
+  games: number; wins: number; avg_floor: number | null; best_ascension: number | null; longest_streak: number;
+  acts: { act: number; rate: number }[];
+  death_floors: { floor: number; games: number }[];
+  rest: { id: string; count: number }[];
+  cards: CardRow[];
+  card_total: { games: number; wins: number; picked_games: number[]; cleared: number[] };
+  relics: RelicRow[]; enemies: EnemyRow[];
+  ancients: VisitGroup[]; events: VisitGroup[];
+  solo: { games: number; wins: number }; multi: { games: number; wins: number };
+  partners: PartnerRow[];
 }
 
 export interface StatsDoc {
   user: { steam_id: string; display_name: string; profile_visibility: string };
   is_me: boolean;
-  games: StatsGame[];
+  game_count: number;
+  options: { versions: VersionOption[]; modes: string[]; ascensions: number[]; characters: CharacterOption[] };
+  character: string | null;
+  stats: CharacterStats | null;
 }
 
 // 「5 ゲーム未満を隠す」の数 (spec player-stats.md「絞り込み」)
@@ -45,223 +62,25 @@ export const UNKNOWN_VERSION = 'unknown';
 export const SOLO = 'solo';
 export const MULTI = 'multi';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export const characterKey = (g: StatsGame) => g.character_id ?? '';
-export const characterName = (g: StatsGame) => g.character_name ?? g.character_id ?? '—';
-export const isWin = (g: StatsGame) => g.outcome === 'victory';
-// Act N 突破 = Act N より先の Act に進んだか、勝った (act は 0 始まり)
-const clearedAct = (g: StatsGame, act: number) => isWin(g) || g.max_act_index > act;
-
-export function applyFilters(games: StatsGame[], f: Filters, now: Date): StatsGame[] {
-  const since = now.getTime() - 30 * DAY_MS;
-  return games.filter(g =>
-    (f.version === ALL || (g.game_version ?? UNKNOWN_VERSION) === f.version) &&
-    (f.mode === ALL || g.game_mode === f.mode) &&
-    (f.asc === ALL || String(g.ascension) === f.asc) &&
-    (f.players === ALL || (f.players === MULTI) === (g.partners.length > 0)) &&
-    (f.period === 'all' || new Date(g.created_at).getTime() >= since));
+/** API に渡すクエリ。character が null なら、サーバがゲーム数の多いキャラクターを選ぶ。 */
+export function statsQuery(character: string | null, f: Filters): string {
+  const q = new URLSearchParams();
+  if (character != null) q.set('character', character);
+  if (f.version !== ALL) q.set('version', f.version);
+  if (f.mode !== ALL) q.set('mode', f.mode);
+  if (f.asc !== ALL) q.set('ascension', f.asc);
+  if (f.players !== ALL) q.set('players', f.players);
+  if (f.period !== 'all') q.set('period', f.period);
+  const s = q.toString();
+  return s ? `?${s}` : '';
 }
 
-export interface VersionOption { key: string; games: number }
-
-/** バージョンのドロップダウンの選択肢。新しいバージョンから並べ、バージョンの無いゲームは最後に置く。 */
-export function versionOptions(games: StatsGame[]): VersionOption[] {
-  const m = new Map<string, number>();
-  for (const g of games) {
-    const k = g.game_version ?? UNKNOWN_VERSION;
-    m.set(k, (m.get(k) ?? 0) + 1);
-  }
-  const parts = (v: string) => v.replace(/^v/, '').split('.').map(Number);
-  const newer = (a: string, b: string) => {
-    if (a === UNKNOWN_VERSION || b === UNKNOWN_VERSION) return a === UNKNOWN_VERSION ? 1 : -1;
-    const pa = parts(a), pb = parts(b);
-    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-      const d = (pb[i] ?? 0) - (pa[i] ?? 0);
-      if (d !== 0 && !Number.isNaN(d)) return d;
-    }
-    return b.localeCompare(a);
-  };
-  return [...m.entries()].map(([key, n]) => ({ key, games: n })).sort((a, b) => newer(a.key, b.key));
-}
-
-export interface CharacterOption { key: string; name: string; games: number }
-
-/** キャラクターのドロップダウンの選択肢。絞り込んだ後のゲームにあるキャラクターを、ゲーム数の多い順に並べる。 */
-export function characterOptions(games: StatsGame[]): CharacterOption[] {
-  const m = new Map<string, CharacterOption>();
-  for (const g of games) {
-    const k = characterKey(g);
-    const t = m.get(k) ?? { key: k, name: characterName(g), games: 0 };
-    t.games++;
-    m.set(k, t);
-  }
-  return [...m.values()].sort((a, b) => b.games - a.games || a.name.localeCompare(b.name, 'ja'));
-}
-
-// 配列は Act ごと (0 始まり)。offered と picks は提示回数と取った回数、pickedGames はその Act で取ったゲームの数、
-// cleared はそのうちその Act を突破したゲームの数。games と wins は、どれかの Act で取ったゲームの数とそのうち勝った数。
-// total は表の 1 行目に置く「{キャラクター名}全体」の行。
-export interface CardRow {
-  id: string; name: string; games: number; wins: number;
-  offered: number[]; picks: number[]; pickedGames: number[]; cleared: number[];
-  total?: boolean;
-}
-export interface RelicRow { id: string; name: string; games: number; wins: number }
-export interface EnemyRow { id: string; name: string; roomType: string; fights: number; damage: number; deaths: number }
-export interface ChoiceRow { title: string; offered: number; chosen: number; wins: number }
-export interface VisitGroup { id: string; name: string; visits: number; rows: ChoiceRow[] }
-export interface PartnerRow { steamId: string; name: string; games: number; wins: number; shareSum: number; shareGames: number }
-
-export interface CharacterStats {
-  games: number; wins: number; avgFloor: number | null; bestAscension: number | null; longestStreak: number;
-  relics: RelicRow[]; enemies: EnemyRow[];
-  acts: { act: number; rate: number }[];
-  deathFloors: { floor: number; games: number }[];
-  rest: { name: string; count: number }[];
-  ancients: VisitGroup[]; events: VisitGroup[];
-  solo: { games: number; wins: number }; multi: { games: number; wins: number };
-  partners: PartnerRow[];
-}
-
-function upsert<T>(m: Map<string, T>, k: string, make: () => T): T {
-  let v = m.get(k);
-  if (v === undefined) { v = make(); m.set(k, v); }
-  return v;
-}
-
-/** 1 キャラクターのゲーム (絞り込み済み) から、各区画の数字を出す。 */
-export function characterStats(games: StatsGame[], catalog: CatalogLookup | null): CharacterStats {
-  const wins = games.filter(isWin).length;
-  const floors = games.map(g => g.final_floor).filter((f): f is number => f != null);
-  const winAsc = games.filter(isWin).map(g => g.ascension).filter((a): a is number => a != null);
-
-  let streak = 0, longest = 0;
-  for (const g of [...games].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-    streak = isWin(g) ? streak + 1 : 0;
-    longest = Math.max(longest, streak);
-  }
-
-  const relics = new Map<string, RelicRow>();
-  const enemies = new Map<string, EnemyRow>();
-  const deaths = new Map<number, number>();
-  const rest = new Map<string, number>();
-  const ancients = new Map<string, VisitGroup>();
-  const events = new Map<string, VisitGroup>();
-  const partners = new Map<string, PartnerRow>();
-  const solo = { games: 0, wins: 0 }, multi = { games: 0, wins: 0 };
-  let maxAct = 0;
-
-  for (const g of games) {
-    const w = isWin(g) ? 1 : 0;
-    for (const x of g.relics) {
-      const r = upsert(relics, x.id, () => ({ id: x.id, name: catalog?.relic(x.id)?.name ?? x.name, games: 0, wins: 0 }));
-      r.games++;
-      r.wins += w;
-    }
-    for (const f of g.fights) {
-      const r = upsert(enemies, f.model_id, () => ({ id: f.model_id, name: f.model_name || f.model_id, roomType: f.room_type, fights: 0, damage: 0, deaths: 0 }));
-      r.fights++;
-      r.damage += f.damage_taken;
-      if (f.died) r.deaths++;
-    }
-    if (!isWin(g) && g.final_floor != null) deaths.set(g.final_floor, (deaths.get(g.final_floor) ?? 0) + 1);
-    for (const c of g.rest_choices) {
-      const name = catalog?.restSiteOption(c)?.name ?? c;
-      rest.set(name, (rest.get(name) ?? 0) + 1);
-    }
-    for (const a of g.ancients) {
-      const grp = upsert(ancients, a.model_id, () => ({ id: a.model_id, name: a.model_name || a.model_id, visits: 0, rows: [] }));
-      grp.visits++;
-      for (const o of a.options) {
-        let r = grp.rows.find(x => x.title === o.title);
-        if (!r) { r = { title: o.title, offered: 0, chosen: 0, wins: 0 }; grp.rows.push(r); }
-        r.offered++;
-        if (o.chosen) { r.chosen++; r.wins += w; }
-      }
-    }
-    for (const e of g.events) {
-      const grp = upsert(events, e.model_id, () => ({ id: e.model_id, name: e.model_name || e.model_id, visits: 0, rows: [] }));
-      grp.visits++;
-      for (const c of e.choices) {
-        let r = grp.rows.find(x => x.title === c);
-        if (!r) { r = { title: c, offered: 0, chosen: 0, wins: 0 }; grp.rows.push(r); }
-        r.chosen++;
-        r.wins += w;
-      }
-    }
-    const side = g.partners.length > 0 ? multi : solo;
-    side.games++;
-    side.wins += w;
-    for (const p of g.partners) {
-      const r = upsert(partners, p.steam_id, () => ({ steamId: p.steam_id, name: p.display_name || p.steam_id, games: 0, wins: 0, shareSum: 0, shareGames: 0 }));
-      r.games++;
-      r.wins += w;
-      if (g.damage_share != null) { r.shareSum += g.damage_share; r.shareGames++; }
-    }
-    maxAct = Math.max(maxAct, g.max_act_index);
-  }
-
-  const acts = games.length === 0 ? [] : Array.from({ length: maxAct + 1 }, (_, i) => ({
-    act: i + 1,
-    rate: games.filter(g => clearedAct(g, i)).length / games.length,
-  }));
-  const byVisits = (a: VisitGroup, b: VisitGroup) => b.visits - a.visits || a.name.localeCompare(b.name, 'ja');
-
+/** 「{キャラクター名}全体」の行。 */
+export function cardTotalRow(st: CharacterStats, name: string): CardRow {
+  const zeros = st.card_total.picked_games.map(() => 0);
   return {
-    games: games.length, wins,
-    avgFloor: floors.length ? floors.reduce((s, f) => s + f, 0) / floors.length : null,
-    bestAscension: winAsc.length ? Math.max(...winAsc) : null,
-    longestStreak: longest,
-    relics: [...relics.values()], enemies: [...enemies.values()],
-    acts,
-    deathFloors: [...deaths.entries()].map(([floor, n]) => ({ floor, games: n })).sort((a, b) => a.floor - b.floor),
-    rest: [...rest.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
-    ancients: [...ancients.values()].sort(byVisits), events: [...events.values()].sort(byVisits),
-    solo, multi, partners: [...partners.values()],
-  };
-}
-
-/** カードの表の行。acts は表に出す Act の数で、それより先の Act の提示は数えない。 */
-export function cardRows(games: StatsGame[], catalog: CatalogLookup | null, acts: number): CardRow[] {
-  const zeros = () => Array.from({ length: acts }, () => 0);
-  const cards = new Map<string, CardRow>();
-  for (const g of games) {
-    const pickedAny = new Set<string>();
-    const pickedAct = Array.from({ length: acts }, () => new Set<string>());
-    for (const c of g.card_offers) {
-      if (c.act_index >= acts) continue;
-      const r = upsert(cards, c.id, () => ({
-        id: c.id, name: catalog?.card(c.id, false)?.name ?? c.name, games: 0, wins: 0,
-        offered: zeros(), picks: zeros(), pickedGames: zeros(), cleared: zeros(),
-      }));
-      r.offered[c.act_index] += c.offered;
-      r.picks[c.act_index] += c.picked;
-      if (c.picked > 0) { pickedAny.add(c.id); pickedAct[c.act_index].add(c.id); }
-    }
-    for (const id of pickedAny) {
-      const r = cards.get(id)!;
-      r.games++;
-      if (isWin(g)) r.wins++;
-    }
-    pickedAct.forEach((ids, act) => {
-      for (const id of ids) {
-        const r = cards.get(id)!;
-        r.pickedGames[act]++;
-        if (clearedAct(g, act)) r.cleared[act]++;
-      }
-    });
-  }
-  return [...cards.values()];
-}
-
-/** 「{キャラクター名}全体」の行。突破率は、Act に進んだゲームのうちその Act を突破したゲームで出す。 */
-export function cardTotalRow(games: StatsGame[], name: string, acts: number): CardRow {
-  const reached = Array.from({ length: acts }, (_, act) => games.filter(g => g.max_act_index >= act));
-  return {
-    id: '', name: `${name}全体`, games: games.length, wins: games.filter(isWin).length, total: true,
-    offered: Array.from({ length: acts }, () => 0), picks: Array.from({ length: acts }, () => 0),
-    pickedGames: reached.map(r => r.length), cleared: reached.map((r, act) => r.filter(g => clearedAct(g, act)).length),
+    id: '', name: `${name}全体`, games: st.card_total.games, wins: st.card_total.wins, total: true,
+    offered: zeros, picks: zeros, picked_games: st.card_total.picked_games, cleared: st.card_total.cleared,
   };
 }
 
