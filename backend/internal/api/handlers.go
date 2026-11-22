@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -94,6 +96,7 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json body (expected array)")
 		return
 	}
+	ended := false
 	for _, ev := range in {
 		if ev.EventUUID == "" || ev.EventType == "" || ev.OccurredAt == "" {
 			writeError(w, http.StatusBadRequest, "events[].event_uuid, event_type, occurred_at are required")
@@ -121,8 +124,8 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Side effect: run_end → update session outcome / final_floor / finished_at.
-		if ev.EventType == "run_end" {
-			s.applyRunEnd(r, id, ev)
+		if ev.EventType == "run_end" && s.applyRunEnd(r, id, ev) {
+			ended = true
 		}
 
 		// Side effect: run_start → player_name から players テーブルに UpsertPlayer。
@@ -149,6 +152,9 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if ended {
+		s.warmSummaries(id)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -157,16 +163,31 @@ type runEndPayload struct {
 	FinalFloor *int   `json:"final_floor,omitempty"`
 }
 
-func (s *Server) applyRunEnd(r *http.Request, sessionID string, ev eventReq) {
+// warmSummaries は、統計のタブを開いたときに待たせないよう、ゲームが終わった時点で集計を作っておく。
+// mod への応答を遅らせないよう、リクエストとは別のゴルーチンで作る。
+func (s *Server) warmSummaries(sessionID string) {
+	s.warming.Add(1)
+	go func() {
+		defer s.warming.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if _, err := s.Store.WarmGameSummaries(ctx, sessionID); err != nil {
+			slog.Error("warm game summaries", "session", sessionID, "err", err)
+		}
+	}()
+}
+
+// applyRunEnd はセッションに結果を記録し、記録できたら true を返す。
+func (s *Server) applyRunEnd(r *http.Request, sessionID string, ev eventReq) bool {
 	var p runEndPayload
 	if err := json.Unmarshal(ev.Payload, &p); err != nil {
-		return
+		return false
 	}
 	finishedAt := ev.OccurredAt
 	if finishedAt == "" {
 		finishedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	_ = s.Store.UpdateRunOutcome(r.Context(), sessionID, p.Outcome, p.FinalFloor, finishedAt)
+	return s.Store.UpdateRunOutcome(r.Context(), sessionID, p.Outcome, p.FinalFloor, finishedAt) == nil
 }
 
 // --- GET /api/sessions/{id} ---

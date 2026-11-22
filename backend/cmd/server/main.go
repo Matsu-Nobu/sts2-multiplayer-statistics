@@ -63,6 +63,17 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// 集計の作り方を変えた後は、保存してある集計がすべて古くなる。統計のタブを開いた人を待たせないよう、起動直後に作り直す。
+	go func() {
+		start := time.Now()
+		n, err := st.WarmGameSummaries(context.Background(), "")
+		if err != nil {
+			slog.Error("warm game summaries", "err", err)
+			return
+		}
+		slog.Info("game summaries warmed", "built", n, "elapsed", time.Since(start))
+	}()
+
 	go func() {
 		slog.Info("server starting", "addr", addr, "db", dbPath, "base_url", baseURL)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

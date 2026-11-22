@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
@@ -21,6 +22,8 @@ type Server struct {
 	Verify         auth.Verifier       // Steam から戻ってきたログインの検証 (テストでは差し替える)
 	Friends        steam.FriendChecker // Steam のフレンドかどうか (テストでは差し替える)
 	Now            func() time.Time    // nil なら time.Now
+
+	warming sync.WaitGroup // ゲームが終わったときに集計を作るゴルーチン (テストで終わりを待つ)
 }
 
 // 防御パラメータ

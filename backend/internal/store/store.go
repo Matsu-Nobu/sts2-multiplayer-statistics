@@ -36,6 +36,10 @@ func Open(path string) (*Store, error) {
 	if err := db.PingContext(context.Background()); err != nil {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
+	if path == ":memory:" {
+		// メモリ上のデータベースは接続ごとに別物になるので、接続を 1 本に絞って同じデータベースを使わせる
+		db.SetMaxOpenConns(1)
+	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
