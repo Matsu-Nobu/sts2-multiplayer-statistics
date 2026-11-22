@@ -1,5 +1,5 @@
 /** チップのホバー説明 (カタログの説明文を HTML に)。spec run-overview.md「chip ホバー tooltip (description)」。 */
-import { renderCardDescription, type CatalogLookup } from './catalog';
+import { escapeHtml, renderCardDescription, type CatalogLookup } from './catalog';
 
 /** カードの説明。エンチャントが付いていれば、その名前と説明を区切り線の下に足す。 */
 export const cardTip = (cat: CatalogLookup | null, id: string, upgraded: boolean, enchantmentId?: string | null): string => {
@@ -7,7 +7,7 @@ export const cardTip = (cat: CatalogLookup | null, id: string, upgraded: boolean
   if (!c) return '';
   const e = enchantmentId ? cat?.enchantment(enchantmentId) : null;
   const ench = e
-    ? `<span class="block mt-1.5 pt-1.5 border-t border-bg-3"><span class="text-purple-300">${e.name}</span><br>${renderCardDescription(e.description)}</span>`
+    ? `<span class="block mt-1.5 pt-1.5 border-t border-bg-3"><span class="text-purple-300">${escapeHtml(e.name)}</span><br>${renderCardDescription(e.description)}</span>`
     : '';
   return renderCardDescription(c.description) + ench;
 };
