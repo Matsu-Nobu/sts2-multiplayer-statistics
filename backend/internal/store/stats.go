@@ -13,6 +13,15 @@ import (
 
 // プレイヤーの統計 (docs/spec/player-stats.md、docs/spec/api.md「GET /api/users/{steam_id}/stats」) に使う、ゲームごとの集計。
 
+// 1 つのゲームの記録を読むクエリ。どちらも idx_events_session_type で、そのゲームの記録だけを読む。
+const (
+	sqlFloorSnapshots = `SELECT payload_json FROM events WHERE session_id = ? AND event_type = 'floor_snapshot' ORDER BY id`
+	sqlDamageByPlayer = `
+		SELECT player_id, SUM(COALESCE(json_extract(payload_json, '$.amount'), 0))
+		FROM events WHERE session_id = ? AND event_type = 'damage_dealt' AND player_id IS NOT NULL AND player_id != ''
+		GROUP BY player_id`
+)
+
 // summaryVersion は集計の作り方の版。GameSummary の作り方を変えたら上げる。
 const summaryVersion = 2
 
@@ -94,7 +103,7 @@ func (s *Store) ListUserGameSummaries(ctx context.Context, steamID string, onlyL
 		if r.Outcome == nil || (*r.Outcome != "victory" && *r.Outcome != "death") {
 			continue
 		}
-		d, _, err := s.gameDetailFor(ctx, r.SessionID, steamID, *r.Outcome)
+		d, err := s.gameDetailFor(ctx, r.SessionID, steamID, *r.Outcome)
 		if err != nil {
 			return nil, fmt.Errorf("summary %s: %w", r.SessionID, err)
 		}
@@ -113,33 +122,50 @@ func (s *Store) ListUserGameSummaries(ctx context.Context, steamID string, onlyL
 	return out, nil
 }
 
-// gameDetailFor は保存してある集計を返す。版が古いか、集計の後に新しい記録が届いていれば作り直して保存し、built を true にする。
-func (s *Store) gameDetailFor(ctx context.Context, sessionID, steamID, outcome string) (d gameDetail, built bool, err error) {
-	var lastID int64
+// summaryState は、保存してある集計の JSON と、それが最新か (版が今のもので、集計の後に新しい記録が届いていない) を返す。
+// 集計が無ければ raw は空で fresh は false。lastID は今のそのゲームの events.id の最大。
+func (s *Store) summaryState(ctx context.Context, sessionID, steamID string) (raw string, fresh bool, lastID int64, err error) {
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM events WHERE session_id = ?`, sessionID).Scan(&lastID); err != nil {
-		return gameDetail{}, false, err
+		return "", false, 0, err
 	}
 	var version, cachedID int64
-	var raw string
 	err = s.db.QueryRowContext(ctx, `SELECT version, last_event_id, summary_json FROM game_summaries WHERE session_id = ? AND steam_id = ?`,
 		sessionID, steamID).Scan(&version, &cachedID, &raw)
-	switch {
-	case err == nil && version == summaryVersion && cachedID == lastID:
-		if err := json.Unmarshal([]byte(raw), &d); err != nil {
-			return gameDetail{}, false, err
-		}
-		return d, false, nil
-	case err != nil && !errors.Is(err, sql.ErrNoRows):
-		return gameDetail{}, false, err
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, lastID, nil
 	}
-	start := time.Now()
-	d, err = s.buildGameDetail(ctx, sessionID, steamID, outcome)
 	if err != nil {
-		return gameDetail{}, false, err
+		return "", false, 0, err
+	}
+	return raw, version == summaryVersion && cachedID == lastID, lastID, nil
+}
+
+// gameDetailFor は保存してある集計を返す。最新でなければ作り直して保存する。
+func (s *Store) gameDetailFor(ctx context.Context, sessionID, steamID, outcome string) (gameDetail, error) {
+	raw, fresh, lastID, err := s.summaryState(ctx, sessionID, steamID)
+	if err != nil {
+		return gameDetail{}, err
+	}
+	if fresh {
+		var d gameDetail
+		if err := json.Unmarshal([]byte(raw), &d); err != nil {
+			return gameDetail{}, err
+		}
+		return d, nil
+	}
+	return s.saveGameDetail(ctx, sessionID, steamID, outcome, lastID)
+}
+
+// saveGameDetail は集計を作って保存し、かかった時間をログに出す。
+func (s *Store) saveGameDetail(ctx context.Context, sessionID, steamID, outcome string, lastID int64) (gameDetail, error) {
+	start := time.Now()
+	d, err := s.buildGameDetail(ctx, sessionID, steamID, outcome)
+	if err != nil {
+		return gameDetail{}, err
 	}
 	enc, err := json.Marshal(d)
 	if err != nil {
-		return gameDetail{}, false, err
+		return gameDetail{}, err
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO game_summaries (session_id, steam_id, version, last_event_id, summary_json) VALUES (?, ?, ?, ?, ?)
@@ -147,10 +173,10 @@ func (s *Store) gameDetailFor(ctx context.Context, sessionID, steamID, outcome s
 			version = excluded.version, last_event_id = excluded.last_event_id, summary_json = excluded.summary_json`,
 		sessionID, steamID, summaryVersion, lastID, string(enc))
 	if err != nil {
-		return gameDetail{}, false, err
+		return gameDetail{}, err
 	}
 	slog.Info("game summary built", "session", sessionID, "steam_id", steamID, "elapsed", time.Since(start))
-	return d, true, nil
+	return d, nil
 }
 
 // WarmGameSummaries は、勝利か死亡で終わったゲームについて、参加者全員の集計を作って保存する。
@@ -183,13 +209,17 @@ func (s *Store) WarmGameSummaries(ctx context.Context, sessionID string) (built 
 		return 0, err
 	}
 	for _, t := range targets {
-		_, b, err := s.gameDetailFor(ctx, t.session, t.steamID, t.outcome)
+		_, fresh, lastID, err := s.summaryState(ctx, t.session, t.steamID)
 		if err != nil {
 			return built, fmt.Errorf("summary %s %s: %w", t.session, t.steamID, err)
 		}
-		if b {
-			built++
+		if fresh {
+			continue
 		}
+		if _, err := s.saveGameDetail(ctx, t.session, t.steamID, t.outcome, lastID); err != nil {
+			return built, fmt.Errorf("summary %s %s: %w", t.session, t.steamID, err)
+		}
+		built++
 	}
 	return built, nil
 }
@@ -228,7 +258,7 @@ func isCombatRoom(t string) bool { return t == "Monster" || t == "Elite" || t ==
 const neowModelID = "NEOW"
 
 func (s *Store) buildGameDetail(ctx context.Context, sessionID, steamID, outcome string) (gameDetail, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT payload_json FROM events WHERE session_id = ? AND event_type = 'floor_snapshot' ORDER BY id`, sessionID)
+	rows, err := s.db.QueryContext(ctx, sqlFloorSnapshots, sessionID)
 	if err != nil {
 		return gameDetail{}, err
 	}
@@ -343,10 +373,7 @@ func (s *Store) buildGameDetail(ctx context.Context, sessionID, steamID, outcome
 
 // damageShare は、全員が敵に与えたダメージのうち steamID の分の割合。ほかの人が与えていない (ソロ) か、合計が 0 なら nil。
 func (s *Store) damageShare(ctx context.Context, sessionID, steamID string) (*float64, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT player_id, SUM(COALESCE(json_extract(payload_json, '$.amount'), 0))
-		FROM events WHERE session_id = ? AND event_type = 'damage_dealt' AND player_id IS NOT NULL AND player_id != ''
-		GROUP BY player_id`, sessionID)
+	rows, err := s.db.QueryContext(ctx, sqlDamageByPlayer, sessionID)
 	if err != nil {
 		return nil, err
 	}
