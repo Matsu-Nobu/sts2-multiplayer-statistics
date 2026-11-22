@@ -4,7 +4,8 @@
   import { userHref } from '../lib/auth.svelte';
   import { GAME_MODE_LABEL } from '../lib/labels';
   import {
-    ALL, MULTI, SOLO, MIN_GAMES, applyFilters, characterKey, characterOptions, characterStats, deltaPoints, pct, rate,
+    ALL, MULTI, SOLO, MIN_GAMES, UNKNOWN_VERSION, applyFilters, cardRows, cardTotalRow, characterKey, characterOptions, characterStats,
+    deltaPoints, pct, rate, versionOptions,
     type CardRow, type ChoiceRow, type Column, type EnemyRow, type Filters, type PartnerRow, type RelicRow, type StatsDoc,
   } from '../lib/playerStats';
   import Panel from './ui/Panel.svelte';
@@ -34,7 +35,7 @@
     loadCatalog('ja').then(c => { catalog = c; });
   });
 
-  let filters = $state<Filters>({ mode: ALL, asc: ALL, players: ALL, period: 'all' });
+  let filters = $state<Filters>({ version: ALL, mode: ALL, asc: ALL, players: ALL, period: 'all' });
   let hideLow = $state(true);
   let selected = $state<string | null>(null);
   let ancientSel = $state<string | null>(null);
@@ -42,13 +43,18 @@
 
   const uniq = (xs: string[]) => [...new Set(xs)];
   let games = $derived(doc?.games ?? []);
+  let versionOpts = $derived(versionOptions(games));
   let modeOptions = $derived(uniq(games.map(g => g.game_mode).filter((m): m is string => m != null)));
   let ascOptions = $derived(uniq(games.map(g => g.ascension).filter((a): a is number => a != null).map(String)).sort((a, b) => Number(a) - Number(b)));
   let filtered = $derived(applyFilters(games, filters, new Date()));
   let tabs = $derived(characterOptions(filtered));
   let current = $derived(tabs.find(t => t.key === selected) ?? tabs[0] ?? null);
-  let stats = $derived(current ? characterStats(filtered.filter(g => characterKey(g) === current.key), catalog) : null);
+  let charGames = $derived(current ? filtered.filter(g => characterKey(g) === current.key) : []);
+  let stats = $derived(current ? characterStats(charGames, catalog) : null);
   let base = $derived(stats ? rate(stats.wins, stats.games) : null);
+  let actCount = $derived(stats?.acts.length ?? 0);
+  let cards = $derived(cardRows(charGames, catalog, actCount));
+  let cardTotal = $derived(current ? cardTotalRow(charGames, current.name, actCount) : undefined);
   let ancient = $derived(stats ? stats.ancients.find(a => a.id === ancientSel) ?? stats.ancients[0] ?? null : null);
   let event = $derived(stats ? stats.events.find(e => e.id === eventSel) ?? stats.events[0] ?? null : null);
 
@@ -69,14 +75,26 @@
   const count = <R,>(label: string, get: (r: R) => number): Column<R> => ({ label, num: true, sort: get, text: r => String(get(r)) });
 
   const cardWin = (r: CardRow) => rate(r.wins, r.games);
-  let cardColumns = $derived<Column<CardRow>[]>([
-    { label: 'カード', sort: r => r.name, text: r => r.name },
-    count('提示回数', r => r.offered),
-    { label: '取得率', num: true, sort: r => rate(r.picks, r.offered), text: r => pct(rate(r.picks, r.offered)) },
-    count('取得ゲーム数', r => r.games),
-    winRateColumn(cardWin),
-    deltaColumn(cardWin),
-  ]);
+  const cardPick = (act: number) => (r: CardRow) => rate(r.picks[act], r.offered[act]);
+  const cardClear = (act: number) => (r: CardRow) => rate(r.cleared[act], r.pickedGames[act]);
+  let cardColumns = $derived.by<Column<CardRow>[]>(() => {
+    const acts = Array.from({ length: actCount }, (_, i) => i);
+    const delta = deltaColumn(cardWin);
+    return [
+      { label: 'カード', sort: r => r.name, text: r => r.name },
+      count('取得ゲーム数', r => r.games),
+      ...acts.map((a): Column<CardRow> => ({ label: `Act ${a + 1}`, group: '取得率', num: true, sort: cardPick(a), text: r => pct(cardPick(a)(r)) })),
+      ...acts.map((a): Column<CardRow> => {
+        const v = cardClear(a), totalV = cardTotal ? cardClear(a)(cardTotal) : null;
+        return {
+          label: `Act ${a + 1}`, group: '取得時の突破率', num: true, sort: v, text: r => pct(v(r)),
+          tone: r => { const d = deltaPoints(v(r), totalV); return d == null || d === 0 ? null : d > 0 ? 'ok' : 'bad'; },
+        };
+      }),
+      winRateColumn(cardWin),
+      { ...delta, text: r => (r.total ? '—' : delta.text(r)) },
+    ];
+  });
   const relicWin = (r: RelicRow) => rate(r.wins, r.games);
   let relicColumns = $derived<Column<RelicRow>[]>([
     { label: 'レリック', sort: r => r.name, text: r => r.name },
@@ -156,6 +174,7 @@
   <div class="space-y-4">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       {@render filter('f-char', 'キャラクター', current?.key ?? '', tabs.map(t => [t.key, `${t.name} (${t.games} ゲーム)`] as [string, string]), v => (selected = v))}
+      {@render filter('f-version', 'バージョン', filters.version, [[ALL, 'すべて'], ...versionOpts.map(v => [v.key, `${v.key === UNKNOWN_VERSION ? '不明' : v.key} (${v.games} ゲーム)`] as [string, string])], v => (filters.version = v))}
       {@render filter('f-mode', 'ゲームモード', filters.mode, [[ALL, 'すべて'], ...modeOptions.map(m => [m, GAME_MODE_LABEL[m] ?? m] as [string, string])], v => (filters.mode = v))}
       {@render filter('f-asc', 'アセンション', filters.asc, [[ALL, 'すべて'], ...ascOptions.map(a => [a, a] as [string, string])], v => (filters.asc = v))}
       {@render filter('f-players', '人数', filters.players, [[ALL, 'すべて'], [SOLO, 'ソロ'], [MULTI, 'マルチプレイ']], v => (filters.players = v))}
@@ -191,7 +210,10 @@
       </Panel>
     {:else if section === 'cards'}
       <Panel title="カード">
-        <StatsTable columns={cardColumns} rows={stats.cards} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={3} />
+        <!-- Act の数が変わると列の数が変わるので、並べ替えの状態ごと作り直す -->
+        {#key actCount}
+          <StatsTable columns={cardColumns} rows={cards} totalRow={cardTotal} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={1} />
+        {/key}
       </Panel>
     {:else if section === 'relics'}
       <Panel title="レリック">

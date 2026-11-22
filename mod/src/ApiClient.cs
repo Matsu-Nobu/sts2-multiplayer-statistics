@@ -94,7 +94,8 @@ internal record CreateSessionRequest(
     string? HostSteamId = null,
     string? CharacterId = null,
     int?    Ascension   = null,
-    string? Seed        = null
+    string? Seed        = null,
+    string? GameVersion = null
 );
 
 /// <summary>POST /sessions のレスポンス。</summary>

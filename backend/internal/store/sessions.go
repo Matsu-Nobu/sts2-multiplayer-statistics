@@ -15,6 +15,7 @@ type Session struct {
 	CharacterID *string `json:"character_id"`
 	Ascension   *int    `json:"ascension"`
 	Seed        *string `json:"seed"`
+	GameVersion *string `json:"game_version"`
 	Outcome     *string `json:"outcome"`
 	FinalFloor  *int    `json:"final_floor"`
 	FinishedAt  *string `json:"finished_at"`
@@ -30,14 +31,15 @@ type CreateSessionInput struct {
 	CharacterID *string
 	Ascension   *int
 	Seed        *string
+	GameVersion *string
 }
 
 func (s *Store) CreateSession(ctx context.Context, in CreateSessionInput) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, created_at, host_name, host_steam_id, character_id, ascension, seed, write_token)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.ID, now, in.HostName, in.HostSteamID, in.CharacterID, in.Ascension, in.Seed, in.WriteToken,
+		`INSERT INTO sessions (id, created_at, host_name, host_steam_id, character_id, ascension, seed, game_version, write_token)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.ID, now, in.HostName, in.HostSteamID, in.CharacterID, in.Ascension, in.Seed, in.GameVersion, in.WriteToken,
 	)
 	return err
 }
@@ -47,12 +49,12 @@ var ErrSessionNotFound = errors.New("session not found")
 
 func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, created_at, host_name, host_steam_id, character_id, ascension, seed,
+		`SELECT id, created_at, host_name, host_steam_id, character_id, ascension, seed, game_version,
 		        outcome, final_floor, finished_at, visibility, write_token
 		 FROM sessions WHERE id = ?`, id)
 	var sess Session
 	err := row.Scan(&sess.ID, &sess.CreatedAt, &sess.HostName, &sess.HostSteamID, &sess.CharacterID,
-		&sess.Ascension, &sess.Seed, &sess.Outcome, &sess.FinalFloor, &sess.FinishedAt, &sess.Visibility, &sess.WriteToken)
+		&sess.Ascension, &sess.Seed, &sess.GameVersion, &sess.Outcome, &sess.FinalFloor, &sess.FinishedAt, &sess.Visibility, &sess.WriteToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrSessionNotFound
 	}

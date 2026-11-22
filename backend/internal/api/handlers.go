@@ -19,6 +19,7 @@ type createSessionReq struct {
 	CharacterID *string `json:"character_id,omitempty"`
 	Ascension   *int    `json:"ascension,omitempty"`
 	Seed        *string `json:"seed,omitempty"`
+	GameVersion *string `json:"game_version,omitempty"`
 }
 
 type createSessionRes struct {
@@ -47,6 +48,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		CharacterID: in.CharacterID,
 		Ascension:   in.Ascension,
 		Seed:        in.Seed,
+		GameVersion: in.GameVersion,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create session")

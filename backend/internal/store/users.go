@@ -62,6 +62,7 @@ type UserRun struct {
 	CharacterName *string  `json:"character_name"`
 	GameMode      *string  `json:"game_mode"` // Standard / Blitz / Daily / Dread
 	Ascension     *int     `json:"ascension"`
+	GameVersion   *string  `json:"game_version"`
 	Outcome       *string  `json:"outcome"`
 	FinalFloor    *int     `json:"final_floor"`
 	Visibility    string   `json:"visibility"`
@@ -74,7 +75,7 @@ type UserRun struct {
 // onlyListed なら、公開で、かつ本人がページに載せているランだけを返す (本人以外が見るとき)。
 func (s *Store) ListUserRuns(ctx context.Context, steamID string, onlyListed bool) ([]UserRun, error) {
 	q := `
-		SELECT s.id, s.created_at, sp.character_id, sp.character_name, sp.game_mode, s.ascension, s.outcome, s.final_floor,
+		SELECT s.id, s.created_at, sp.character_id, sp.character_name, sp.game_mode, s.ascension, s.game_version, s.outcome, s.final_floor,
 		       s.visibility, sp.hidden, COALESCE(s.host_steam_id, '') = sp.steam_id
 		FROM session_players sp
 		JOIN sessions s ON s.id = sp.session_id
@@ -93,7 +94,7 @@ func (s *Store) ListUserRuns(ctx context.Context, steamID string, onlyListed boo
 		var r UserRun
 		var hidden int
 		var recorder bool
-		if err := rows.Scan(&r.SessionID, &r.CreatedAt, &r.CharacterID, &r.CharacterName, &r.GameMode, &r.Ascension,
+		if err := rows.Scan(&r.SessionID, &r.CreatedAt, &r.CharacterID, &r.CharacterName, &r.GameMode, &r.Ascension, &r.GameVersion,
 			&r.Outcome, &r.FinalFloor, &r.Visibility, &hidden, &recorder); err != nil {
 			return nil, err
 		}

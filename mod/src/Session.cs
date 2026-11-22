@@ -34,7 +34,8 @@ internal static class Session
                 HostSteamId: localId != 0UL ? localId.ToString() : null,
                 CharacterId: characterId,
                 Ascension:   ascension,
-                Seed:        string.IsNullOrEmpty(seed) ? null : seed),
+                Seed:        string.IsNullOrEmpty(seed) ? null : seed,
+                GameVersion: GameVersion.Current),
             runMeta:           new RunMetaForKey(localId, seedForKey, characterId, ascension, gameMode),
             store:             store);
     }

@@ -12,13 +12,15 @@ import (
 // プレイヤーの統計 (docs/spec/player-stats.md、docs/spec/api.md「GET /api/users/{steam_id}/stats」) に使う、ゲームごとの集計。
 
 // summaryVersion は集計の作り方の版。GameSummary の作り方を変えたら上げる。
-const summaryVersion = 1
+const summaryVersion = 2
 
+// CardOffer は、1 つの Act で同じカードが提示された回数と取った回数。
 type CardOffer struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Offered int    `json:"offered"`
 	Picked  int    `json:"picked"`
+	Act     int    `json:"act_index"` // 0 始まり
 }
 
 type Model struct {
@@ -59,6 +61,7 @@ type GameSummary struct {
 	CharacterName *string  `json:"character_name"`
 	GameMode      *string  `json:"game_mode"`
 	Ascension     *int     `json:"ascension"`
+	GameVersion   *string  `json:"game_version"`
 	Outcome       string   `json:"outcome"`
 	FinalFloor    *int     `json:"final_floor"`
 	Partners      []Player `json:"partners"`
@@ -101,7 +104,7 @@ func (s *Store) ListUserGameSummaries(ctx context.Context, steamID string, onlyL
 		}
 		out = append(out, GameSummary{
 			SessionID: r.SessionID, CreatedAt: r.CreatedAt, CharacterID: r.CharacterID, CharacterName: r.CharacterName,
-			GameMode: r.GameMode, Ascension: r.Ascension, Outcome: *r.Outcome, FinalFloor: r.FinalFloor,
+			GameMode: r.GameMode, Ascension: r.Ascension, GameVersion: r.GameVersion, Outcome: *r.Outcome, FinalFloor: r.FinalFloor,
 			Partners: partners, gameDetail: d,
 		})
 	}
@@ -208,7 +211,11 @@ func (s *Store) buildGameDetail(ctx context.Context, sessionID, steamID, outcome
 	sort.Ints(floors)
 
 	d := gameDetail{CardOffers: []CardOffer{}, Relics: []Model{}, Fights: []Fight{}, RestChoices: []string{}, Ancients: []AncientVisit{}, Events: []EventVisit{}}
-	cardIdx := map[string]int{}
+	type cardKey struct {
+		id  string
+		act int
+	}
+	cardIdx := map[cardKey]int{}
 	relicSeen := map[string]bool{}
 	for i, f := range floors {
 		fs := byFloor[f]
@@ -238,11 +245,12 @@ func (s *Store) buildGameDetail(ctx context.Context, sessionID, steamID, outcome
 		}
 		if !shop {
 			for _, c := range p.CardChoices {
-				k, ok := cardIdx[c.Card.ID]
+				key := cardKey{c.Card.ID, fs.ActIndex}
+				k, ok := cardIdx[key]
 				if !ok {
 					k = len(d.CardOffers)
-					cardIdx[c.Card.ID] = k
-					d.CardOffers = append(d.CardOffers, CardOffer{ID: c.Card.ID, Name: c.Card.Name})
+					cardIdx[key] = k
+					d.CardOffers = append(d.CardOffers, CardOffer{ID: c.Card.ID, Name: c.Card.Name, Act: fs.ActIndex})
 				}
 				d.CardOffers[k].Offered++
 				if c.WasPicked {
