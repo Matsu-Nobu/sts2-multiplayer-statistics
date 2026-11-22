@@ -5,6 +5,7 @@
   import { loadCatalog, type CatalogLookup } from '../lib/catalog';
   import { route, navigate, link, href, type Page } from '../lib/router.svelte';
   import { setSession } from '../lib/session';
+  import { combatActs } from '../lib/actRange';
   import { playerColor } from '../lib/players';
   import Badge from './ui/Badge.svelte';
   import RunSettings from './RunSettings.svelte';
@@ -27,6 +28,7 @@
   let powerNames = $derived(buildPowerNames(doc.events));
   let cardNames = $derived(buildCardNames(doc.events));
   let combatEvents = $derived(latestCombatEvents(doc.events).filter(e => e.combat_index != null));
+  let acts = $derived(combatActs(doc.events, combats.map(c => c.combat_index)));
   let eventsByCombat = $derived.by(() => {
     const m = new Map<number, typeof combatEvents>();
     for (const ev of combatEvents) {
@@ -43,6 +45,7 @@
     get playerIds() { return playerIds; }, get playerNames() { return playerNames; },
     get powerNames() { return powerNames; }, get cardNames() { return cardNames; }, get catalog() { return catalog; },
     get combatEvents() { return combatEvents; }, get eventsByCombat() { return eventsByCombat; },
+    get combatActs() { return acts; },
     get player() { return player; },
   });
 

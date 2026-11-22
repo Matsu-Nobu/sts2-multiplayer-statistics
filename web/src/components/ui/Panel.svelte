@@ -15,7 +15,7 @@
 
 <section class="bg-bg-1 border border-bg-3 rounded-lg min-w-0">
   {#if title || actions}
-    <header class="flex items-center justify-between gap-3 px-4 py-3 {flush ? 'border-b border-bg-3' : ''}">
+    <header class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 {flush ? 'border-b border-bg-3' : ''}">
       <h2 class="text-base font-semibold text-slate-100 flex items-center gap-2 min-w-0">
         <span class="truncate">{title}</span>
         {#if scope}<span class="text-xs font-normal text-slate-400 whitespace-nowrap">{scope}</span>{/if}

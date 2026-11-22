@@ -15,6 +15,7 @@ export interface SessionCtx {
   readonly catalog: CatalogLookup | null;
   readonly combatEvents: EventRecord[];                  // 戦闘内 event (やり直し前は除く)
   readonly eventsByCombat: Map<number, EventRecord[]>;
+  readonly combatActs: Map<number, number>;              // 戦闘の階 → Act (0 始まり)
   readonly player: string;                               // 選んでいるプレイヤー
 }
 
