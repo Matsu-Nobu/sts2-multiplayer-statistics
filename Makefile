@@ -96,9 +96,11 @@ mod-use-public:
 
 # 手元で動かすときのログインの cookie の署名の鍵 (開発専用。本番は Fly.io の secrets の AUTH_COOKIE_KEY)
 DEV_AUTH_COOKIE_KEY := 6465762d6f6e6c792d6b65792d6e6f742d666f722d70726f64756374696f6e21
+# 手元では Steam に問い合わせが通らないので、フレンドに公開したページは本人以外に見えない
+DEV_STEAM_WEB_API_KEY := dev-only-not-a-real-key
 
 backend-dev:
-	cd $(BACKEND_DIR) && AUTH_COOKIE_KEY=$(DEV_AUTH_COOKIE_KEY) go run ./cmd/server
+	cd $(BACKEND_DIR) && AUTH_COOKIE_KEY=$(DEV_AUTH_COOKIE_KEY) STEAM_WEB_API_KEY=$(DEV_STEAM_WEB_API_KEY) go run ./cmd/server
 
 backend-test:
 	cd $(BACKEND_DIR) && go test ./...
@@ -119,7 +121,7 @@ app-build:
 	cd $(BACKEND_DIR) && go build -o bin/server ./cmd/server
 
 app-run: app-build
-	AUTH_COOKIE_KEY=$(DEV_AUTH_COOKIE_KEY) $(BACKEND_DIR)/bin/server
+	AUTH_COOKIE_KEY=$(DEV_AUTH_COOKIE_KEY) STEAM_WEB_API_KEY=$(DEV_STEAM_WEB_API_KEY) $(BACKEND_DIR)/bin/server
 
 # --- Docker -------------------------------------------------------------------
 
@@ -131,6 +133,7 @@ docker-run: docker-build
 	docker run --rm --name $(DOCKER_IMAGE) \
 		-p 8080:8080 \
 		-e AUTH_COOKIE_KEY=$(DEV_AUTH_COOKIE_KEY) \
+		-e STEAM_WEB_API_KEY=$(DEV_STEAM_WEB_API_KEY) \
 		-v $(DOCKER_DATA_DIR):/data \
 		$(DOCKER_IMAGE):dev
 
@@ -182,6 +185,6 @@ FLYCTL ?= $(shell command -v flyctl 2>/dev/null || echo $(HOME)/.fly/bin/flyctl)
 
 deploy: backend-test
 	cd $(WEB_DIR) && npm run check
-	@$(FLYCTL) secrets list -a sts2stats | grep -q AUTH_COOKIE_KEY || \
-		(echo "Fly.io の secrets に AUTH_COOKIE_KEY がありません (無いとサーバが起動しない)。docs/operations.md の手順で入れてください" && exit 1)
+	@for k in AUTH_COOKIE_KEY STEAM_WEB_API_KEY; do $(FLYCTL) secrets list -a sts2stats | grep -q $$k || \
+		{ echo "Fly.io の secrets に $$k がありません (無いとサーバが起動しない)。docs/operations.md の手順で入れてください"; exit 1; }; done
 	$(FLYCTL) deploy --remote-only

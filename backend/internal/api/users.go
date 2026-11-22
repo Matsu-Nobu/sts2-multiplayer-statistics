@@ -60,9 +60,9 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 type meRes struct {
-	SteamID       string `json:"steam_id"`
-	DisplayName   string `json:"display_name"`
-	ProfilePublic bool   `json:"profile_public"`
+	SteamID           string `json:"steam_id"`
+	DisplayName       string `json:"display_name"`
+	ProfileVisibility string `json:"profile_visibility"`
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +76,7 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
 		return
 	}
-	writeJSON(w, http.StatusOK, meRes{SteamID: me, DisplayName: displayName(p), ProfilePublic: p.ProfilePublic})
+	writeJSON(w, http.StatusOK, meRes{SteamID: me, DisplayName: displayName(p), ProfileVisibility: p.Visibility})
 }
 
 func displayName(p store.UserProfile) string {
@@ -101,7 +101,12 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	isMe := me != "" && me == id
-	if !isMe && !p.ProfilePublic {
+	allowed, err := s.canViewProfile(r, p, me, isMe)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to check steam friends")
+		return
+	}
+	if !allowed {
 		writeError(w, http.StatusForbidden, "profile is private")
 		return
 	}
@@ -115,7 +120,7 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, userPageRes{
-		User: meRes{SteamID: id, DisplayName: displayName(p), ProfilePublic: p.ProfilePublic},
+		User: meRes{SteamID: id, DisplayName: displayName(p), ProfileVisibility: p.Visibility},
 		IsMe: isMe,
 		Runs: runs,
 	})
@@ -145,21 +150,33 @@ func decodeBody(w http.ResponseWriter, r *http.Request, into any) bool {
 	return true
 }
 
+// canViewProfile は、me がユーザー p のページを見てよいか (docs/spec/user-pages.md「見られる人」)。
+func (s *Server) canViewProfile(r *http.Request, p store.UserProfile, me string, isMe bool) (bool, error) {
+	switch {
+	case isMe || p.Visibility == "public":
+		return true, nil
+	case p.Visibility == "friends" && me != "":
+		return s.Friends.AreFriends(r.Context(), p.SteamID, me)
+	default:
+		return false, nil
+	}
+}
+
 func (s *Server) patchMe(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		ProfilePublic *bool `json:"profile_public"`
+		ProfileVisibility string `json:"profile_visibility"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
 	}
-	if in.ProfilePublic == nil {
-		writeError(w, http.StatusBadRequest, "profile_public is required")
+	if in.ProfileVisibility != "public" && in.ProfileVisibility != "friends" && in.ProfileVisibility != "private" {
+		writeError(w, http.StatusBadRequest, "profile_visibility must be public, friends or private")
 		return
 	}
 	me := s.viewer(r)
 	p, err := s.Store.GetUserProfile(r.Context(), me)
 	if err == nil {
-		err = s.Store.SetProfilePublic(r.Context(), me, displayName(p), *in.ProfilePublic)
+		err = s.Store.SetProfileVisibility(r.Context(), me, displayName(p), in.ProfileVisibility)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update user")

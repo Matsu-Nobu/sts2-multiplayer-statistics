@@ -385,11 +385,11 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 
 ### `GET /api/users/{steam_id}`
 
-本人がログインして開いたときは全部のランを返す。本人以外は、ユーザーページが公開のときだけ、公開で本人がページに載せているランを返す。非公開なら 403、知らない Steam ID なら 404。
+本人がログインして開いたときは全部のランを返す。本人以外は、ユーザーページが全体に公開のとき、または Steam のフレンドに公開で見に来た人がフレンドのときだけ、公開で本人がページに載せているランを返す (user-pages.md「Steam のフレンドかどうか」)。非公開なら 403、知らない Steam ID なら 404。
 
 ```json
 {
-  "user": { "steam_id": "765...", "display_name": "Nobu", "profile_public": false },
+  "user": { "steam_id": "765...", "display_name": "Nobu", "profile_visibility": "private" },
   "is_me": true,
   "runs": [{
     "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
@@ -411,7 +411,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 
 | リクエスト | body | 権限が無いとき |
 |---|---|---|
-| `PATCH /api/me` | `{ "profile_public": true }` | — |
+| `PATCH /api/me` | `{ "profile_visibility": "public" \| "friends" \| "private" }` | — |
 | `PATCH /api/sessions/{id}` | `{ "visibility": "public" \| "private" }` | 記録した人でなければ 403 |
 | `PATCH /api/sessions/{id}/listing` | `{ "hidden": true }` | 参加者でなければ 403 |
 | `DELETE /api/sessions/{id}` | — | 記録した人でなければ 403。消すと記録・参加者もまとめて消える |

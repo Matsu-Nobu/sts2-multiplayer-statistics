@@ -69,6 +69,8 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
 1. 初めて設定するときだけ、ログインの cookie の署名の鍵を Fly.io の secrets に入れる。鍵は DB に置かない (DB が漏れても、なりすましてログインできないように)。
    `openssl rand -hex 32 | sed 's/^/AUTH_COOKIE_KEY=/' | flyctl secrets import --stage -a sts2stats`。
    鍵を入れ替えると、全員のログインが切れる。
+   Steam の Web API キー (https://steamcommunity.com/dev/apikey で発行) も入れる。
+   `flyctl secrets set --stage STEAM_WEB_API_KEY=<キー> -a sts2stats`。Steam のフレンドに公開したマイページの判定に使う。
 2. Fly.io のコマンドを入れる (`curl -L https://fly.io/install.sh | sh`。Windows は WSL の中で入れる)。
 3. `flyctl auth login` でログインする (ブラウザで承認する)。
 4. デプロイするコミットを手元で選んだ状態で `make deploy` を実行する。backend のテストと web の型チェックが通った後に、

@@ -1,6 +1,7 @@
 /** ログインしている人 (spec user-pages.md「ログイン」)。backend の /api/me を 1 回だけ読む。 */
 
-export interface Me { steam_id: string; display_name: string; profile_public: boolean }
+export type ProfileVisibility = 'public' | 'friends' | 'private';
+export interface Me { steam_id: string; display_name: string; profile_visibility: ProfileVisibility }
 
 /** ログインしている人とランの関係 (GET /api/sessions/{id}/me。spec ui.md「ランの設定」)。 */
 export interface RunRelation { is_participant: boolean; is_recorder: boolean; visibility: 'public' | 'private'; hidden: boolean }

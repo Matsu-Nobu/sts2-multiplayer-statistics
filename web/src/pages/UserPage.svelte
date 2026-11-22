@@ -15,7 +15,7 @@
     visibility: 'public' | 'private'; hidden: boolean; is_recorder: boolean;
     participants: { steam_id: string; display_name: string }[];
   }
-  interface UserPageDoc { user: { steam_id: string; display_name: string; profile_public: boolean }; is_me: boolean; runs: Game[] }
+  interface UserPageDoc { user: { steam_id: string; display_name: string; profile_visibility: 'public' | 'friends' | 'private' }; is_me: boolean; runs: Game[] }
 
   interface Props { steamId: string }
   let { steamId }: Props = $props();
@@ -93,7 +93,7 @@
       <h1 class="text-xl font-semibold text-slate-100 break-words">{doc.user.display_name}</h1>
       {#if doc.is_me}
         <div class="mt-1 text-xs text-slate-500">
-          {#if doc.user.profile_public}このページは公開中です。{:else}このページは非公開です。<a href="/settings" class="text-accent hover:underline">設定</a>から公開できます。{/if}
+          {#if doc.user.profile_visibility === 'public'}このページは全体に公開中です。{:else if doc.user.profile_visibility === 'friends'}このページは Steam のフレンドに公開中です。{:else}このページは非公開です。{/if}<a href="/settings" class="text-accent hover:underline">設定</a>から変えられます。
         </div>
       {/if}
     </div>
