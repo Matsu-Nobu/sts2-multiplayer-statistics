@@ -64,6 +64,9 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
+	// 5 は gzip の圧縮の強さ (1〜9)。
+	// 圧縮するのは、リクエストの Accept-Encoding に gzip があり、応答が JSON・HTML・JS・CSS などの文字のときだけである。
+	r.Use(middleware.Compress(5))
 	r.Use(s.cors)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

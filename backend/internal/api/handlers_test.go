@@ -292,6 +292,66 @@ func TestGetSession_ETag_ChangesAfterEvent(t *testing.T) {
 	}
 }
 
+func snapshotEvent(uuid, occurredAt string, floor int) map[string]any {
+	return map[string]any{
+		"event_uuid": uuid, "event_type": "floor_snapshot", "occurred_at": occurredAt, "floor": floor,
+		"payload": map[string]any{"floor": floor, "act_index": 0, "is_final": false, "rooms": []any{}, "players": []any{}},
+	}
+}
+
+func TestGetSession_FloorSnapshotLatestPerFloor(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, token := createSession(t, srv)
+	res := do(t, srv, http.MethodPost, "/sessions/"+id+"/events", token, []map[string]any{
+		snapshotEvent("f1-new", "2026-05-05T00:00:02Z", 1),
+		snapshotEvent("f1-old", "2026-05-05T00:00:01Z", 1),
+		snapshotEvent("f2-first", "2026-05-05T00:00:03Z", 2),
+		snapshotEvent("f2-second", "2026-05-05T00:00:03Z", 2),
+		snapshotEvent("f3-only", "2026-05-05T00:00:04Z", 3),
+		eventFixture("played-1", "card_played", 1, 1, 0),
+		eventFixture("played-2", "card_played", 1, 1, 1),
+	})
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("post status=%d", res.StatusCode)
+	}
+
+	var doc sessionDoc
+	decodeJSON(t, do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil), &doc)
+	var got []string
+	for _, raw := range doc.Events {
+		var ev struct {
+			UUID string `json:"event_uuid"`
+		}
+		if err := json.Unmarshal(raw, &ev); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		got = append(got, ev.UUID)
+	}
+	// 同じ階の記録は、occurred_at が遅いものを残し、occurred_at が同じなら後に届いたものを残す
+	want := []string{"played-1", "played-2", "f1-new", "f2-second", "f3-only"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("events = %v, want %v", got, want)
+	}
+}
+
+func TestGetSession_Gzip(t *testing.T) {
+	srv, _ := newTestServer(t)
+	id, _ := createSession(t, srv)
+	for _, tc := range []struct {
+		acceptEncoding, wantEncoding string
+	}{{"gzip", "gzip"}, {"", ""}} {
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+id, nil)
+		if tc.acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", tc.acceptEncoding)
+		}
+		rec := httptest.NewRecorder()
+		srv.Routes().ServeHTTP(rec, req)
+		if got := rec.Header().Get("Content-Encoding"); got != tc.wantEncoding {
+			t.Errorf("Accept-Encoding=%q: Content-Encoding = %q, want %q", tc.acceptEncoding, got, tc.wantEncoding)
+		}
+	}
+}
+
 func eventFixture(uuid, eventType string, combat, turn, seq int) map[string]any {
 	return map[string]any{
 		"event_uuid":   uuid,

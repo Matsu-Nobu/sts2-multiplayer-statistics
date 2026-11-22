@@ -191,7 +191,7 @@ Content-Type: application/json
 #### floor_snapshot
 
 ゲーム自身の階ごとの記録 (`MapPointHistoryEntry`) の写し。同じ `floor` の snapshot は何度でも届く。
-**web は階ごとに最後に受け取ったものだけを使う。**
+**web は階ごとに最後に受け取ったものだけを使う。** そのため `GET /api/sessions/{id}` は、同じ `floor` の snapshot のうち、`occurred_at`・`sequence`・保存した順の順で最後のものだけを返す。
 
 ```json
 {
@@ -330,7 +330,9 @@ web はカード別の表でだけ使う (combat-stats.md「カード別 (CardTa
 
 ## `GET /api/sessions/{id}`
 
-WebUI 用の閲覧エンドポイント。セッション全データを返す。
+WebUI 用の閲覧エンドポイント。セッション全データを返す。ただし `floor_snapshot` は階ごとに最後のものだけを返す (「floor_snapshot」)。
+
+サーバは、リクエストの `Accept-Encoding` に `gzip` があれば、この API を含む JSON・HTML・JS・CSS の応答を gzip で圧縮して返す。
 
 ### ETag によるポーリング効率化
 
