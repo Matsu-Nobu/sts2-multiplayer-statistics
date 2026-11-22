@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"testing"
+
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 )
 
 // プレイヤーの統計の API (docs/spec/api.md「GET /api/users/{steam_id}/stats」) のテスト。
@@ -237,4 +240,57 @@ func TestGetUserStats_RebuildsAfterNewEvents(t *testing.T) {
 	if _, page := getStats(t, srv, hostID, hostID); *page.Games[0].DamageShare != 0.3 {
 		t.Fatalf("share after new event=%v", *page.Games[0].DamageShare)
 	}
+}
+
+func summaryCount(t *testing.T, st *store.Store) int {
+	t.Helper()
+	var n int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM game_summaries`).Scan(&n); err != nil {
+		t.Fatalf("count summaries: %v", err)
+	}
+	return n
+}
+
+func TestPostEvents_WarmsSummariesAtRunEnd(t *testing.T) {
+	cases := []struct {
+		name    string
+		outcome string
+		want    int
+	}{
+		{"勝利で終わると参加者全員の集計を保存する", "victory", 2},
+		{"死亡で終わると参加者全員の集計を保存する", "death", 2},
+		{"放棄したゲームは集計しない", "abandoned", 0},
+		{"終わっていないゲームは集計しない", "", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv, st := newTestServer(t)
+			seedFinishedRun(t, srv, c.outcome)
+			srv.warming.Wait()
+			if got := summaryCount(t, st); got != c.want {
+				t.Fatalf("summaries=%d want %d", got, c.want)
+			}
+		})
+	}
+}
+
+func TestWarmGameSummaries_AllGames(t *testing.T) {
+	srv, st := newTestServer(t)
+	seedFinishedRun(t, srv, "victory")
+	seedFinishedRun(t, srv, "death")
+	srv.warming.Wait()
+	if _, err := st.DB().Exec(`DELETE FROM game_summaries`); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("すべての終わったゲームの参加者の集計を作る", func(t *testing.T) {
+		if n, err := st.WarmGameSummaries(context.Background(), ""); err != nil || n != 4 {
+			t.Fatalf("built=%d err=%v", n, err)
+		}
+	})
+	t.Run("保存してある集計が新しければ作り直さない", func(t *testing.T) {
+		if n, err := st.WarmGameSummaries(context.Background(), ""); err != nil || n != 0 {
+			t.Fatalf("built=%d err=%v", n, err)
+		}
+	})
 }

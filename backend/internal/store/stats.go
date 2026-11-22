@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
+	"time"
 )
 
 // プレイヤーの統計 (docs/spec/player-stats.md、docs/spec/api.md「GET /api/users/{steam_id}/stats」) に使う、ゲームごとの集計。
@@ -92,7 +94,7 @@ func (s *Store) ListUserGameSummaries(ctx context.Context, steamID string, onlyL
 		if r.Outcome == nil || (*r.Outcome != "victory" && *r.Outcome != "death") {
 			continue
 		}
-		d, err := s.gameDetailFor(ctx, r.SessionID, steamID, *r.Outcome)
+		d, _, err := s.gameDetailFor(ctx, r.SessionID, steamID, *r.Outcome)
 		if err != nil {
 			return nil, fmt.Errorf("summary %s: %w", r.SessionID, err)
 		}
@@ -111,40 +113,85 @@ func (s *Store) ListUserGameSummaries(ctx context.Context, steamID string, onlyL
 	return out, nil
 }
 
-// gameDetailFor は保存してある集計を返す。版が古いか、集計の後に新しい記録が届いていれば作り直して保存する。
-func (s *Store) gameDetailFor(ctx context.Context, sessionID, steamID, outcome string) (gameDetail, error) {
+// gameDetailFor は保存してある集計を返す。版が古いか、集計の後に新しい記録が届いていれば作り直して保存し、built を true にする。
+func (s *Store) gameDetailFor(ctx context.Context, sessionID, steamID, outcome string) (d gameDetail, built bool, err error) {
 	var lastID int64
 	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), 0) FROM events WHERE session_id = ?`, sessionID).Scan(&lastID); err != nil {
-		return gameDetail{}, err
+		return gameDetail{}, false, err
 	}
 	var version, cachedID int64
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT version, last_event_id, summary_json FROM game_summaries WHERE session_id = ? AND steam_id = ?`,
+	err = s.db.QueryRowContext(ctx, `SELECT version, last_event_id, summary_json FROM game_summaries WHERE session_id = ? AND steam_id = ?`,
 		sessionID, steamID).Scan(&version, &cachedID, &raw)
 	switch {
 	case err == nil && version == summaryVersion && cachedID == lastID:
-		var d gameDetail
 		if err := json.Unmarshal([]byte(raw), &d); err != nil {
-			return gameDetail{}, err
+			return gameDetail{}, false, err
 		}
-		return d, nil
+		return d, false, nil
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
-		return gameDetail{}, err
+		return gameDetail{}, false, err
 	}
-	d, err := s.buildGameDetail(ctx, sessionID, steamID, outcome)
+	start := time.Now()
+	d, err = s.buildGameDetail(ctx, sessionID, steamID, outcome)
 	if err != nil {
-		return gameDetail{}, err
+		return gameDetail{}, false, err
 	}
 	enc, err := json.Marshal(d)
 	if err != nil {
-		return gameDetail{}, err
+		return gameDetail{}, false, err
 	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO game_summaries (session_id, steam_id, version, last_event_id, summary_json) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(session_id, steam_id) DO UPDATE SET
 			version = excluded.version, last_event_id = excluded.last_event_id, summary_json = excluded.summary_json`,
 		sessionID, steamID, summaryVersion, lastID, string(enc))
-	return d, err
+	if err != nil {
+		return gameDetail{}, false, err
+	}
+	slog.Info("game summary built", "session", sessionID, "steam_id", steamID, "elapsed", time.Since(start))
+	return d, true, nil
+}
+
+// WarmGameSummaries は、勝利か死亡で終わったゲームについて、参加者全員の集計を作って保存する。
+// 統計のタブを開いたときに集計を待たせないため、ゲームが終わった時点で呼ぶ。
+// sessionID が空なら、すべての終わったゲームを対象にする (集計の作り方を変えた後の起動時に呼ぶ)。
+func (s *Store) WarmGameSummaries(ctx context.Context, sessionID string) (built int, err error) {
+	q := `SELECT sp.session_id, sp.steam_id, s.outcome FROM session_players sp JOIN sessions s ON s.id = sp.session_id
+		WHERE s.outcome IN ('victory', 'death')`
+	args := []any{}
+	if sessionID != "" {
+		q += ` AND s.id = ?`
+		args = append(args, sessionID)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	type target struct{ session, steamID, outcome string }
+	var targets []target
+	for rows.Next() {
+		var t target
+		if err := rows.Scan(&t.session, &t.steamID, &t.outcome); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		targets = append(targets, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, t := range targets {
+		_, b, err := s.gameDetailFor(ctx, t.session, t.steamID, t.outcome)
+		if err != nil {
+			return built, fmt.Errorf("summary %s %s: %w", t.session, t.steamID, err)
+		}
+		if b {
+			built++
+		}
+	}
+	return built, nil
 }
 
 // floorSnapshot は floor_snapshot の payload のうち、集計に使う部分 (docs/spec/api.md「floor_snapshot」)。
