@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -85,9 +86,14 @@ func (s *Store) migrate() error {
 		if err != nil {
 			return fmt.Errorf("begin tx for %s: %w", name, err)
 		}
-		if _, err := tx.Exec(string(body)); err != nil {
+		res, err := tx.Exec(string(body))
+		if err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("apply %s: %w", name, err)
+		}
+		// 最後の文で変わった行の数 (データを消す・直すマイグレーションで、何件に効いたかを残すため)
+		if n, err := res.RowsAffected(); err == nil {
+			slog.Info("migration applied", "name", name, "rows_affected_by_last_statement", n)
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))`, name); err != nil {
 			_ = tx.Rollback()

@@ -85,8 +85,8 @@
 {:else if status === 'error' || !doc}
   <Unavailable title="ページを読み込めませんでした" hint="しばらくしてから再読み込みしてください。" />
 {:else}
-  <header class="border-b border-bg-3 bg-bg-1">
-    <div class="max-w-5xl mx-auto px-4 py-4">
+  <main class="max-w-5xl mx-auto px-4 py-6 space-y-4">
+    <div>
       <h1 class="text-xl font-semibold text-slate-100 break-words">{doc.user.display_name}</h1>
       {#if doc.is_me}
         <div class="mt-1 text-xs text-slate-500">
@@ -94,9 +94,6 @@
         </div>
       {/if}
     </div>
-  </header>
-
-  <main class="max-w-5xl mx-auto px-4 py-6 space-y-4">
     {#if games.length > 0}
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         {@render filter('キャラクター', fChar, charOptions, v => (fChar = v), v => v)}
@@ -122,7 +119,7 @@
               <div class="order-3 sm:order-2 w-full sm:w-auto flex flex-wrap sm:flex-nowrap gap-1.5 sm:shrink-0">
                 <Badge label={characterOf(g)} tone="accent" />
                 <Badge label={`アセンション ${g.ascension ?? '—'}`} />
-                <Badge label={modeOf(g)} />
+                {#if g.game_mode}<Badge label={modeOf(g)} />{/if}
                 <Badge label={o.label} tone={o.tone} />
                 {#if g.final_floor != null}<Badge label={`${g.final_floor} 階`} />{/if}
                 {#if doc.is_me && g.visibility === 'private'}<Badge label="非公開" tone="warn" />{/if}
