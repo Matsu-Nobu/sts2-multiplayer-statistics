@@ -89,7 +89,7 @@
   $effect(() => { if (auth.me) loadRelation(); });
 </script>
 
-<header class="border-b border-bg-3 bg-bg-1">
+<header class="border-b border-bg-3">
   <div class="max-w-7xl mx-auto px-4 pt-4">
     {#if auth.me && relation?.is_participant}
       <a href={userHref(auth.me.steam_id)} class="inline-block mb-1 text-xs text-slate-400 hover:text-slate-200 focus-ring rounded">‹ マイページ</a>
