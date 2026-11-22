@@ -21,13 +21,13 @@
     <EmptyState title="ログインすると設定できます" />
     <div class="text-center"><a href={loginHref()} class="text-accent hover:underline">Steam でログイン</a></div>
   {:else if auth.me}
-    <Panel title="ユーザーページ">
+    <Panel title="マイページ">
       <label class="flex items-center gap-2 text-sm text-slate-200">
         <input type="checkbox" checked={auth.me.profile_public} disabled={busy}
                onchange={(e) => setProfilePublic((e.target as HTMLInputElement).checked)} />
-        ユーザーページを公開する
+        マイページを公開する
       </label>
-      <p class="text-xs text-slate-500 mt-1">公開すると、ほかの人もあなたのユーザーページで、公開しているランを見られます。</p>
+      <p class="text-xs text-slate-500 mt-1">公開すると、ほかの人もマイページで、公開しているゲームを見られます。</p>
       {#if error}<p class="text-xs text-bad mt-1" role="alert">{error}</p>{/if}
     </Panel>
   {/if}

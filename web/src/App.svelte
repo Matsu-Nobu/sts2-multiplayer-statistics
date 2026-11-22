@@ -57,11 +57,11 @@
   {#key route.userId}<UserPage steamId={route.userId} />{/key}
 {:else if route.section === 'session'}
   {#if status === 'notfound'}
-    <Unavailable title="このランは見つかりません" hint="削除されたか、非公開のランです。" />
+    <Unavailable title="このゲームは見つかりません" hint="削除されたか、非公開のゲームです。" />
   {:else if doc}
     <SessionView {doc} {live} {lastUpdated} />
   {:else if status === 'error'}
-    <Unavailable title="ランを読み込めませんでした" hint="しばらくしてから再読み込みしてください。" />
+    <Unavailable title="ゲームを読み込めませんでした" hint="しばらくしてから再読み込みしてください。" />
   {:else}
     <Skeleton />
   {/if}

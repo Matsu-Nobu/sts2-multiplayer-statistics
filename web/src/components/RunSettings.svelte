@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ランの設定のポップアップ (spec ui.md「ランの設定」)。記録した人には公開・非公開と削除、参加者にはページに載せるかどうか。
+  // ゲームの設定のポップアップ (spec ui.md「ランの設定」)。記録した人には公開・非公開と削除、参加者にはマイページに表示するかどうか。
   import { mutate, type RunRelation } from '../lib/auth.svelte';
   interface Props {
     sessionId: string;
@@ -36,7 +36,7 @@
   const setVisibility = (v: RunRelation['visibility']) => act(() => mutate('PATCH', `/api/sessions/${sessionId}`, { visibility: v }), onchanged);
   const setListed = (listed: boolean) => act(() => mutate('PATCH', `/api/sessions/${sessionId}/listing`, { hidden: !listed }), onchanged);
   function remove() {
-    if (!confirm('このランの記録を削除します。元に戻せません。削除しますか？')) return;
+    if (!confirm('このゲームの記録を削除します。元に戻せません。')) return;
     act(() => mutate('DELETE', `/api/sessions/${sessionId}`), ondeleted);
   }
 </script>
@@ -48,20 +48,20 @@
     <button type="button" aria-haspopup="dialog" aria-expanded={open} onclick={toggle} bind:this={buttonEl}
             class="px-2 py-0.5 rounded-md text-xs border border-bg-3 text-slate-300 hover:text-slate-100 hover:bg-bg-2 focus-ring">{label}</button>
     {#if open}
-      <div role="dialog" aria-label="このランの設定" style:top={`${pos.top}px`} style:right={`${pos.right}px`} class="fixed w-56 bg-bg-1 border border-bg-3 rounded-md shadow-lg p-3 z-50 space-y-3 text-sm">
+      <div role="dialog" aria-label="ゲームの設定" style:top={`${pos.top}px`} style:right={`${pos.right}px`} class="fixed w-56 bg-bg-1 border border-bg-3 rounded-md shadow-lg p-3 z-50 space-y-3 text-sm">
         {#if relation.is_recorder}
           <fieldset class="space-y-1" disabled={busy}>
-            <legend class="text-xs text-slate-400 mb-1">このランを</legend>
-            <label class="flex items-center gap-2"><input type="radio" name={`vis-${sessionId}`} checked={relation.visibility === 'public'} onchange={() => setVisibility('public')} /> 公開する</label>
-            <label class="flex items-center gap-2"><input type="radio" name={`vis-${sessionId}`} checked={relation.visibility === 'private'} onchange={() => setVisibility('private')} /> 非公開にする (自分だけ見られる)</label>
+            <legend class="sr-only">公開・非公開</legend>
+            <label class="flex items-center gap-2"><input type="radio" name={`vis-${sessionId}`} checked={relation.visibility === 'public'} onchange={() => setVisibility('public')} /> 公開</label>
+            <label class="flex items-center gap-2"><input type="radio" name={`vis-${sessionId}`} checked={relation.visibility === 'private'} onchange={() => setVisibility('private')} /> 非公開</label>
           </fieldset>
         {/if}
         <label class="flex items-center gap-2">
           <input type="checkbox" checked={!relation.hidden} disabled={busy} onchange={(e) => setListed((e.target as HTMLInputElement).checked)} />
-          自分のページに載せる
+          マイページに表示する
         </label>
         {#if relation.is_recorder}
-          <button type="button" disabled={busy} onclick={remove} class="text-bad hover:underline focus-ring rounded disabled:opacity-50">このランを削除</button>
+          <button type="button" disabled={busy} onclick={remove} class="text-bad hover:underline focus-ring rounded disabled:opacity-50">削除</button>
         {/if}
         {#if error}<div class="text-xs text-bad" role="alert">{error}</div>{/if}
       </div>

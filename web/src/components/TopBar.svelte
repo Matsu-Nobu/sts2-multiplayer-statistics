@@ -17,13 +17,12 @@
     {#if auth.loaded}
       {#if auth.me}
         <div class="flex items-center gap-4 text-sm">
-          <a href={userHref(auth.me.steam_id)} class="text-slate-300 hover:text-slate-100 focus-ring rounded">自分のラン</a>
           <div class="relative" bind:this={menuEl}>
             <button type="button" aria-haspopup="menu" aria-expanded={open} onclick={() => (open = !open)}
                     class="text-slate-300 hover:text-slate-100 focus-ring rounded">{auth.me.display_name} ▾</button>
             {#if open}
               <div role="menu" class="absolute right-0 mt-2 w-40 bg-bg-1 border border-bg-3 rounded-md shadow-lg py-1 z-50">
-                <a role="menuitem" href={userHref(auth.me.steam_id)} class="block px-3 py-1.5 text-slate-200 hover:bg-bg-2 focus-ring">自分のページ</a>
+                <a role="menuitem" href={userHref(auth.me.steam_id)} class="block px-3 py-1.5 text-slate-200 hover:bg-bg-2 focus-ring">マイページ</a>
                 <a role="menuitem" href="/settings" class="block px-3 py-1.5 text-slate-200 hover:bg-bg-2 focus-ring">設定</a>
                 <button role="menuitem" type="button" onclick={logout} class="block w-full text-left px-3 py-1.5 text-slate-200 hover:bg-bg-2 focus-ring">ログアウト</button>
               </div>

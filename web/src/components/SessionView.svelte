@@ -92,7 +92,7 @@
 <header class="border-b border-bg-3 bg-bg-1">
   <div class="max-w-7xl mx-auto px-4 pt-4">
     {#if auth.me && relation?.is_participant}
-      <a href={userHref(auth.me.steam_id)} class="inline-block mb-1 text-xs text-slate-400 hover:text-slate-200 focus-ring rounded">‹ 自分のラン</a>
+      <a href={userHref(auth.me.steam_id)} class="inline-block mb-1 text-xs text-slate-400 hover:text-slate-200 focus-ring rounded">‹ マイページ</a>
     {/if}
     <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
       <div class="min-w-0">
@@ -110,7 +110,7 @@
       </div>
       <div class="text-xs text-slate-500 sm:text-right flex sm:block items-center gap-3" aria-live="polite">
         {#if relation?.is_participant}
-          <div class="sm:mb-1.5"><RunSettings sessionId={doc.session.id} {relation} label="このランの設定" onchanged={loadRelation} ondeleted={() => location.assign(auth.me ? userHref(auth.me.steam_id) : '/')} /></div>
+          <div class="sm:mb-1.5"><RunSettings sessionId={doc.session.id} {relation} label="ゲームの設定" onchanged={loadRelation} ondeleted={() => location.assign(auth.me ? userHref(auth.me.steam_id) : '/')} /></div>
         {/if}
         <div class="flex items-center gap-1.5 sm:justify-end">
           <span class="w-2 h-2 rounded-full inline-block {live === 'live' ? 'bg-ok animate-pulse' : live === 'final' ? 'bg-slate-500' : 'bg-bad'}"></span>

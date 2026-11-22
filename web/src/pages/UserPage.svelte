@@ -1,20 +1,21 @@
 <script lang="ts">
-  // ユーザーページ (spec user-pages.md「ユーザーページ」): その人が参加したランの一覧。本人なら各行の「…」でランの設定を開く。
+  // ユーザーページ (本人にはマイページ。spec user-pages.md「ユーザーページ」): その人が遊んだゲームの一覧と絞り込み。
   import { userHref, type RunRelation } from '../lib/auth.svelte';
+  import { GAME_MODE_LABEL } from '../lib/labels';
   import RunSettings from '../components/RunSettings.svelte';
   import Panel from '../components/ui/Panel.svelte';
   import Badge from '../components/ui/Badge.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
-  import Unavailable from '../components/Unavailable.svelte';
   import Skeleton from '../components/ui/Skeleton.svelte';
+  import Unavailable from '../components/Unavailable.svelte';
 
-  interface Run {
-    session_id: string; created_at: string; character_id: string | null; character_name: string | null;
+  interface Game {
+    session_id: string; created_at: string; character_id: string | null; character_name: string | null; game_mode: string | null;
     ascension: number | null; outcome: 'victory' | 'death' | 'abandoned' | null; final_floor: number | null;
     visibility: 'public' | 'private'; hidden: boolean; is_recorder: boolean;
     participants: { steam_id: string; display_name: string }[];
   }
-  interface UserPageDoc { user: { steam_id: string; display_name: string; profile_public: boolean }; is_me: boolean; runs: Run[] }
+  interface UserPageDoc { user: { steam_id: string; display_name: string; profile_public: boolean }; is_me: boolean; runs: Game[] }
 
   interface Props { steamId: string }
   let { steamId }: Props = $props();
@@ -32,26 +33,48 @@
   }
   $effect(() => { load(); });
 
-  const relationOf = (r: Run): RunRelation => ({ is_participant: true, is_recorder: r.is_recorder, visibility: r.visibility, hidden: r.hidden });
+  const relationOf = (g: Game): RunRelation => ({ is_participant: true, is_recorder: g.is_recorder, visibility: g.visibility, hidden: g.hidden });
 
   const OUTCOME: Record<string, { label: string; tone: 'ok' | 'bad' | 'neutral' }> = {
     victory: { label: '勝利', tone: 'ok' }, death: { label: '死亡', tone: 'bad' }, abandoned: { label: '放棄', tone: 'neutral' },
   };
-  const outcomeOf = (o: Run['outcome']) => (o ? OUTCOME[o] : null) ?? { label: '進行中', tone: 'neutral' as const };
+  const outcomeKey = (g: Game) => g.outcome ?? 'running';
+  const outcomeOf = (g: Game) => (g.outcome ? OUTCOME[g.outcome] : null) ?? { label: '進行中', tone: 'neutral' as const };
+  const outcomeLabel = (k: string) => (k === 'running' ? '進行中' : OUTCOME[k]?.label ?? k);
+  const characterOf = (g: Game) => g.character_name ?? g.character_id ?? '—';
+  const modeOf = (g: Game) => (g.game_mode ? GAME_MODE_LABEL[g.game_mode] ?? g.game_mode : '—');
+  const ascOf = (g: Game) => String(g.ascension ?? '—');
   const fmtDate = (s: string) => {
     const d = new Date(s);
     return Number.isNaN(d.getTime()) ? s : d.toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
+
+  // 絞り込み (画面の中だけ。選べる値は一覧にあるゲームの値だけ)
+  const ALL = '';
+  let fChar = $state(ALL), fMode = $state(ALL), fAsc = $state(ALL), fOutcome = $state(ALL);
+  const uniq = (xs: string[]) => [...new Set(xs)];
+  let games = $derived(doc?.runs ?? []);
+  let charOptions = $derived(uniq(games.map(characterOf)).sort());
+  let modeOptions = $derived(uniq(games.map(modeOf)));
+  let ascOptions = $derived(uniq(games.map(ascOf)).sort((a, b) => Number(a) - Number(b)));
+  let outcomeOptions = $derived(uniq(games.map(outcomeKey)));
+  let filtered = $derived(games.filter(g =>
+    (fChar === ALL || characterOf(g) === fChar) &&
+    (fMode === ALL || modeOf(g) === fMode) &&
+    (fAsc === ALL || ascOf(g) === fAsc) &&
+    (fOutcome === ALL || outcomeKey(g) === fOutcome)));
 </script>
 
-{#if doc}
-  <header class="border-b border-bg-3 bg-bg-1">
-    <div class="max-w-7xl mx-auto px-4 py-4">
-      <h1 class="text-xl font-semibold text-slate-100 break-words">{doc.user.display_name}</h1>
-      {#if doc.is_me}<div class="mt-1 text-xs text-slate-500">ユーザーページは{doc.user.profile_public ? '公開中' : '非公開 (自分だけ見られる)'}です。<a href="/settings" class="text-accent hover:underline">設定</a>で変えられます。</div>{/if}
-    </div>
-  </header>
-{/if}
+{#snippet filter(label: string, value: string, options: string[], set: (v: string) => void, show: (v: string) => string)}
+  <label class="flex items-center gap-1.5 text-xs text-slate-400">
+    {label}
+    <select class="bg-bg-2 border border-bg-3 rounded-md px-2 py-1 text-sm text-slate-200 focus-ring" {value}
+            onchange={(e) => set((e.target as HTMLSelectElement).value)}>
+      <option value={ALL}>すべて</option>
+      {#each options as o (o)}<option value={o}>{show(o)}</option>{/each}
+    </select>
+  </label>
+{/snippet}
 
 {#if status === 'loading'}
   <Skeleton />
@@ -60,67 +83,61 @@
 {:else if status === 'notfound'}
   <Unavailable title="ユーザーが見つかりません" hint="URL を確認してください。" />
 {:else if status === 'error' || !doc}
-  <Unavailable title="ユーザーページを読み込めませんでした" hint="しばらくしてから再読み込みしてください。" />
+  <Unavailable title="ページを読み込めませんでした" hint="しばらくしてから再読み込みしてください。" />
 {:else}
-<main class="max-w-7xl mx-auto px-4 py-6 space-y-4">
-    <Panel title="ラン" flush>
-      {#if doc.runs.length === 0}
-        <EmptyState title="まだランがありません" />
+  <header class="border-b border-bg-3 bg-bg-1">
+    <div class="max-w-5xl mx-auto px-4 py-4">
+      <h1 class="text-xl font-semibold text-slate-100 break-words">{doc.user.display_name}</h1>
+      {#if doc.is_me}
+        <div class="mt-1 text-xs text-slate-500">
+          {#if doc.user.profile_public}このページは公開中です。{:else}このページは非公開です。<a href="/settings" class="text-accent hover:underline">設定</a>から公開できます。{/if}
+        </div>
+      {/if}
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6 space-y-4">
+    {#if games.length > 0}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {@render filter('キャラクター', fChar, charOptions, v => (fChar = v), v => v)}
+        {@render filter('ゲームモード', fMode, modeOptions, v => (fMode = v), v => v)}
+        {@render filter('アセンション', fAsc, ascOptions, v => (fAsc = v), v => v)}
+        {@render filter('結果', fOutcome, outcomeOptions, v => (fOutcome = v), outcomeLabel)}
+        <span class="text-xs text-slate-500 tabular">{filtered.length} / {games.length} ゲーム</span>
+      </div>
+    {/if}
+
+    <Panel flush>
+      {#if games.length === 0}
+        <EmptyState title="まだゲームがありません" />
+      {:else if filtered.length === 0}
+        <EmptyState title="条件に合うゲームがありません" />
       {:else}
-        <!-- 狭い画面: 1 つのランを 1 枚のカードにする (表だと「…」が画面の外に隠れる。spec ui.md「狭い画面 (スマホ)」) -->
-        <ul class="sm:hidden divide-y divide-bg-3">
-          {#each doc.runs as r (r.session_id)}
-            {@const o = outcomeOf(r.outcome)}
-            <li class="px-4 py-3 flex items-start justify-between gap-3">
-              <div class="min-w-0 space-y-1">
-                <a href={`/s/${r.session_id}`} class="text-accent hover:underline focus-ring rounded text-sm">{fmtDate(r.created_at)}</a>
-                <div class="text-sm text-slate-200">{r.character_name ?? r.character_id ?? '—'}<span class="text-slate-500"> ・ アセンション {r.ascension ?? '—'} ・ {r.final_floor ?? '—'} 階</span></div>
-                <div class="flex flex-wrap gap-1">
-                  <Badge label={o.label} tone={o.tone} />
-                  {#if doc.is_me && r.visibility === 'private'}<Badge label="非公開" />{/if}
-                  {#if doc.is_me && r.hidden}<Badge label="ページに載せない" />{/if}
-                </div>
-                {#if r.participants.some(p => p.steam_id !== doc!.user.steam_id)}
-                  <div class="text-xs text-slate-400">{#each r.participants.filter(p => p.steam_id !== doc!.user.steam_id) as p, i (p.steam_id)}{#if i > 0}、{/if}<a href={userHref(p.steam_id)} class="hover:underline">{p.display_name || p.steam_id}</a>{/each}</div>
-                {/if}
+        <ul class="divide-y divide-bg-3">
+          {#each filtered as g (g.session_id)}
+            {@const o = outcomeOf(g)}
+            {@const others = g.participants.filter(p => p.steam_id !== doc!.user.steam_id)}
+            <li class="px-4 py-3 space-y-1.5">
+              <div class="flex items-start justify-between gap-3">
+                <a href={`/s/${g.session_id}`} class="text-accent hover:underline focus-ring rounded text-sm">{fmtDate(g.created_at)}</a>
+                {#if doc.is_me}<RunSettings sessionId={g.session_id} relation={relationOf(g)} label="…" onchanged={load} ondeleted={load} />{/if}
               </div>
-              {#if doc.is_me}<RunSettings sessionId={r.session_id} relation={relationOf(r)} label="…" onchanged={load} ondeleted={load} />{/if}
+              <div class="flex flex-wrap gap-1.5">
+                <Badge label={characterOf(g)} tone="accent" />
+                <Badge label={`アセンション ${g.ascension ?? '—'}`} />
+                <Badge label={modeOf(g)} />
+                <Badge label={o.label} tone={o.tone} />
+                {#if g.final_floor != null}<Badge label={`${g.final_floor} 階`} />{/if}
+                {#if doc.is_me && g.visibility === 'private'}<Badge label="非公開" tone="warn" />{/if}
+                {#if doc.is_me && g.hidden}<Badge label="非表示" tone="warn" />{/if}
+              </div>
+              {#if others.length > 0}
+                <div class="text-xs text-slate-400">{#each others as p, i (p.steam_id)}{#if i > 0}、{/if}<a href={userHref(p.steam_id)} class="hover:underline focus-ring rounded">{p.display_name || p.steam_id}</a>{/each}</div>
+              {/if}
             </li>
           {/each}
         </ul>
-        <div class="dt-wrap hidden sm:block">
-          <table class="dt">
-            <thead>
-              <tr>
-                <th>日付</th><th>キャラクター</th><th class="num">アセンション</th><th>結果</th><th class="num">到達階</th><th>一緒に遊んだ人</th>
-                {#if doc.is_me}<th><span class="sr-only">設定</span></th>{/if}
-              </tr>
-            </thead>
-            <tbody>
-              {#each doc.runs as r (r.session_id)}
-                {@const o = outcomeOf(r.outcome)}
-                <tr>
-                  <td class="whitespace-nowrap"><a href={`/s/${r.session_id}`} class="text-accent hover:underline focus-ring rounded">{fmtDate(r.created_at)}</a></td>
-                  <td>{r.character_name ?? r.character_id ?? '—'}</td>
-                  <td class="num">{r.ascension ?? '—'}</td>
-                  <td class="whitespace-nowrap">
-                    <Badge label={o.label} tone={o.tone} />
-                    {#if doc.is_me && r.visibility === 'private'}<Badge label="非公開" />{/if}
-                    {#if doc.is_me && r.hidden}<Badge label="ページに載せない" />{/if}
-                  </td>
-                  <td class="num">{r.final_floor ?? '—'}</td>
-                  <td class="text-xs">
-                    {#each r.participants.filter(p => p.steam_id !== doc!.user.steam_id) as p, i (p.steam_id)}{#if i > 0}、{/if}<a href={userHref(p.steam_id)} class="hover:underline focus-ring rounded">{p.display_name || p.steam_id}</a>{:else}<span class="text-slate-600">—</span>{/each}
-                  </td>
-                  {#if doc.is_me}
-                    <td class="text-right"><RunSettings sessionId={r.session_id} relation={relationOf(r)} label="…" onchanged={load} ondeleted={load} /></td>
-                  {/if}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
       {/if}
     </Panel>
-</main>
+  </main>
 {/if}
