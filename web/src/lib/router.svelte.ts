@@ -7,7 +7,8 @@
  *   /s/{id}/combats                戦闘
  *   /s/{id}/combats/{combat_index} 戦闘詳細 (?view=summary|turns|timeline)
  *   共通クエリ ?p={player_id}
- *   /u/{steam_id}                  ユーザーページ (spec user-pages.md)
+ *   /u/{steam_id}                  ユーザーページのゲームのタブ (spec user-pages.md)
+ *   /u/{steam_id}/stats            ユーザーページの統計のタブ (spec player-stats.md)
  *   /                              ホーム、/settings 設定 (spec ui.md「サイトの画面」)
  */
 
@@ -22,13 +23,16 @@ export type CombatViewName = 'summary' | 'turns' | 'timeline';
 
 export type Section = 'home' | 'settings' | 'user' | 'session' | 'unknown';
 
-interface Route { section: Section; sessionId: string | null; userId: string | null; page: Page; player: string | null }
+export type UserTab = 'games' | 'stats';
+
+interface Route { section: Section; sessionId: string | null; userId: string | null; userTab: UserTab; page: Page; player: string | null }
 
 function parse(loc: Location): Route {
   const url = new URL(loc.href);
   const player = url.searchParams.get('p');
-  const u = url.pathname.match(/^\/u\/([^/]+)\/?$/);
+  const u = url.pathname.match(/^\/u\/([^/]+)(\/stats)?\/?$/);
   const userId = u ? decodeURIComponent(u[1]) : null;
+  const userTab: UserTab = u?.[2] ? 'stats' : 'games';
   const m = url.pathname.match(/^\/s\/([^/]+)(?:\/(.*))?$/);
   const sessionId = m ? m[1] : null;
   const rest = (m?.[2] ?? '').replace(/\/+$/, '').split('/').filter(Boolean);
@@ -44,7 +48,7 @@ function parse(loc: Location): Route {
   }
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const section: Section = sessionId ? 'session' : userId ? 'user' : path === '/' ? 'home' : path === '/settings' ? 'settings' : 'unknown';
-  return { section, sessionId, userId, page, player };
+  return { section, sessionId, userId, userTab, page, player };
 }
 
 export const route = $state<Route>(parse(window.location));
@@ -94,4 +98,17 @@ export function link(node: HTMLAnchorElement, p: Page) {
     update(np: Page) { page = np; },
     destroy() { node.removeEventListener('click', onClick); },
   };
+}
+
+/** ユーザーページのタブの URL。 */
+export function userTabHref(steamId: string, tab: UserTab): string {
+  return `/u/${encodeURIComponent(steamId)}${tab === 'stats' ? '/stats' : ''}`;
+}
+
+/** ユーザーページのタブを切り替える (履歴に積む)。 */
+export function navigateUserTab(e: MouseEvent, steamId: string, tab: UserTab) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  history.pushState(null, '', userTabHref(steamId, tab));
+  route.userTab = tab;
 }

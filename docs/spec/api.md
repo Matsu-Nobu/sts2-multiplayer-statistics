@@ -49,11 +49,12 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | `GET`  | `/api/me` | cookie | ログインしている人 |
 | `PATCH`| `/api/me` | cookie | ユーザーページの公開・非公開 |
 | `GET`  | `/api/users/{steam_id}` | — / cookie | ユーザーページ (参加したランの一覧) |
+| `GET`  | `/api/users/{steam_id}/stats` | — / cookie | プレイヤーの統計に使う、ゲームごとの集計 |
 | `GET`  | `/api/sessions/{id}/me` | cookie | ログインしている人とそのランの関係 (参加者か・記録した人か・公開か・ページに載せるか) |
 | `PATCH`| `/api/sessions/{id}` | cookie (記録した人) | ランの公開・非公開 |
 | `PATCH`| `/api/sessions/{id}/listing` | cookie (参加者) | ランを自分のユーザーページに載せるか |
 | `DELETE`| `/api/sessions/{id}` | cookie (記録した人) | ランを削除する |
-| `GET`  | `/`・`/settings`・`/s/{id}`・`/u/{steam_id}` | — | SPA HTML 配信 (画面は web が URL で決める) |
+| `GET`  | `/`・`/settings`・`/s/{id}`・`/u/{steam_id}`・`/u/{steam_id}/stats` | — | SPA HTML 配信 (画面は web が URL で決める) |
 | `GET`  | `/assets/*` | — | Vite ビルド成果物 |
 | `GET`  | `/catalog.{lang}.json` | — | STS2 カード/レリック/ポーション/エンチャント definitions（静的） |
 | `GET`  | `/favicon.ico` | — | ファビコン |
@@ -402,6 +403,37 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 ```
 
 `character_*` はそのユーザーのキャラクター、`game_mode` はゲームモード (`Standard` / `Blitz` / `Daily` / `Dread`)。どちらも `run_start` から。`is_recorder` はそのユーザーが記録した人か。
+
+### `GET /api/users/{steam_id}/stats`
+
+プレイヤーの統計 ([`player-stats.md`](./player-stats.md)) に使う、ゲームごとの集計を返す。見られる人と、403・404 を返す条件は `GET /api/users/{steam_id}` と同じ。
+返すのは、そのユーザーが参加したゲームのうち結果が `victory` か `death` のもので、本人以外には、公開で本人がページに載せているものだけ。キャラクターと絞り込みでの集計は web が行う。
+
+```json
+{
+  "user": { "steam_id": "765...", "display_name": "Nobu", "profile_visibility": "public" },
+  "is_me": true,
+  "games": [{
+    "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
+    "character_id": "FOOL", "character_name": "フール", "game_mode": "Standard", "ascension": 3,
+    "outcome": "victory", "final_floor": 48, "max_act_index": 2,
+    "partners": [{ "steam_id": "765...", "display_name": "agapants" }],
+    "damage_share": 0.42,
+    "card_offers": [{ "id": "WAR_TOUCH", "name": "ワー・タッチ", "offered": 2, "picked": 1 }],
+    "relics": [{ "id": "WAR_PAINT", "name": "戦化粧" }],
+    "fights": [{ "model_id": "CULTIST_BOSS", "model_name": "儀式の獣", "room_type": "Boss", "damage_taken": 31, "died": false }],
+    "rest_choices": ["SMITH", "HEAL"],
+    "ancients": [{ "model_id": "NEOW", "model_name": "ネオー", "options": [{ "title": "絹の髪束", "chosen": true }] }],
+    "events": [{ "model_id": "...", "model_name": "...", "choices": ["..."] }]
+  }]
+}
+```
+
+- `partners`: 一緒に遊んだ人 (そのユーザーを除く参加者)。ソロなら空。
+- `damage_share`: そのゲームで全員の `damage_dealt` の `amount` の合計のうち、そのユーザーの分の割合。ソロか、だれもダメージを与えていなければ `null`。
+- `max_act_index`: そのゲームの `floor_snapshot` の `act_index` の最大 (0 始まり)。
+- `card_offers`・`relics`・`fights`・`rest_choices`・`ancients`・`events` の中身は player-stats.md「数字の出どころ」の記録から作る。`fights` の `died` は、死んだゲームの最後の戦闘なら `true`。`events` には、部屋が `NEOW` の階を入れない。
+- backend はゲームと人の組ごとに集計を保存しておき、そのゲームに新しい記録が届いていたら作り直す。
 
 ### `GET /api/sessions/{id}/me`
 
