@@ -51,6 +51,8 @@ func decodeJSON(t *testing.T, r *http.Response, into any) {
 	}
 }
 
+const testGameVersion = "v0.114.0"
+
 func createSession(t *testing.T, srv *Server) (id, token string) {
 	t.Helper()
 	res := do(t, srv, http.MethodPost, "/sessions", "", map[string]any{
@@ -58,6 +60,7 @@ func createSession(t *testing.T, srv *Server) (id, token string) {
 		"host_steam_id": "76561199000000000",
 		"character_id":  "IRONCLAD",
 		"ascension":     5,
+		"game_version":  testGameVersion,
 	})
 	if res.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(res.Body)

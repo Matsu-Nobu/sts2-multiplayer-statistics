@@ -73,7 +73,8 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
   "host_steam_id": "76561199204788207", // optional（mod が起動時に解決可能）
   "character_id":  "IRONCLAD",          // optional（後で run_start イベントで送ってもよい）
   "ascension":     5,                    // optional
-  "seed":          "1234567890"          // optional
+  "seed":          "1234567890",         // optional
+  "game_version":  "v0.113.1"            // optional（ゲームのフォルダの release_info.json の version）
 }
 ```
 
@@ -358,6 +359,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
     "character_id":  "IRONCLAD",
     "ascension":     5,
     "seed":          "1234567890",
+    "game_version":  "v0.113.1",
     "outcome":       null,
     "final_floor":   null,
     "finished_at":   null
@@ -394,7 +396,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
   "is_me": true,
   "runs": [{
     "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
-    "character_id": "FOOL", "character_name": "フール", "game_mode": "Blitz", "ascension": 3,
+    "character_id": "FOOL", "character_name": "フール", "game_mode": "Blitz", "ascension": 3, "game_version": "v0.113.1",
     "outcome": "victory", "final_floor": 48,
     "visibility": "public", "hidden": false, "is_recorder": true,
     "participants": [{ "steam_id": "765...", "display_name": "Nobu" }]
@@ -402,7 +404,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 }
 ```
 
-`character_*` はそのユーザーのキャラクター、`game_mode` はゲームモード (`Standard` / `Blitz` / `Daily` / `Dread`)。どちらも `run_start` から。`is_recorder` はそのユーザーが記録した人か。
+`character_*` はそのユーザーのキャラクター、`game_mode` はゲームモード (`Standard` / `Blitz` / `Daily` / `Dread`)。どちらも `run_start` から。`is_recorder` はそのユーザーが記録した人か。`game_version` はゲームのバージョンで、mod が送らなかったゲームでは `null`。
 
 ### `GET /api/users/{steam_id}/stats`
 
@@ -415,11 +417,11 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
   "is_me": true,
   "games": [{
     "session_id": "uuid", "created_at": "2026-11-22T00:00:00Z",
-    "character_id": "FOOL", "character_name": "フール", "game_mode": "Standard", "ascension": 3,
+    "character_id": "FOOL", "character_name": "フール", "game_mode": "Standard", "ascension": 3, "game_version": "v0.113.1",
     "outcome": "victory", "final_floor": 48, "max_act_index": 2,
     "partners": [{ "steam_id": "765...", "display_name": "agapants" }],
     "damage_share": 0.42,
-    "card_offers": [{ "id": "WAR_TOUCH", "name": "ワー・タッチ", "offered": 2, "picked": 1 }],
+    "card_offers": [{ "id": "WAR_TOUCH", "name": "ワー・タッチ", "offered": 2, "picked": 1, "act_index": 0 }],
     "relics": [{ "id": "WAR_PAINT", "name": "戦化粧" }],
     "fights": [{ "model_id": "CULTIST_BOSS", "model_name": "儀式の獣", "room_type": "Boss", "damage_taken": 31, "died": false }],
     "rest_choices": ["SMITH", "HEAL"],
@@ -432,6 +434,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
 - `partners`: 一緒に遊んだ人 (そのユーザーを除く参加者)。ソロなら空。
 - `damage_share`: そのゲームで全員の `damage_dealt` の `amount` の合計のうち、そのユーザーの分の割合。ソロか、だれもダメージを与えていなければ `null`。
 - `max_act_index`: そのゲームの `floor_snapshot` の `act_index` の最大 (0 始まり)。
+- `card_offers`: カードと Act の組ごとに 1 つ。`act_index` はそのカードが提示された階の `act_index`。同じカードが複数の Act で提示されたら、Act ごとに分ける。
 - `card_offers`・`relics`・`fights`・`rest_choices`・`ancients`・`events` の中身は player-stats.md「数字の出どころ」の記録から作る。`fights` の `died` は、死んだゲームの最後の戦闘なら `true`。`events` には、部屋が `NEOW` の階を入れない。
 - backend はゲームと人の組ごとに集計を保存しておき、そのゲームに新しい記録が届いていたら作り直す。
 
@@ -527,6 +530,7 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 | 時期 | 変更 |
 |------|------|
+| 2026-11 | `POST /sessions` と、セッション・ユーザーページ・統計の各ゲームに `game_version`。統計の `card_offers` を Act ごとに分け、`act_index` を足す |
 | 2026-11 | ログインとユーザーページ (`/auth/steam/*`、`/api/me`、`/api/users/{steam_id}`、ランの公開・非公開・削除)。`GET /api/sessions/{id}` の `session` に `visibility`。`POST /sessions/{id}/events` の body の上限を 2MB に上げる (ほかは 256KB) |
 | 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |
 | 2026-10 | v2: ラン全体の event を `floor_snapshot` に統合 (`room_entered` / `hp_changed` / `gold_changed` / `act_entered` / `rest_action` / `reward_taken` / `card_obtained` / `card_upgraded` / `card_enchanted` / `card_removed` / `relic_obtained` / `potion_obtained` / `potion_discarded` / `event_choice` を廃止)。`player_id` を全 event で正規化。`run_end` に `final_hp`。出どころをモデル ID に変更。`hit_index` 廃止 |

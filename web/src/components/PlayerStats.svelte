@@ -4,7 +4,8 @@
   import { userHref } from '../lib/auth.svelte';
   import { GAME_MODE_LABEL } from '../lib/labels';
   import {
-    ALL, MULTI, SOLO, MIN_GAMES, applyFilters, characterKey, characterOptions, characterStats, deltaPoints, pct, rate,
+    ALL, MULTI, SOLO, MIN_GAMES, UNKNOWN_VERSION, actClearRate, applyFilters, cardRows, characterKey, characterOptions, characterStats,
+    deltaPoints, pct, rate, versionOptions,
     type CardRow, type ChoiceRow, type Column, type EnemyRow, type Filters, type PartnerRow, type RelicRow, type StatsDoc,
   } from '../lib/playerStats';
   import Panel from './ui/Panel.svelte';
@@ -34,31 +35,38 @@
     loadCatalog('ja').then(c => { catalog = c; });
   });
 
-  let filters = $state<Filters>({ mode: ALL, asc: ALL, players: ALL, period: 'all' });
+  let filters = $state<Filters>({ version: ALL, mode: ALL, asc: ALL, players: ALL, period: 'all' });
   let hideLow = $state(true);
   let selected = $state<string | null>(null);
   let ancientSel = $state<string | null>(null);
   let eventSel = $state<string | null>(null);
+  let cardActSel = $state<string>(ALL);
 
   const uniq = (xs: string[]) => [...new Set(xs)];
   let games = $derived(doc?.games ?? []);
+  let versionOpts = $derived(versionOptions(games));
   let modeOptions = $derived(uniq(games.map(g => g.game_mode).filter((m): m is string => m != null)));
   let ascOptions = $derived(uniq(games.map(g => g.ascension).filter((a): a is number => a != null).map(String)).sort((a, b) => Number(a) - Number(b)));
   let filtered = $derived(applyFilters(games, filters, new Date()));
   let tabs = $derived(characterOptions(filtered));
   let current = $derived(tabs.find(t => t.key === selected) ?? tabs[0] ?? null);
-  let stats = $derived(current ? characterStats(filtered.filter(g => characterKey(g) === current.key), catalog) : null);
+  let charGames = $derived(current ? filtered.filter(g => characterKey(g) === current.key) : []);
+  let stats = $derived(current ? characterStats(charGames, catalog) : null);
   let base = $derived(stats ? rate(stats.wins, stats.games) : null);
+  // カードの区画の「提示された Act」。選んでいた Act が今のキャラクターに無ければ「すべて」に戻す (act は 0 始まり)
+  let cardAct = $derived(stats && cardActSel !== ALL && Number(cardActSel) < stats.acts.length ? Number(cardActSel) : null);
+  let cards = $derived(cardRows(charGames, catalog, cardAct));
+  let cardBase = $derived(cardAct == null ? base : actClearRate(charGames, cardAct));
   let ancient = $derived(stats ? stats.ancients.find(a => a.id === ancientSel) ?? stats.ancients[0] ?? null : null);
   let event = $derived(stats ? stats.events.find(e => e.id === eventSel) ?? stats.events[0] ?? null : null);
 
   const ROOM_LABEL: Record<string, string> = { Monster: '通常', Elite: 'エリート', Boss: 'ボス' };
 
   // 「{キャラクター名}の勝率との差」の列 (spec player-stats.md「表の共通の決まり」)
-  function deltaColumn<R>(winRate: (r: R) => number | null): Column<R> {
-    const d = (r: R) => deltaPoints(winRate(r), base);
+  function deltaColumn<R>(winRate: (r: R) => number | null, against = base, what = '勝率'): Column<R> {
+    const d = (r: R) => deltaPoints(winRate(r), against);
     return {
-      label: `${current?.name ?? ''}の勝率との差`, num: true, sort: d,
+      label: `${current?.name ?? ''}の${/^[A-Za-z0-9]/.test(what) ? ' ' : ''}${what}との差`, num: true, sort: d,
       text: r => { const v = d(r); return v == null ? '—' : v > 0 ? `+${v}` : String(v); },
       tone: r => { const v = d(r); return v == null || v === 0 ? null : v > 0 ? 'ok' : 'bad'; },
     };
@@ -69,13 +77,18 @@
   const count = <R,>(label: string, get: (r: R) => number): Column<R> => ({ label, num: true, sort: get, text: r => String(get(r)) });
 
   const cardWin = (r: CardRow) => rate(r.wins, r.games);
+  const cardCleared = (r: CardRow) => rate(r.cleared, r.games);
   let cardColumns = $derived<Column<CardRow>[]>([
     { label: 'カード', sort: r => r.name, text: r => r.name },
     count('提示回数', r => r.offered),
     { label: '取得率', num: true, sort: r => rate(r.picks, r.offered), text: r => pct(rate(r.picks, r.offered)) },
     count('取得ゲーム数', r => r.games),
-    winRateColumn(cardWin),
-    deltaColumn(cardWin),
+    ...(cardAct == null
+      ? [winRateColumn(cardWin), deltaColumn(cardWin)]
+      : [
+          { label: `Act ${cardAct + 1} の突破率`, num: true, sort: cardCleared, text: (r: CardRow) => pct(cardCleared(r)) },
+          deltaColumn(cardCleared, cardBase, `Act ${cardAct + 1} の突破率`),
+        ]),
   ]);
   const relicWin = (r: RelicRow) => rate(r.wins, r.games);
   let relicColumns = $derived<Column<RelicRow>[]>([
@@ -156,6 +169,7 @@
   <div class="space-y-4">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       {@render filter('f-char', 'キャラクター', current?.key ?? '', tabs.map(t => [t.key, `${t.name} (${t.games} ゲーム)`] as [string, string]), v => (selected = v))}
+      {@render filter('f-version', 'バージョン', filters.version, [[ALL, 'すべて'], ...versionOpts.map(v => [v.key, `${v.key === UNKNOWN_VERSION ? '不明' : v.key} (${v.games} ゲーム)`] as [string, string])], v => (filters.version = v))}
       {@render filter('f-mode', 'ゲームモード', filters.mode, [[ALL, 'すべて'], ...modeOptions.map(m => [m, GAME_MODE_LABEL[m] ?? m] as [string, string])], v => (filters.mode = v))}
       {@render filter('f-asc', 'アセンション', filters.asc, [[ALL, 'すべて'], ...ascOptions.map(a => [a, a] as [string, string])], v => (filters.asc = v))}
       {@render filter('f-players', '人数', filters.players, [[ALL, 'すべて'], [SOLO, 'ソロ'], [MULTI, 'マルチプレイ']], v => (filters.players = v))}
@@ -191,7 +205,10 @@
       </Panel>
     {:else if section === 'cards'}
       <Panel title="カード">
-        <StatsTable columns={cardColumns} rows={stats.cards} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={3} />
+        <div class="mb-2">
+          {@render filter('f-card-act', '提示された Act', cardAct == null ? ALL : String(cardAct), [[ALL, 'すべて'], ...stats.acts.map(a => [String(a.act - 1), `Act ${a.act}`] as [string, string])], v => (cardActSel = v))}
+        </div>
+        <StatsTable columns={cardColumns} rows={cards} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={3} />
       </Panel>
     {:else if section === 'relics'}
       <Panel title="レリック">

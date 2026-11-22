@@ -10,6 +10,7 @@ import (
 type statsGame struct {
 	SessionID   string   `json:"session_id"`
 	Outcome     string   `json:"outcome"`
+	GameVersion *string  `json:"game_version"`
 	MaxActIndex int      `json:"max_act_index"`
 	DamageShare *float64 `json:"damage_share"`
 	Partners    []struct {
@@ -19,6 +20,7 @@ type statsGame struct {
 		ID      string `json:"id"`
 		Offered int    `json:"offered"`
 		Picked  int    `json:"picked"`
+		Act     int    `json:"act_index"`
 	} `json:"card_offers"`
 	Relics []struct {
 		ID string `json:"id"`
@@ -90,7 +92,7 @@ func runEnd(uuid, outcome string, floor int) map[string]any {
 //	1 階: 通常の戦闘。カード A を取り B を見送る。最初に届いた snapshot は 2 回目で置き換わる
 //	2 階: ショップ。商品のカード C は提示に数えない
 //	3 階: エンシェント。休憩所の選択もここに置く
-//	4 階 (Act 2): イベント。続けてエリート戦があり、ここで死ぬ
+//	4 階 (Act 2): イベント。続けてエリート戦があり、ここで死ぬ。カード A を Act 2 でも取る
 //	0 階: ブリッツのネオー。選択肢が無く event_choices だけがある (イベントに数えない)
 func seedFinishedRun(t *testing.T, srv *Server, outcome string) (id, token string) {
 	t.Helper()
@@ -115,7 +117,7 @@ func seedFinishedRun(t *testing.T, srv *Server, outcome string) (id, token strin
 		snapshot(id+"f0", 0, 0, []map[string]any{room("Event", "NEOW")},
 			map[string]any{"event_choices": []any{"BLITZ"}}),
 		snapshot(id+"f4", 4, 1, []map[string]any{room("Event", "SHRINE"), room("Elite", "LOUSE")},
-			map[string]any{"hp": map[string]any{"damage_taken": 40}, "event_choices": []any{"FIGHT"}}),
+			map[string]any{"hp": map[string]any{"damage_taken": 40}, "event_choices": []any{"FIGHT"}, "card_choices": []any{card("A", true)}}),
 		damage(id+"d1", hostID, 30),
 		damage(id+"d2", friendID, 10),
 	}
@@ -142,9 +144,21 @@ func TestGetUserStats_Summary(t *testing.T) {
 			t.Fatalf("game=%+v", g)
 		}
 	})
+	t.Run("ゲームのバージョン", func(t *testing.T) {
+		if g.GameVersion == nil || *g.GameVersion != testGameVersion {
+			t.Fatalf("game_version=%v", g.GameVersion)
+		}
+	})
 	t.Run("カードの提示は階ごとに最後の snapshot から取り、ショップの階を除く", func(t *testing.T) {
-		if len(g.CardOffers) != 2 || g.CardOffers[0].ID != "A" || g.CardOffers[0].Picked != 1 || g.CardOffers[1].ID != "B" || g.CardOffers[1].Picked != 0 {
-			t.Fatalf("card_offers=%+v", g.CardOffers)
+		o := g.CardOffers
+		if len(o) != 3 || o[0].ID != "A" || o[0].Picked != 1 || o[1].ID != "B" || o[1].Picked != 0 || o[0].Act != 0 || o[1].Act != 0 {
+			t.Fatalf("card_offers=%+v", o)
+		}
+	})
+	t.Run("同じカードでも Act が違えば分けて数える", func(t *testing.T) {
+		o := g.CardOffers
+		if len(o) != 3 || o[2].ID != "A" || o[2].Act != 1 || o[2].Offered != 1 || o[2].Picked != 1 {
+			t.Fatalf("card_offers=%+v", o)
 		}
 	})
 	t.Run("レリックは途中で持っていたものを 1 回ずつ", func(t *testing.T) {
