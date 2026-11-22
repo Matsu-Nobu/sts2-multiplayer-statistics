@@ -1,15 +1,16 @@
 <script lang="ts">
-  // ラン全体 (spec ui.md「ラン全体」): 貢献度スコア、HP・ゴールドの推移 (全員)、プレイヤーごとのデッキとバッジ。
+  // ラン全体 (spec ui.md「ラン全体」): 貢献度スコア、HP・ゴールドの推移 (全員)、プレイヤーごとのバッジ・デッキ・レリック。
   import { useSession } from '../lib/session';
   import { buildFloorSummaries, buildPlayerFinalState } from '../lib/runOverview';
   import { navigate } from '../lib/router.svelte';
   import { playerColor } from '../lib/players';
   import { BADGE_RARITY } from '../lib/labels';
-  import { cardTip } from '../lib/tips';
+  import { cardTip, relicTip } from '../lib/tips';
   import { renderCardDescription } from '../lib/catalog';
   import type { RunStartPayload, SnapshotCard } from '../lib/types';
   import Panel from '../components/ui/Panel.svelte';
   import CardChip from '../components/ui/CardChip.svelte';
+  import Chip from '../components/ui/Chip.svelte';
   import SegmentedControl from '../components/ui/SegmentedControl.svelte';
   import EmptyState from '../components/ui/EmptyState.svelte';
   import HpRunChart from '../components/HpRunChart.svelte';
@@ -128,6 +129,19 @@
                   </div>
                 </div>
               {/each}
+            </div>
+          {/if}
+
+          {#if p.final.relics != null}
+            <div>
+              <h3 class="text-xs font-medium text-slate-400 mb-1.5">レリック <span class="tabular text-slate-500">{p.final.relics.length}</span></h3>
+              {#if p.final.relics.length === 0}
+                <div class="text-xs text-slate-500">なし</div>
+              {:else}
+                <div class="flex flex-wrap gap-1.5">
+                  {#each p.final.relics as r, i (r.id + i)}<Chip label={r.name || r.id} tip={relicTip(s.catalog, r.id)} />{/each}
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
