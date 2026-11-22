@@ -19,9 +19,11 @@
     rmit: ContribTable;
     turns: number;
     combatsCount?: number;      // 全戦闘の合計のとき
-    rangeLabel: string;         // 「ラン合計」「この戦闘」
+    rangeLabel: string;         // 「ラン合計」「Act 1 まで」「この戦闘」
   }
   let { stats, rdps, rmit, turns, combatsCount, rangeLabel }: Props = $props();
+  // 「Act 1 まで」のように英字で始まるときは、「の」との間に空白を入れる
+  let rangeGap = $derived(/^[A-Za-z]/.test(rangeLabel) ? ' ' : '');
   const s = useSession();
 
   let me = $derived(stats[s.player]);
@@ -32,7 +34,7 @@
 
 <div class="space-y-6">
   <section aria-label="主要数値" class="space-y-3">
-    {#if who}<div class="text-sm text-slate-400"><span class="text-slate-200 font-medium">{who}</span> の{rangeLabel}</div>{/if}
+    {#if who}<div class="text-sm text-slate-400"><span class="text-slate-200 font-medium">{who}</span> の{rangeGap}{rangeLabel}</div>{/if}
     {#if me}
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatTile size="primary" label="有効与ダメージ" value={me.effective_damage_dealt} sub={perTurn(me.effective_damage_dealt)} help={STAT_HELP['有効与ダメージ']} />

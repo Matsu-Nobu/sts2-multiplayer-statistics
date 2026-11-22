@@ -1,16 +1,21 @@
 <script lang="ts">
-  // 貢献度スコア (spec ui.md「ラン全体」): 合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit) の大きい順。
+  // 貢献度スコア (spec ui.md「ラン全体」): Act の範囲で絞った戦闘について、合計貢献 = 与ダメ貢献 (rDPS) + 被ダメ軽減貢献 (rMit) の大きい順。
   import { useSession } from '../lib/session';
   import { computeRdps } from '../lib/rdps';
   import { computeRmit } from '../lib/rmit';
   import { playerColor } from '../lib/players';
   import { SCORE_HELP } from '../lib/contribHelp';
+  import { actRangeLabel, actRangeOptions, inActRange, type ActRange } from '../lib/actRange';
   import Panel from './ui/Panel.svelte';
+  import SegmentedControl from './ui/SegmentedControl.svelte';
   import EmptyState from './ui/EmptyState.svelte';
 
   const s = useSession();
-  let rdps = $derived(computeRdps(s.combatEvents));
-  let rmit = $derived(computeRmit(s.combatEvents));
+  let range: ActRange = $state('all');
+  let rangeOptions = $derived(actRangeOptions(s.combatActs));
+  let events = $derived(s.combatEvents.filter(e => inActRange(s.combatActs, e.combat_index!, range)));
+  let rdps = $derived(computeRdps(events));
+  let rmit = $derived(computeRmit(events));
   let rows = $derived(s.playerIds.map(pid => {
     const d = rdps.byPlayer[pid]?.total ?? 0;
     const m = rmit.byPlayer[pid]?.total ?? 0;
@@ -21,8 +26,11 @@
 
 </script>
 
-<Panel title="貢献度スコア" scope="全員・ラン全体" help={SCORE_HELP}>
+<Panel title="貢献度スコア" scope={`全員・${actRangeLabel(range)}`} help={SCORE_HELP}>
   {#snippet actions()}
+    {#if rangeOptions.length > 1}
+      <SegmentedControl label="範囲" options={rangeOptions} value={range} onChange={(v) => range = v} />
+    {/if}
     <div class="hidden sm:flex items-center gap-3 text-xs text-slate-400">
       <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-ok"></span>与ダメ貢献</span>
       <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-accent"></span>被ダメ軽減貢献</span>
