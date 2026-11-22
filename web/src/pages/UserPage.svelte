@@ -1,5 +1,6 @@
 <script lang="ts">
-  // ユーザーページ (本人にはマイページ。spec user-pages.md「ユーザーページ」): その人が遊んだゲームの一覧と絞り込み。
+  // ユーザーページ (本人にはマイページ。spec user-pages.md「ユーザーページ」)。
+  // ゲームのタブはその人が遊んだゲームの一覧と絞り込み、統計のタブは PlayerStats (spec player-stats.md)。
   import { userHref, type RunRelation } from '../lib/auth.svelte';
   import { GAME_MODE_LABEL } from '../lib/labels';
   import RunSettings from '../components/RunSettings.svelte';
@@ -8,6 +9,8 @@
   import EmptyState from '../components/ui/EmptyState.svelte';
   import Skeleton from '../components/ui/Skeleton.svelte';
   import Unavailable from '../components/Unavailable.svelte';
+  import PlayerStats from '../components/PlayerStats.svelte';
+  import { route, navigateUserTab, userTabHref, type UserTab } from '../lib/router.svelte';
 
   interface Game {
     session_id: string; created_at: string; character_id: string | null; character_name: string | null; game_mode: string | null;
@@ -97,6 +100,16 @@
         </div>
       {/if}
     </div>
+    <nav class="flex gap-1 border-b border-bg-3">
+      {#each [['games', 'ゲーム'], ['stats', '統計']] as [tab, label] (tab)}
+        <a href={userTabHref(steamId, tab as UserTab)} onclick={(e) => navigateUserTab(e, steamId, tab as UserTab)}
+           aria-current={route.userTab === tab ? 'page' : undefined}
+           class="px-3 py-2 text-sm border-b-2 focus-ring {route.userTab === tab ? 'text-slate-100 font-semibold border-accent' : 'text-slate-400 border-transparent hover:text-slate-200'}">{label}</a>
+      {/each}
+    </nav>
+    {#if route.userTab === 'stats'}
+      <PlayerStats {steamId} section={route.statsSection} />
+    {:else}
     {#if games.length > 0}
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         {@render filter('キャラクター', fChar, charOptions, v => (fChar = v), v => v)}
@@ -136,5 +149,6 @@
         </ul>
       {/if}
     </Panel>
+    {/if}
   </main>
 {/if}

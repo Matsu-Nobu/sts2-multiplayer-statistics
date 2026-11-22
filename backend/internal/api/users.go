@@ -92,37 +92,71 @@ type userPageRes struct {
 	Runs []store.UserRun `json:"runs"`
 }
 
-func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
+// viewableUser は、ユーザーページ (ゲームの一覧と統計) を見に来た人に見せてよいかを確かめる。
+// 見せられないときは応答を書いて ok=false を返す (docs/spec/user-pages.md「見られる人」)。
+func (s *Server) viewableUser(w http.ResponseWriter, r *http.Request) (p store.UserProfile, isMe bool, runs []store.UserRun, ok bool) {
 	id := chi.URLParam(r, "steamid")
 	me := s.viewer(r)
 	p, err := s.Store.GetUserProfile(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
-		return
+		return p, false, nil, false
 	}
-	isMe := me != "" && me == id
+	isMe = me != "" && me == id
 	allowed, err := s.canViewProfile(r, p, me, isMe)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "failed to check steam friends")
-		return
+		return p, isMe, nil, false
 	}
 	if !allowed {
 		writeError(w, http.StatusForbidden, "profile is private")
-		return
+		return p, isMe, nil, false
 	}
-	runs, err := s.Store.ListUserRuns(r.Context(), id, !isMe)
+	runs, err = s.Store.ListUserRuns(r.Context(), id, !isMe)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load runs")
-		return
+		return p, isMe, nil, false
 	}
 	if !p.Known && len(runs) == 0 && !isMe {
 		writeError(w, http.StatusNotFound, "user not found")
+		return p, isMe, nil, false
+	}
+	return p, isMe, runs, true
+}
+
+func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
+	p, isMe, runs, ok := s.viewableUser(w, r)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, userPageRes{
-		User: meRes{SteamID: id, DisplayName: displayName(p), ProfileVisibility: p.Visibility},
+		User: meRes{SteamID: p.SteamID, DisplayName: displayName(p), ProfileVisibility: p.Visibility},
 		IsMe: isMe,
 		Runs: runs,
+	})
+}
+
+type userStatsRes struct {
+	User  meRes               `json:"user"`
+	IsMe  bool                `json:"is_me"`
+	Games []store.GameSummary `json:"games"`
+}
+
+// getUserStats はプレイヤーの統計に使う、ゲームごとの集計を返す (docs/spec/player-stats.md)。
+func (s *Server) getUserStats(w http.ResponseWriter, r *http.Request) {
+	p, isMe, _, ok := s.viewableUser(w, r)
+	if !ok {
+		return
+	}
+	games, err := s.Store.ListUserGameSummaries(r.Context(), p.SteamID, !isMe)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load stats")
+		return
+	}
+	writeJSON(w, http.StatusOK, userStatsRes{
+		User:  meRes{SteamID: p.SteamID, DisplayName: displayName(p), ProfileVisibility: p.Visibility},
+		IsMe:  isMe,
+		Games: games,
 	})
 }
 
