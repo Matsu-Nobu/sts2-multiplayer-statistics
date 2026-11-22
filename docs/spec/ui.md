@@ -54,7 +54,7 @@
 | 戦闘 | `/s/{id}/combats` | 全戦闘の合計 (主要数値・プレイヤー比較・貢献スコア・カード別・デバフ) |
 | 戦闘詳細 | `/s/{id}/combats/{combat_index}` (`?view=summary\|turns\|timeline`) | 1 戦闘の統計 |
 | ユーザーページ | `/u/{steam_id}` | その人が参加したランの一覧と、本人なら公開・非公開・削除の操作 (user-pages.md) |
-| プレイヤーの統計 | `/u/{steam_id}/stats` | その人のゲームをまたいだキャラクターごとの統計 (player-stats.md) |
+| プレイヤーの統計 | `/u/{steam_id}/stats` と `/u/{steam_id}/stats/{区画}` | その人のゲームをまたいだキャラクターごとの統計 (player-stats.md「画面の構成」) |
 
 - 全画面共通のクエリ `?p={player_id}` = 選んでいるプレイヤー。画面を移っても引き継ぐ。無ければ `doc.players` の先頭。
 - 知らない URL・存在しない戦闘や階は、それぞれラン全体・戦闘・階の一覧に戻す (エラー画面にしない)。

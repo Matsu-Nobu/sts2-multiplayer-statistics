@@ -54,7 +54,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | `PATCH`| `/api/sessions/{id}` | cookie (記録した人) | ランの公開・非公開 |
 | `PATCH`| `/api/sessions/{id}/listing` | cookie (参加者) | ランを自分のユーザーページに載せるか |
 | `DELETE`| `/api/sessions/{id}` | cookie (記録した人) | ランを削除する |
-| `GET`  | `/`・`/settings`・`/s/{id}`・`/u/{steam_id}`・`/u/{steam_id}/stats` | — | SPA HTML 配信 (画面は web が URL で決める) |
+| `GET`  | `/`・`/settings`・`/s/{id}`・`/u/{steam_id}`・`/u/{steam_id}/stats` 以下 | — | SPA HTML 配信 (画面は web が URL で決める) |
 | `GET`  | `/assets/*` | — | Vite ビルド成果物 |
 | `GET`  | `/catalog.{lang}.json` | — | STS2 カード/レリック/ポーション/エンチャント definitions（静的） |
 | `GET`  | `/favicon.ico` | — | ファビコン |

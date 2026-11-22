@@ -108,7 +108,7 @@
       {/each}
     </nav>
     {#if route.userTab === 'stats'}
-      <PlayerStats {steamId} />
+      <PlayerStats {steamId} section={route.statsSection} />
     {:else}
     {#if games.length > 0}
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">

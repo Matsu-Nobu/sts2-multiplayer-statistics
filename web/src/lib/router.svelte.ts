@@ -8,7 +8,7 @@
  *   /s/{id}/combats/{combat_index} 戦闘詳細 (?view=summary|turns|timeline)
  *   共通クエリ ?p={player_id}
  *   /u/{steam_id}                  ユーザーページのゲームのタブ (spec user-pages.md)
- *   /u/{steam_id}/stats            ユーザーページの統計のタブ (spec player-stats.md)
+ *   /u/{steam_id}/stats[/{区画}]   ユーザーページの統計のタブ (spec player-stats.md「画面の構成」)
  *   /                              ホーム、/settings 設定 (spec ui.md「サイトの画面」)
  */
 
@@ -25,14 +25,19 @@ export type Section = 'home' | 'settings' | 'user' | 'session' | 'unknown';
 
 export type UserTab = 'games' | 'stats';
 
-interface Route { section: Section; sessionId: string | null; userId: string | null; userTab: UserTab; page: Page; player: string | null }
+export const STATS_SECTIONS = ['overview', 'cards', 'relics', 'enemies', 'progress', 'ancients', 'events', 'multi'] as const;
+export type StatsSection = (typeof STATS_SECTIONS)[number];
+
+interface Route { section: Section; sessionId: string | null; userId: string | null; userTab: UserTab; statsSection: StatsSection; page: Page; player: string | null }
 
 function parse(loc: Location): Route {
   const url = new URL(loc.href);
   const player = url.searchParams.get('p');
-  const u = url.pathname.match(/^\/u\/([^/]+)(\/stats)?\/?$/);
+  const u = url.pathname.match(/^\/u\/([^/]+)(?:\/(stats)(?:\/([^/]+))?)?\/?$/);
   const userId = u ? decodeURIComponent(u[1]) : null;
   const userTab: UserTab = u?.[2] ? 'stats' : 'games';
+  // 知らない区画は概要として出す
+  const statsSection: StatsSection = (STATS_SECTIONS as readonly string[]).includes(u?.[3] ?? '') ? (u![3] as StatsSection) : 'overview';
   const m = url.pathname.match(/^\/s\/([^/]+)(?:\/(.*))?$/);
   const sessionId = m ? m[1] : null;
   const rest = (m?.[2] ?? '').replace(/\/+$/, '').split('/').filter(Boolean);
@@ -48,7 +53,7 @@ function parse(loc: Location): Route {
   }
   const path = url.pathname.replace(/\/+$/, '') || '/';
   const section: Section = sessionId ? 'session' : userId ? 'user' : path === '/' ? 'home' : path === '/settings' ? 'settings' : 'unknown';
-  return { section, sessionId, userId, userTab, page, player };
+  return { section, sessionId, userId, userTab, statsSection, page, player };
 }
 
 export const route = $state<Route>(parse(window.location));
@@ -100,15 +105,18 @@ export function link(node: HTMLAnchorElement, p: Page) {
   };
 }
 
-/** ユーザーページのタブの URL。 */
-export function userTabHref(steamId: string, tab: UserTab): string {
-  return `/u/${encodeURIComponent(steamId)}${tab === 'stats' ? '/stats' : ''}`;
+/** ユーザーページのタブ (統計なら区画も) の URL。 */
+export function userTabHref(steamId: string, tab: UserTab, section: StatsSection = 'overview'): string {
+  const base = `/u/${encodeURIComponent(steamId)}`;
+  if (tab === 'games') return base;
+  return `${base}/stats${section === 'overview' ? '' : `/${section}`}`;
 }
 
-/** ユーザーページのタブを切り替える (履歴に積む)。 */
-export function navigateUserTab(e: MouseEvent, steamId: string, tab: UserTab) {
+/** ユーザーページのタブ・統計の区画を切り替える (履歴に積む)。 */
+export function navigateUserTab(e: MouseEvent, steamId: string, tab: UserTab, section: StatsSection = 'overview') {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
-  history.pushState(null, '', userTabHref(steamId, tab));
+  history.pushState(null, '', userTabHref(steamId, tab, section));
   route.userTab = tab;
+  route.statsSection = section;
 }

@@ -56,11 +56,11 @@ export function applyFilters(games: StatsGame[], f: Filters, now: Date): StatsGa
     (f.period === 'all' || new Date(g.created_at).getTime() >= since));
 }
 
-export interface CharacterTab { key: string; name: string; games: number }
+export interface CharacterOption { key: string; name: string; games: number }
 
-/** 絞り込んだ後のゲームにあるキャラクターを、ゲーム数の多い順に並べる。 */
-export function characterTabs(games: StatsGame[]): CharacterTab[] {
-  const m = new Map<string, CharacterTab>();
+/** キャラクターのドロップダウンの選択肢。絞り込んだ後のゲームにあるキャラクターを、ゲーム数の多い順に並べる。 */
+export function characterOptions(games: StatsGame[]): CharacterOption[] {
+  const m = new Map<string, CharacterOption>();
   for (const g of games) {
     const k = characterKey(g);
     const t = m.get(k) ?? { key: k, name: characterName(g), games: 0 };

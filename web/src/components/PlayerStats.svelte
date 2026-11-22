@@ -4,7 +4,7 @@
   import { userHref } from '../lib/auth.svelte';
   import { GAME_MODE_LABEL } from '../lib/labels';
   import {
-    ALL, MULTI, SOLO, MIN_GAMES, applyFilters, characterKey, characterTabs, characterStats, deltaPoints, pct, rate,
+    ALL, MULTI, SOLO, MIN_GAMES, applyFilters, characterKey, characterOptions, characterStats, deltaPoints, pct, rate,
     type CardRow, type ChoiceRow, type Column, type EnemyRow, type Filters, type PartnerRow, type RelicRow, type StatsDoc,
   } from '../lib/playerStats';
   import Panel from './ui/Panel.svelte';
@@ -13,9 +13,15 @@
   import Skeleton from './ui/Skeleton.svelte';
   import Unavailable from './Unavailable.svelte';
   import StatsTable from './StatsTable.svelte';
+  import { navigateUserTab, userTabHref, type StatsSection } from '../lib/router.svelte';
 
-  interface Props { steamId: string }
-  let { steamId }: Props = $props();
+  interface Props { steamId: string; section: StatsSection }
+  let { steamId, section }: Props = $props();
+
+  const SECTION_LABEL: [StatsSection, string][] = [
+    ['overview', '概要'], ['cards', 'カード'], ['relics', 'レリック'], ['enemies', '敵'],
+    ['progress', '進行'], ['ancients', 'エンシェント'], ['events', 'イベント'], ['multi', 'マルチプレイ'],
+  ];
 
   let doc = $state<StatsDoc | null>(null);
   let failed = $state(false);
@@ -39,7 +45,7 @@
   let modeOptions = $derived(uniq(games.map(g => g.game_mode).filter((m): m is string => m != null)));
   let ascOptions = $derived(uniq(games.map(g => g.ascension).filter((a): a is number => a != null).map(String)).sort((a, b) => Number(a) - Number(b)));
   let filtered = $derived(applyFilters(games, filters, new Date()));
-  let tabs = $derived(characterTabs(filtered));
+  let tabs = $derived(characterOptions(filtered));
   let current = $derived(tabs.find(t => t.key === selected) ?? tabs[0] ?? null);
   let stats = $derived(current ? characterStats(filtered.filter(g => characterKey(g) === current.key), catalog) : null);
   let base = $derived(stats ? rate(stats.wins, stats.games) : null);
@@ -127,6 +133,19 @@
   </select>
 {/snippet}
 
+{#snippet actRates()}
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    {#each stats!.acts as a (a.act)}<StatTile label="Act {a.act} 突破" value={pct(a.rate)} />{/each}
+  </div>
+{/snippet}
+
+{#snippet playerCountRates()}
+  <div class="grid grid-cols-2 gap-3">
+    <StatTile label="ソロの勝率" value={pct(rate(stats!.solo.wins, stats!.solo.games))} sub="{stats!.solo.games} ゲーム" />
+    <StatTile label="マルチプレイの勝率" value={pct(rate(stats!.multi.wins, stats!.multi.games))} sub="{stats!.multi.games} ゲーム" />
+  </div>
+{/snippet}
+
 {#if failed}
   <Unavailable title="統計を読み込めませんでした" hint="しばらくしてから再読み込みしてください。" />
 {:else if !doc}
@@ -135,16 +154,8 @@
   <Panel><EmptyState title="まだ勝利か死亡で終わったゲームがありません" /></Panel>
 {:else}
   <div class="space-y-4">
-    <nav class="flex gap-1 border-b border-bg-3 overflow-x-auto" aria-label="キャラクター">
-      {#each tabs as t (t.key)}
-        <button type="button" onclick={() => (selected = t.key)}
-                class="px-3 py-2 text-sm whitespace-nowrap border-b-2 focus-ring {t.key === current?.key ? 'text-slate-100 font-semibold border-accent' : 'text-slate-400 border-transparent hover:text-slate-200'}">
-          {t.name}<span class="ml-1 text-xs text-slate-500 tabular">{t.games}</span>
-        </button>
-      {/each}
-    </nav>
-
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {@render filter('f-char', 'キャラクター', current?.key ?? '', tabs.map(t => [t.key, `${t.name} (${t.games} ゲーム)`] as [string, string]), v => (selected = v))}
       {@render filter('f-mode', 'ゲームモード', filters.mode, [[ALL, 'すべて'], ...modeOptions.map(m => [m, GAME_MODE_LABEL[m] ?? m] as [string, string])], v => (filters.mode = v))}
       {@render filter('f-asc', 'アセンション', filters.asc, [[ALL, 'すべて'], ...ascOptions.map(a => [a, a] as [string, string])], v => (filters.asc = v))}
       {@render filter('f-players', '人数', filters.players, [[ALL, 'すべて'], [SOLO, 'ソロ'], [MULTI, 'マルチプレイ']], v => (filters.players = v))}
@@ -154,110 +165,109 @@
       </label>
     </div>
 
+    <nav class="flex gap-1 border-b border-bg-3 overflow-x-auto" aria-label="統計の区画">
+      {#each SECTION_LABEL as [key, label] (key)}
+        <a href={userTabHref(steamId, 'stats', key)} onclick={(e) => navigateUserTab(e, steamId, 'stats', key)}
+           aria-current={key === section ? 'page' : undefined}
+           class="px-3 py-2 text-sm whitespace-nowrap border-b-2 focus-ring {key === section ? 'text-slate-100 font-semibold border-accent' : 'text-slate-400 border-transparent hover:text-slate-200'}">{label}</a>
+      {/each}
+    </nav>
+
     {#if !current || !stats}
       <Panel><EmptyState title="条件に合うゲームがありません" /></Panel>
-    {:else}
+    {:else if section === 'overview'}
       <Panel title="{current.name}の概要">
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <StatTile label="ゲーム数" value={stats.games} />
-          <StatTile label="勝率" value={pct(base)} sub="{stats.wins} 勝" />
-          <StatTile label="平均到達階" value={stats.avgFloor == null ? '—' : stats.avgFloor.toFixed(1)} />
-          <StatTile label="勝利時の最高アセンション" value={stats.bestAscension ?? '—'} />
-          <StatTile label="最長連勝" value={stats.longestStreak} />
+        <div class="space-y-4">
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <StatTile label="ゲーム数" value={stats.games} />
+            <StatTile label="勝率" value={pct(base)} sub="{stats.wins} 勝" />
+            <StatTile label="平均到達階" value={stats.avgFloor == null ? '—' : stats.avgFloor.toFixed(1)} />
+            <StatTile label="勝利時の最高アセンション" value={stats.bestAscension ?? '—'} />
+            <StatTile label="最長連勝" value={stats.longestStreak} />
+          </div>
+          <div><div class="text-xs text-slate-400 mb-1">Act の突破率</div>{@render actRates()}</div>
+          <div><div class="text-xs text-slate-400 mb-1">人数ごとの勝率</div>{@render playerCountRates()}</div>
         </div>
       </Panel>
-
-      <div class="grid md:grid-cols-2 gap-4 items-start">
-        <Panel title="カード">
-          <StatsTable columns={cardColumns} rows={stats.cards} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={3} />
-        </Panel>
-        <Panel title="レリック">
-          <StatsTable columns={relicColumns} rows={stats.relics} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={1} />
-        </Panel>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-4 items-start">
-        <Panel title="敵">
-          <StatsTable columns={enemyColumns} rows={stats.enemies} rowKey={r => r.id} count={r => r.fights} {hideLow} initialSort={4} />
-        </Panel>
-        <Panel title="進行">
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {#each stats.acts as a (a.act)}<StatTile label="Act {a.act} 突破" value={pct(a.rate)} />{/each}
-            </div>
-            <div>
-              <div class="text-xs text-slate-400 mb-1">死亡時の階</div>
-              {#if stats.deathFloors.length === 0}
-                <div class="text-xs text-slate-500">死んだゲームはありません</div>
-              {:else}
-                <div class="flex items-end gap-1.5 h-24 overflow-x-auto">
-                  {#each stats.deathFloors as d (d.floor)}
-                    <div class="flex flex-col items-center gap-1 shrink-0" title="{d.floor} 階: {d.games} ゲーム">
-                      <span class="text-[10px] text-slate-400 tabular">{d.games}</span>
-                      <div class="w-5 bg-bad/70 rounded-t" style:height="{Math.round((56 * d.games) / deathMax)}px"></div>
-                      <span class="text-[10px] text-slate-500 tabular">{d.floor}</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-            <div>
-              <div class="text-xs text-slate-400 mb-1">休憩所の選択</div>
-              {#if restTotal === 0}
-                <div class="text-xs text-slate-500">まだありません</div>
-              {:else}
-                <div class="space-y-1.5">
-                  {#each stats.rest as r (r.name)}
-                    <div class="grid grid-cols-[5rem_1fr_3rem] items-center gap-2 text-sm">
-                      <span class="text-slate-300 truncate">{r.name}</span>
-                      <div class="h-2 bg-bg-3 rounded"><div class="h-2 bg-ok rounded" style:width="{(100 * r.count) / restTotal}%"></div></div>
-                      <span class="text-right tabular text-slate-400">{pct(r.count / restTotal)}</span>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
+    {:else if section === 'cards'}
+      <Panel title="カード">
+        <StatsTable columns={cardColumns} rows={stats.cards} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={3} />
+      </Panel>
+    {:else if section === 'relics'}
+      <Panel title="レリック">
+        <StatsTable columns={relicColumns} rows={stats.relics} rowKey={r => r.id} count={r => r.games} {hideLow} initialSort={1} />
+      </Panel>
+    {:else if section === 'enemies'}
+      <Panel title="敵">
+        <StatsTable columns={enemyColumns} rows={stats.enemies} rowKey={r => r.id} count={r => r.fights} {hideLow} initialSort={4} />
+      </Panel>
+    {:else if section === 'progress'}
+      <Panel title="進行">
+        <div class="space-y-4">
+          <div><div class="text-xs text-slate-400 mb-1">Act の突破率</div>{@render actRates()}</div>
+          <div>
+            <div class="text-xs text-slate-400 mb-1">死亡時の階</div>
+            {#if stats.deathFloors.length === 0}
+              <div class="text-xs text-slate-500">死んだゲームはありません</div>
+            {:else}
+              <div class="flex items-end gap-1.5 h-24 overflow-x-auto">
+                {#each stats.deathFloors as d (d.floor)}
+                  <div class="flex flex-col items-center gap-1 shrink-0" title="{d.floor} 階: {d.games} ゲーム">
+                    <span class="text-[10px] text-slate-400 tabular">{d.games}</span>
+                    <div class="w-5 bg-bad/70 rounded-t" style:height="{Math.round((56 * d.games) / deathMax)}px"></div>
+                    <span class="text-[10px] text-slate-500 tabular">{d.floor}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
           </div>
-        </Panel>
-      </div>
-
-      <div class="grid md:grid-cols-2 gap-4 items-start">
-        <Panel title="選択">
-          <div class="space-y-4">
-            <div>
-              <div class="text-xs text-slate-400 mb-1">エンシェント</div>
-              {#if ancient}
-                {@render groupSelect('エンシェント', stats.ancients, ancient.id, v => (ancientSel = v))}
-                {#key ancient.id}
-                  <StatsTable columns={ancientColumns} rows={ancient.rows} rowKey={r => r.title} count={r => r.chosen} {hideLow} initialSort={2} />
-                {/key}
-              {:else}
-                <div class="text-xs text-slate-500">まだありません</div>
-              {/if}
-            </div>
-            <div>
-              <div class="text-xs text-slate-400 mb-1">イベント</div>
-              {#if event}
-                {@render groupSelect('イベント', stats.events, event.id, v => (eventSel = v))}
-                {#key event.id}
-                  <StatsTable columns={eventColumns} rows={event.rows} rowKey={r => r.title} count={r => r.chosen} {hideLow} initialSort={1} />
-                {/key}
-              {:else}
-                <div class="text-xs text-slate-500">まだありません</div>
-              {/if}
-            </div>
+          <div>
+            <div class="text-xs text-slate-400 mb-1">休憩所の選択</div>
+            {#if restTotal === 0}
+              <div class="text-xs text-slate-500">まだありません</div>
+            {:else}
+              <div class="space-y-1.5">
+                {#each stats.rest as r (r.name)}
+                  <div class="grid grid-cols-[5rem_1fr_3rem] items-center gap-2 text-sm">
+                    <span class="text-slate-300 truncate">{r.name}</span>
+                    <div class="h-2 bg-bg-3 rounded"><div class="h-2 bg-ok rounded" style:width="{(100 * r.count) / restTotal}%"></div></div>
+                    <span class="text-right tabular text-slate-400">{pct(r.count / restTotal)}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
           </div>
-        </Panel>
-        <Panel title="マルチプレイ">
-          <div class="space-y-4">
-            <div class="grid grid-cols-2 gap-3">
-              <StatTile label="ソロの勝率" value={pct(rate(stats.solo.wins, stats.solo.games))} sub="{stats.solo.games} ゲーム" />
-              <StatTile label="マルチプレイの勝率" value={pct(rate(stats.multi.wins, stats.multi.games))} sub="{stats.multi.games} ゲーム" />
-            </div>
-            <StatsTable columns={partnerColumns} rows={stats.partners} rowKey={r => r.steamId} count={r => r.games} {hideLow} initialSort={1} />
-          </div>
-        </Panel>
-      </div>
+        </div>
+      </Panel>
+    {:else if section === 'ancients'}
+      <Panel title="エンシェント">
+        {#if ancient}
+          {@render groupSelect('エンシェント', stats.ancients, ancient.id, v => (ancientSel = v))}
+          {#key ancient.id}
+            <StatsTable columns={ancientColumns} rows={ancient.rows} rowKey={r => r.title} count={r => r.chosen} {hideLow} initialSort={2} />
+          {/key}
+        {:else}
+          <EmptyState title="まだありません" />
+        {/if}
+      </Panel>
+    {:else if section === 'events'}
+      <Panel title="イベント">
+        {#if event}
+          {@render groupSelect('イベント', stats.events, event.id, v => (eventSel = v))}
+          {#key event.id}
+            <StatsTable columns={eventColumns} rows={event.rows} rowKey={r => r.title} count={r => r.chosen} {hideLow} initialSort={1} />
+          {/key}
+        {:else}
+          <EmptyState title="まだありません" />
+        {/if}
+      </Panel>
+    {:else if section === 'multi'}
+      <Panel title="マルチプレイ">
+        <div class="space-y-4">
+          {@render playerCountRates()}
+          <StatsTable columns={partnerColumns} rows={stats.partners} rowKey={r => r.steamId} count={r => r.games} {hideLow} initialSort={1} />
+        </div>
+      </Panel>
     {/if}
   </div>
 {/if}

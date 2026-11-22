@@ -99,6 +99,7 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/s/{id}/*", indexHTML()) // web 側の画面 (spec ui.md「画面と URL」)
 	r.Get("/u/{steamid}", indexHTML())
 	r.Get("/u/{steamid}/stats", indexHTML())
+	r.Get("/u/{steamid}/stats/*", indexHTML()) // 統計の区画 (spec player-stats.md「画面の構成」)
 	r.Mount("/assets/", staticAssets())
 	r.Get("/favicon.ico", staticAssets().ServeHTTP)
 	// /catalog.{lang}.json — STS2 のカード/レリック/ポーション/エンチャント definitions。

@@ -63,16 +63,16 @@
             </td>
           {/each}
         </tr>
-      {:else}
-        <tr>
-          <td colspan={columns.length} class="px-2 py-3 text-xs text-slate-500">
-            {#if hideLow && rows.length > 0}{MIN_GAMES} ゲーム以上の行がありません。「{MIN_GAMES} ゲーム未満を隠す」を外すと表示します。{:else}まだありません{/if}
-          </td>
-        </tr>
       {/each}
     </tbody>
   </table>
 </div>
+{#if shown.length === 0}
+  <!-- 表の外に置き、横に長い表の中で案内文が切れないようにする -->
+  <p class="px-2 py-3 text-xs text-slate-500">
+    {#if hideLow && rows.length > 0}{MIN_GAMES} ゲーム以上の行がありません。「{MIN_GAMES} ゲーム未満を隠す」を外すと表示します。{:else}まだありません{/if}
+  </p>
+{/if}
 {#if visible.length > LIMIT}
   <button type="button" class="mt-2 text-xs text-accent hover:underline focus-ring rounded" onclick={() => (showAll = !showAll)}>
     {showAll ? `${LIMIT} 行だけ表示` : `すべて表示 (${visible.length} 行)`}
