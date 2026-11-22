@@ -35,6 +35,7 @@ export interface Column<R> {
   tone?: (r: R) => 'ok' | 'bad' | null;      // 文字色
   href?: (r: R) => string;                    // リンクにする
   badge?: boolean;                            // バッジにする
+  group?: string;                             // 2 段の見出しの上の段。続く列で同じ値なら 1 つにまとめる
 }
 
 export interface Filters { version: string; mode: string; asc: string; players: string; period: 'all' | '30d' }
@@ -98,8 +99,14 @@ export function characterOptions(games: StatsGame[]): CharacterOption[] {
   return [...m.values()].sort((a, b) => b.games - a.games || a.name.localeCompare(b.name, 'ja'));
 }
 
-// games はカードを取ったゲームの数。cleared は、Act を選んだときに、そのうちその Act を突破したゲームの数
-export interface CardRow { id: string; name: string; offered: number; picks: number; games: number; wins: number; cleared: number }
+// 配列は Act ごと (0 始まり)。offered と picks は提示回数と取った回数、pickedGames はその Act で取ったゲームの数、
+// cleared はそのうちその Act を突破したゲームの数。games と wins は、どれかの Act で取ったゲームの数とそのうち勝った数。
+// total は表の 1 行目に置く「{キャラクター名}全体」の行。
+export interface CardRow {
+  id: string; name: string; games: number; wins: number;
+  offered: number[]; picks: number[]; pickedGames: number[]; cleared: number[];
+  total?: boolean;
+}
 export interface RelicRow { id: string; name: string; games: number; wins: number }
 export interface EnemyRow { id: string; name: string; roomType: string; fights: number; damage: number; deaths: number }
 export interface ChoiceRow { title: string; offered: number; chosen: number; wins: number }
@@ -215,35 +222,47 @@ export function characterStats(games: StatsGame[], catalog: CatalogLookup | null
   };
 }
 
-/**
- * カードの表の行。act が null なら全部の Act の提示を数え、数字を与えると、その Act (0 始まり) で提示されたものだけを数える。
- */
-export function cardRows(games: StatsGame[], catalog: CatalogLookup | null, act: number | null): CardRow[] {
+/** カードの表の行。acts は表に出す Act の数で、それより先の Act の提示は数えない。 */
+export function cardRows(games: StatsGame[], catalog: CatalogLookup | null, acts: number): CardRow[] {
+  const zeros = () => Array.from({ length: acts }, () => 0);
   const cards = new Map<string, CardRow>();
   for (const g of games) {
-    const pickedHere = new Set<string>();
+    const pickedAny = new Set<string>();
+    const pickedAct = Array.from({ length: acts }, () => new Set<string>());
     for (const c of g.card_offers) {
-      if (act != null && c.act_index !== act) continue;
-      const r = upsert(cards, c.id, () => ({ id: c.id, name: catalog?.card(c.id, false)?.name ?? c.name, offered: 0, picks: 0, games: 0, wins: 0, cleared: 0 }));
-      r.offered += c.offered;
-      r.picks += c.picked;
-      if (c.picked > 0) pickedHere.add(c.id);
+      if (c.act_index >= acts) continue;
+      const r = upsert(cards, c.id, () => ({
+        id: c.id, name: catalog?.card(c.id, false)?.name ?? c.name, games: 0, wins: 0,
+        offered: zeros(), picks: zeros(), pickedGames: zeros(), cleared: zeros(),
+      }));
+      r.offered[c.act_index] += c.offered;
+      r.picks[c.act_index] += c.picked;
+      if (c.picked > 0) { pickedAny.add(c.id); pickedAct[c.act_index].add(c.id); }
     }
-    // 全部の Act を数えるときは、同じカードを複数の Act で取っても 1 ゲームと数える
-    for (const id of pickedHere) {
+    for (const id of pickedAny) {
       const r = cards.get(id)!;
       r.games++;
       if (isWin(g)) r.wins++;
-      if (act != null && clearedAct(g, act)) r.cleared++;
     }
+    pickedAct.forEach((ids, act) => {
+      for (const id of ids) {
+        const r = cards.get(id)!;
+        r.pickedGames[act]++;
+        if (clearedAct(g, act)) r.cleared[act]++;
+      }
+    });
   }
   return [...cards.values()];
 }
 
-/** Act (0 始まり) に進んだゲームのうち、その Act を突破したゲームの割合。カードの表の差の基準に使う。 */
-export function actClearRate(games: StatsGame[], act: number): number | null {
-  const reached = games.filter(g => g.max_act_index >= act);
-  return rate(reached.filter(g => clearedAct(g, act)).length, reached.length);
+/** 「{キャラクター名}全体」の行。突破率は、Act に進んだゲームのうちその Act を突破したゲームで出す。 */
+export function cardTotalRow(games: StatsGame[], name: string, acts: number): CardRow {
+  const reached = Array.from({ length: acts }, (_, act) => games.filter(g => g.max_act_index >= act));
+  return {
+    id: '', name: `${name}全体`, games: games.length, wins: games.filter(isWin).length, total: true,
+    offered: Array.from({ length: acts }, () => 0), picks: Array.from({ length: acts }, () => 0),
+    pickedGames: reached.map(r => r.length), cleared: reached.map((r, act) => r.filter(g => clearedAct(g, act)).length),
+  };
 }
 
 /** 勝率 (0〜1)。ゲームが無ければ null。 */

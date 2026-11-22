@@ -530,7 +530,7 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 | 時期 | 変更 |
 |------|------|
-| 2026-11 | `POST /sessions` と、セッション・ユーザーページ・統計の各ゲームに `game_version`。統計の `card_offers` を Act ごとに分け、`act_index` を足す |
+| 2026-11 | `POST /sessions` と、セッション・ユーザーページ・統計の各ゲームに `game_version`。統計の `card_offers` をカードと Act の組ごとに分け、`act_index` を足す |
 | 2026-11 | ログインとユーザーページ (`/auth/steam/*`、`/api/me`、`/api/users/{steam_id}`、ランの公開・非公開・削除)。`GET /api/sessions/{id}` の `session` に `visibility`。`POST /sessions/{id}/events` の body の上限を 2MB に上げる (ほかは 256KB) |
 | 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |
 | 2026-10 | v2: ラン全体の event を `floor_snapshot` に統合 (`room_entered` / `hp_changed` / `gold_changed` / `act_entered` / `rest_action` / `reward_taken` / `card_obtained` / `card_upgraded` / `card_enchanted` / `card_removed` / `relic_obtained` / `potion_obtained` / `potion_discarded` / `event_choice` を廃止)。`player_id` を全 event で正規化。`run_end` に `final_hp`。出どころをモデル ID に変更。`hit_index` 廃止 |

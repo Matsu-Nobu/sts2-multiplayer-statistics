@@ -19,6 +19,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | 階の確定 | `RunManager.UpdatePlayerStatsInMapPointHistory()` (private、同期) の Postfix。次の階に入る直前とラン終了時に呼ばれる | `floor_snapshot` (`is_final: true`) |
 | 階の途中経過 (ライブ表示) | 送信の区切り (ターン終了・戦闘終了・報酬取得・ショップ購入・休憩所・イベント選択) | `floor_snapshot` (`is_final: false`) |
 | ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchaseInternal(MerchantInventory, bool)` の Postfix (v0.113.0 で確認。それより前の名前は `OnTryPurchase`)。v0.113.0 では **購入処理が全員の PC で実行される** (`MerchantSynchronizer.PurchaseLocalEntry` が購入を全員に送信し、受け取った PC も `MerchantEntry.OnTryPurchaseUnsynchronized` を実行する) ので、全プレイヤーの購入が取れる | `item_purchased` |
+| ゲームのバージョン | ゲームの実行ファイルと同じフォルダの `release_info.json` の `version` (例 `v0.113.1`)。セッションを作るときに 1 回読む | `POST /sessions` の `game_version` |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` の Postfix (最初の 1 回だけ)。放棄は `RunManager.IsAbandoned` | `run_end` |
 | ラン終了直前の HP | `RunManager.WinRun()` / `RunManager.Abandon()` の Prefix (この後ゲームが全員を倒すため) | `run_end.final_hp` |
 | デッキ・レリック・ポーション | 階の確定・途中経過の送信時に `Player.Deck.Cards` / `Player.Relics` / `Player.Potions` | `floor_snapshot.players[].deck` / `relics` / `potions` |
