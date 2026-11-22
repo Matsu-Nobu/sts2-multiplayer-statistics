@@ -44,6 +44,7 @@
   const characterOf = (g: Game) => g.character_name ?? g.character_id ?? '—';
   const modeOf = (g: Game) => (g.game_mode ? GAME_MODE_LABEL[g.game_mode] ?? g.game_mode : '—');
   const ascOf = (g: Game) => String(g.ascension ?? '—');
+  const playersOf = (g: Game) => (g.participants.length > 1 ? 'マルチプレイ' : 'ソロ');
   const fmtDate = (s: string) => {
     const d = new Date(s);
     return Number.isNaN(d.getTime()) ? s : d.toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -51,18 +52,20 @@
 
   // 絞り込み (画面の中だけ。選べる値は一覧にあるゲームの値だけ)
   const ALL = '';
-  let fChar = $state(ALL), fMode = $state(ALL), fAsc = $state(ALL), fOutcome = $state(ALL);
+  let fChar = $state(ALL), fMode = $state(ALL), fAsc = $state(ALL), fOutcome = $state(ALL), fPlayers = $state(ALL);
   const uniq = (xs: string[]) => [...new Set(xs)];
   let games = $derived(doc?.runs ?? []);
   let charOptions = $derived(uniq(games.map(characterOf)).sort());
   let modeOptions = $derived(uniq(games.map(modeOf)));
   let ascOptions = $derived(uniq(games.map(ascOf)).sort((a, b) => Number(a) - Number(b)));
   let outcomeOptions = $derived(uniq(games.map(outcomeKey)));
+  let playersOptions = $derived(uniq(games.map(playersOf)).sort());
   let filtered = $derived(games.filter(g =>
     (fChar === ALL || characterOf(g) === fChar) &&
     (fMode === ALL || modeOf(g) === fMode) &&
     (fAsc === ALL || ascOf(g) === fAsc) &&
-    (fOutcome === ALL || outcomeKey(g) === fOutcome)));
+    (fOutcome === ALL || outcomeKey(g) === fOutcome) &&
+    (fPlayers === ALL || playersOf(g) === fPlayers)));
 </script>
 
 {#snippet filter(label: string, value: string, options: string[], set: (v: string) => void, show: (v: string) => string)}
@@ -100,6 +103,7 @@
         {@render filter('ゲームモード', fMode, modeOptions, v => (fMode = v), v => v)}
         {@render filter('アセンション', fAsc, ascOptions, v => (fAsc = v), v => v)}
         {@render filter('結果', fOutcome, outcomeOptions, v => (fOutcome = v), outcomeLabel)}
+        {@render filter('人数', fPlayers, playersOptions, v => (fPlayers = v), v => v)}
         <span class="text-xs text-slate-500 tabular">{filtered.length} / {games.length} ゲーム</span>
       </div>
     {/if}
