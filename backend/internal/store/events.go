@@ -51,12 +51,21 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 // (NULL combat_index sorts last), then turn_number / sequence / id for total
 // ordering. Each element is a JSON object containing the request shape plus
 // received_at and the optional combat context fields.
+// floor_snapshot は、payload の floor ごとに最後に届いた 1 件だけを返す (docs/spec/api.md「floor_snapshot」)。
+// 最後とは occurred_at・sequence・id の順で最大のもので、web が同じ階の記録から選ぶものと同じである。
 func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMessage, error) {
 	rows, err := s.db.QueryContext(ctx, `
+		WITH ranked AS (
+			SELECT *, CASE WHEN event_type = 'floor_snapshot' THEN ROW_NUMBER() OVER (
+				PARTITION BY event_type, json_extract(payload_json, '$.floor')
+				ORDER BY occurred_at DESC, sequence DESC, id DESC) END AS snapshot_rank
+			FROM events
+			WHERE session_id = ?
+		)
 		SELECT event_uuid, event_type, occurred_at, received_at, player_id,
 		       floor, combat_index, turn_number, sequence, payload_json
-		FROM events
-		WHERE session_id = ?
+		FROM ranked
+		WHERE snapshot_rank IS NULL OR snapshot_rank = 1
 		ORDER BY
 			(combat_index IS NULL),     -- non-combat events go to the end inside same occurred_at
 			combat_index,

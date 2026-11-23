@@ -137,12 +137,12 @@ func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
 }
 
 type userStatsRes struct {
-	User  meRes               `json:"user"`
-	IsMe  bool                `json:"is_me"`
-	Games []store.GameSummary `json:"games"`
+	User meRes `json:"user"`
+	IsMe bool  `json:"is_me"`
+	store.PlayerStats
 }
 
-// getUserStats はプレイヤーの統計に使う、ゲームごとの集計を返す (docs/spec/player-stats.md)。
+// getUserStats はプレイヤーの統計の、1 キャラクター分の集計を返す (docs/spec/player-stats.md)。
 func (s *Server) getUserStats(w http.ResponseWriter, r *http.Request) {
 	p, isMe, _, ok := s.viewableUser(w, r)
 	if !ok {
@@ -153,10 +153,15 @@ func (s *Server) getUserStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load stats")
 		return
 	}
+	q := r.URL.Query()
+	f := store.StatsFilter{
+		Character: q.Get("character"), Version: q.Get("version"), Mode: q.Get("mode"),
+		Ascension: q.Get("ascension"), Players: q.Get("players"), Period: q.Get("period"),
+	}
 	writeJSON(w, http.StatusOK, userStatsRes{
-		User:  meRes{SteamID: p.SteamID, DisplayName: displayName(p), ProfileVisibility: p.Visibility},
-		IsMe:  isMe,
-		Games: games,
+		User:        meRes{SteamID: p.SteamID, DisplayName: displayName(p), ProfileVisibility: p.Visibility},
+		IsMe:        isMe,
+		PlayerStats: store.AggregatePlayerStats(games, f, s.now()),
 	})
 }
 
