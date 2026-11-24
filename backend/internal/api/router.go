@@ -35,8 +35,11 @@ const (
 	maxEventsBodyBytes int64 = 2 * 1024 * 1024
 
 	// rate limit: IP あたり N req / windowSec
-	// POST /sessions: ボットによる無制限 session 作成を防ぐ。1分10件もあれば実用上十分。
-	rateSessionsPerMin = 10
+	// POST /sessions: ボットによる無制限 session 作成を防ぐ。
+	// セーブデータの取り込みでは、mod が 2 秒おきにセッションを作るので、1 分 30 件まで受ける。
+	rateSessionsPerMin = 30
+	// POST /imports/check: mod はボタンが押されたときに 1 回だけ呼ぶ。
+	rateImportChecksPerMin = 10
 	// POST /sessions/{id}/events: bulk なので mod 側は更に低頻度。1分300件で十分。
 	rateEventsPerMin = 300
 )
@@ -76,6 +79,7 @@ func (s *Server) Routes() http.Handler {
 
 	// POST endpoints は rate limit + body size limit で保護
 	r.With(limitBody, rateLimit(rateSessionsPerMin, time.Minute)).Post("/sessions", s.createSession)
+	r.With(limitBody, rateLimit(rateImportChecksPerMin, time.Minute)).Post("/imports/check", s.checkImports)
 	r.With(limitBodyTo(maxEventsBodyBytes), s.requireWriteToken, rateLimit(rateEventsPerMin, time.Minute)).
 		Post("/sessions/{id}/events", s.postEvents)
 

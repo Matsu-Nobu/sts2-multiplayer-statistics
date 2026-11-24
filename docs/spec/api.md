@@ -42,6 +42,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 |--------|------|------|------|
 | `POST` | `/sessions` | — | セッション作成 |
 | `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿（戦闘内・外いずれも） |
+| `POST` | `/imports/check` | — | セーブデータの履歴にあるランのうち、サーバにまだ無いランを返す |
 | `GET`  | `/api/sessions/{id}` | — (非公開のランは記録した人のログインが要る) | セッション全データ取得（WebUI用） |
 | `GET`  | `/auth/steam/login?return={path}` | — | Steam のログイン画面へ移る |
 | `GET`  | `/auth/steam/callback` | — | Steam から戻る。ログインの cookie を付けて `return` へ移る |
@@ -74,9 +75,14 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
   "character_id":  "IRONCLAD",          // optional（後で run_start イベントで送ってもよい）
   "ascension":     5,                    // optional
   "seed":          "1234567890",         // optional
-  "game_version":  "v0.113.1"            // optional（ゲームのフォルダの release_info.json の version）
+  "game_version":  "v0.113.1",           // optional（ゲームのフォルダの release_info.json の version）
+  "source":        "history",            // optional。セーブデータの履歴から取り込むときだけ "history"
+  "started_at":    "2026-06-03T12:14:00Z", // source が "history" のとき必須。ランを始めた日時 (履歴の start_time)
+  "player_ids":    ["76561199204788207"]   // source が "history" のとき必須。ランの全プレイヤーの Steam ID
 }
 ```
+
+`source` が `"history"` のとき、`seed`・`started_at`・`player_ids` が無ければ、サーバは `400` を返す。サーバはセッションの `created_at` に `started_at` を入れる。そのランと同じランのセッション (「同じランの見分け方」) が既にあれば、サーバはセッションを作らず、`409` と `{"session_id": "<既にあるセッション>"}` を返す。
 
 **Response 201**
 ```json
@@ -86,6 +92,38 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
   "share_url":   "https://<host>/s/550e8400-e29b-41d4-a716-446655440000"
 }
 ```
+
+### 同じランの見分け方
+
+サーバは、次のすべてに当てはまるセッションを、送られてきたランと同じランとみなす。当てはまるセッションが複数あれば、`created_at` が最も早いものを使う。
+
+- `seed` が同じ。
+- 参加者 (`session_players`) に、送られてきたランのプレイヤーが 1 人以上いる。
+- `created_at` が、送られてきたランの `started_at` の 1 時間前より後。mod は、ランの最初の部屋に入ったときにセッションを作るので、ライブで記録したセッションの `created_at` は、ランを始めた日時の少し後になる。同じシードで後から始め直したランのセッションは、この条件で別のランになる。
+
+---
+
+## `POST /imports/check`
+
+mod がセーブデータの履歴を送る前に呼ぶ。送る候補のランの一覧を受け取り、サーバにまだ無いランの番号を返す。
+
+**Request** (`runs` は 1000 件まで)
+```json
+{
+  "runs": [
+    { "seed": "80BWT97ATAT2", "started_at": "2026-06-03T12:14:00Z",
+      "player_ids": ["76561199204788207"], "outcome": "death", "final_floor": 33 }
+  ]
+}
+```
+
+**Response 200**
+```json
+{ "missing": [0, 2] }
+```
+
+- `missing` は、同じランのセッション (「同じランの見分け方」) が無いランの、`runs` の中の番号 (0 始まり)。
+- 同じランのセッションがあり、そのセッションの結果 (`outcome`) が空なら、サーバはそのセッションの結果と到達階を、送られてきた `outcome` と `final_floor` で埋め、ゲームの集計を作り直す。メニューから放棄して進行中のまま残ったセッションは、これで放棄になる。
 
 ---
 
@@ -176,7 +214,7 @@ Content-Type: application/json
 
 | event_type | payload | player_id | context |
 |-----------|---------|-----------|---------|
-| `run_start` | `character_id`, `character_name` (表示名), `ascension`, `seed`, `game_mode`, `player_name`, `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
+| `run_start` | `character_id`, `character_name` (表示名), `ascension`, `seed`, `game_mode`, `player_name` (空ならサーバはプレイヤー名を書き換えない), `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
 | `floor_snapshot` | 「floor_snapshot」 | 空 | floor のみ |
 | `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
 | `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`), `badges` (`{ player_id: [{ id, name, description, rarity }] }`) | 空 | floor のみ |
@@ -362,6 +400,7 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
     "ascension":     5,
     "seed":          "1234567890",
     "game_version":  "v0.113.1",
+    "source":        "live",
     "outcome":       null,
     "final_floor":   null,
     "finished_at":   null
@@ -372,6 +411,8 @@ ETag は `(session_id, events の最新 received_at, events 件数, session.outc
   "events": [ /* POST /events の各要素 + received_at */ ]
 }
 ```
+
+`source` は、mod がゲーム中に記録したセッションなら `"live"`、セーブデータの履歴から取り込んだセッションなら `"history"`。
 
 `events` は `(combat_index, turn_number, sequence, occurred_at, id)` 順（NULL の combat_index は最後）。WebUI はクライアント側で集計・rDPS 算出・タイムライン構築を行う。
 
@@ -561,6 +602,7 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 | 時期 | 変更 |
 |------|------|
+| 2026-11 | `POST /imports/check` を追加。`POST /sessions` に `source` と `started_at`、`GET /api/sessions/{id}` の `session` に `source` |
 | 2026-11 | `POST /sessions` と、セッション・ユーザーページ・統計の各ゲームに `game_version`。統計の `card_offers` をカードと Act の組ごとに分け、`act_index` を足す |
 | 2026-11 | ログインとユーザーページ (`/auth/steam/*`、`/api/me`、`/api/users/{steam_id}`、ランの公開・非公開・削除)。`GET /api/sessions/{id}` の `session` に `visibility`。`POST /sessions/{id}/events` の body の上限を 2MB に上げる (ほかは 256KB) |
 | 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |

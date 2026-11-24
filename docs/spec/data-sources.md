@@ -26,6 +26,24 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | デッキ・レリック・ポーション | 階の確定・途中経過の送信時に `Player.Deck.Cards` / `Player.Relics` / `Player.Potions` | `floor_snapshot.players[].deck` / `relics` / `potions` |
 | バッジ | `RunManager.OnEnded` の Postfix で、戻り値 `PostRunProgressUpdateResult` の `run` (`SerializableRun`。v0.113.0 で確認) に対して `ScoreUtility.GetBadges(run, playerId, isVictory)`。名前は翻訳 `badges` の `{ID}.{bronze\|silver\|gold}Title` (無ければ `{ID}.title`) | `run_end.badges` |
 
+### セーブデータの履歴の取り込み
+
+ゲームは、ランが終わるたびに、そのランの記録を履歴ファイル (`saves/history/{開始時刻}.run`、型は `RunHistory`) に保存する。履歴ファイルの `MapPointHistory` は、ゲーム中の階ごとの記録と同じ型 (`MapPointHistoryEntry`) である。mod は、BaseLib の mod 設定画面の「セーブデータを送る」のボタンが押されたときだけ、履歴ファイルを読んでサーバに送る。BaseLib が読み込まれていないときは、このボタンを出さない。
+
+| 何 | 正規ソース | 送る先 |
+|---|---|---|
+| 読むフォルダ | ゲームを起動している Steam アカウントの、mod ありと mod なしの両方のプロファイル 1〜3 の `saves/history` (`RunHistorySaveManager.GetHistoryPath(profileId, forceModState)`) | — |
+| 読み込み | `SaveManager` の `_migrationManager` (private) の `LoadSave<RunHistory>(path)`。ゲームが古い版の履歴ファイルを今の形に直してから返す | — |
+| 送る候補 | 全部の履歴ファイルの、シード・開始時刻・プレイヤー・結果・到達階 | `POST /imports/check` |
+| 送るラン | `/imports/check` が `missing` に入れたランのうち、結果が勝利か死亡のもの (`Win` か、`WasAbandoned` でない) | `POST /sessions` (`source: "history"`、`started_at` は `StartTime`、`game_version` は `BuildId`、`seed`・`ascension`・ホストは自分) |
+| ラン開始 | プレイヤーごとに、名前 (Steam の名前。取れなければキャラクター ID)、キャラクター、アセンション、シード、ゲームモード、最初の階の HP・最大 HP・ゴールド | `run_start` |
+| 各階の内容 | 各 `MapPointHistoryEntry` を、ゲーム中と同じ変換 (`FloorRecorder.BuildPlayer`) にかける。`act_index` は `MapPointHistory` の何番目の Act の記録か | `floor_snapshot` (`is_final: true`) |
+| デッキ・レリック・ポーション | `RunHistory.Players[].Deck` / `Relics` / `Potions` (ラン終了時点)。最後の階の記録にだけ入れる。途中の階の時点のものは履歴ファイルに無いので送らない | 最後の `floor_snapshot` の `players[].deck` / `relics` / `potions` |
+| ラン終了 | `Win` と `WasAbandoned` から結果、`final_floor` は階の数、`final_hp` は最後の階の各プレイヤーの HP、`badges` は `RunHistory.Players[].Badges` (名前の引き方は「バッジ」と同じ) | `run_end` |
+| 記録の日時 | `occurred_at` は、`run_start` が `StartTime`、`floor_snapshot` が `StartTime` に階の番号の秒を足した日時、`run_end` が `StartTime` に `RunTime` を足した日時 | — |
+
+送っている間は、ボタンの横に「送っています… {送った数} / {送る数}」と出す。送るランは 1 件ずつ、前のランを送り終えてから送る。
+
 ### 戦闘
 
 | 何 | 正規ソース | event |

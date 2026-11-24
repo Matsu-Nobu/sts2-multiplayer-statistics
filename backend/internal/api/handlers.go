@@ -22,6 +22,10 @@ type createSessionReq struct {
 	Ascension   *int    `json:"ascension,omitempty"`
 	Seed        *string `json:"seed,omitempty"`
 	GameVersion *string `json:"game_version,omitempty"`
+	// セーブデータの履歴から取り込むときだけ使う (docs/spec/api.md「POST /sessions」)
+	Source    string   `json:"source,omitempty"`
+	StartedAt string   `json:"started_at,omitempty"`
+	PlayerIDs []string `json:"player_ids,omitempty"`
 }
 
 type createSessionRes struct {
@@ -41,8 +45,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.NewString()
 	token := uuid.NewString()
-
-	err := s.Store.CreateSession(r.Context(), store.CreateSessionInput{
+	input := store.CreateSessionInput{
 		ID:          id,
 		WriteToken:  token,
 		HostName:    in.HostName,
@@ -51,9 +54,32 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Ascension:   in.Ascension,
 		Seed:        in.Seed,
 		GameVersion: in.GameVersion,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create session")
+	}
+
+	switch in.Source {
+	case "", "live":
+		if err := s.Store.CreateSession(r.Context(), input); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create session")
+			return
+		}
+	case "history":
+		started, err := time.Parse(time.RFC3339, in.StartedAt)
+		if err != nil || in.Seed == nil || *in.Seed == "" || len(in.PlayerIDs) == 0 {
+			writeError(w, http.StatusBadRequest, "source history requires seed, started_at (RFC3339) and player_ids")
+			return
+		}
+		input.CreatedAt = started
+		same, err := s.Store.CreateHistorySession(r.Context(), input, in.PlayerIDs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create session")
+			return
+		}
+		if same != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"session_id": same.ID})
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "unknown source")
 		return
 	}
 
@@ -259,4 +285,65 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// --- POST /imports/check ---
+
+const maxImportCheckRuns = 1000
+
+type importCheckRun struct {
+	Seed       string   `json:"seed"`
+	StartedAt  string   `json:"started_at"`
+	PlayerIDs  []string `json:"player_ids"`
+	Outcome    string   `json:"outcome"`
+	FinalFloor *int     `json:"final_floor,omitempty"`
+}
+
+// checkImports は、セーブデータの履歴にあるランのうち、サーバにまだ無いランの番号を返す (docs/spec/api.md「POST /imports/check」)。
+// 既にあるセッションの結果が空なら、送られてきた結果で埋める。
+func (s *Server) checkImports(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Runs []importCheckRun `json:"runs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if len(in.Runs) > maxImportCheckRuns {
+		writeError(w, http.StatusBadRequest, "too many runs")
+		return
+	}
+	missing := []int{}
+	for i, run := range in.Runs {
+		started, err := time.Parse(time.RFC3339, run.StartedAt)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "runs[].started_at must be RFC3339")
+			return
+		}
+		same, err := s.Store.SameRun(r.Context(), run.Seed, started, run.PlayerIDs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to look up runs")
+			return
+		}
+		if same == nil {
+			missing = append(missing, i)
+			continue
+		}
+		if same.Outcome != nil || !validOutcome(run.Outcome) {
+			continue
+		}
+		filled, err := s.Store.FillRunOutcome(r.Context(), same.ID, run.Outcome, run.FinalFloor, time.Now().UTC().Format(time.RFC3339))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to update run")
+			return
+		}
+		if filled {
+			s.warmSummaries(same.ID)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string][]int{"missing": missing})
+}
+
+func validOutcome(o string) bool {
+	return o == "victory" || o == "death" || o == "abandoned"
 }

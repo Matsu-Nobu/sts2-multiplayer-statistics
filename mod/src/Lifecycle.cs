@@ -260,24 +260,28 @@ internal static class Lifecycle
             try
             {
                 foreach (var b in ScoreUtility.GetBadges(run, sp.NetId, isVictory))
-                {
-                    string prefix = b.Rarity switch { BadgeRarity.Bronze => "bronze", BadgeRarity.Silver => "silver", BadgeRarity.Gold => "gold", _ => "" };
-                    bool ranked = prefix != "" && LocString.Exists("badges", $"{b.Id}.{prefix}Title");
-                    string titleKey = ranked ? $"{b.Id}.{prefix}Title" : $"{b.Id}.title";
-                    string descKey  = ranked ? $"{b.Id}.{prefix}Description" : $"{b.Id}.description";
-                    list.Add(new
-                    {
-                        id          = b.Id,
-                        name        = ModelInfo.Text(new LocString("badges", titleKey)),
-                        description = ModelInfo.Text(new LocString("badges", descKey)),
-                        rarity      = b.Rarity.ToString(),
-                    });
-                }
+                    list.Add(BadgeInfo(b.Id, b.Rarity));
             }
             catch (Exception ex) { Log.Error($"[StsStats] badges error: {ex.Message}"); }
             result[Identity.OfNetId(sp.NetId)] = list;
         }
         return result;
+    }
+
+    /// <summary>run_end.badges の 1 件。名前と説明は翻訳 badges から引く (Badges の説明のとおり)。</summary>
+    internal static object BadgeInfo(string id, BadgeRarity rarity)
+    {
+        string prefix = rarity switch { BadgeRarity.Bronze => "bronze", BadgeRarity.Silver => "silver", BadgeRarity.Gold => "gold", _ => "" };
+        bool ranked = prefix != "" && LocString.Exists("badges", $"{id}.{prefix}Title");
+        string titleKey = ranked ? $"{id}.{prefix}Title" : $"{id}.title";
+        string descKey  = ranked ? $"{id}.{prefix}Description" : $"{id}.description";
+        return new
+        {
+            id          = id,
+            name        = ModelInfo.Text(new LocString("badges", titleKey)),
+            description = ModelInfo.Text(new LocString("badges", descKey)),
+            rarity      = rarity.ToString(),
+        };
     }
 
     internal static string SafeSeed(IRunState runState)

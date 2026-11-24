@@ -8,6 +8,8 @@ mod/.godot/
 mod/dist/
 mod.tests/bin/
 mod.tests/obj/
+mod-baselib/bin/
+mod-baselib/obj/
 tools/verify-game-api/bin/
 tools/verify-game-api/obj/
 

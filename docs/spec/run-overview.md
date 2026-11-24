@@ -169,7 +169,7 @@ interface FloorSummary {
 
 ### プレイヤーの最終状態 (ラン全体の画面)
 
-- デッキ・レリック・ポーション: 最後の `floor_snapshot` の `players[].deck` / `relics` / `potions` (その階を出た時点。ラン終了時は終了時点)
+- デッキ・レリック・ポーション: 最後の `floor_snapshot` の `players[].deck` / `relics` / `potions` (その階を出た時点。ラン終了時は終了時点)。セーブデータの履歴から取り込んだゲームは、最後の階の記録にだけデッキ・レリック・ポーションがある (data-sources.md「セーブデータの履歴の取り込み」)
 - 最終 HP / ゴールド: 「HP / ゴールド」 の最後の階の `hp_out` / `gold_out`
 - バッジ: `run_end.badges[player_id]`。`run_end` が無い (ラン中) ときは出さない
 

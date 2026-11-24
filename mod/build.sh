@@ -38,5 +38,9 @@ fi
 cp "$DLL_PATH" dist/StsStats.dll
 cp StsStats.json dist/StsStats.json
 
+# BaseLib の mod 設定画面を出す DLL。StsStats.dll を参照するので、StsStats.dll の後にビルドする
+dotnet build "$ROOT_DIR/mod-baselib/StsStatsBaseLib.csproj" -c Debug 2>&1
+cp "$ROOT_DIR/mod-baselib/bin/Debug/net9.0/StsStatsBaseLib.dll" dist/StsStatsBaseLib.dll
+
 echo "[build] Done:"
 ls -lh dist/
