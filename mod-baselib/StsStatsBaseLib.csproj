@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    BaseLib の mod 設定画面に「セーブデータを送る」を出す DLL (docs/spec/data-sources.md「セーブデータの履歴の取り込み」)。
+    StsStats.dll が、BaseLib が読み込まれているときだけこの DLL を読み込む。
+    STS2_DATA_DIR は mod/build.sh が .env から読み込む。BaseLib は Workshop のフォルダから参照する。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>true</ImplicitUsings>
+    <RootNamespace>StsStatsBaseLib</RootNamespace>
+    <AssemblyName>StsStatsBaseLib</AssemblyName>
+    <BaseLibDir Condition="'$(BaseLibDir)' == ''">$(STS2_DATA_DIR)/../../../workshop/content/2868840/3737335127/BaseLib</BaseLibDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="sts2"><HintPath>$(STS2_DATA_DIR)/sts2.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="GodotSharp"><HintPath>$(STS2_DATA_DIR)/GodotSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BaseLib"><HintPath>$(BaseLibDir)/BaseLib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="StsStats"><HintPath>$(MSBuildThisFileDirectory)../mod/.godot/mono/temp/bin/Debug/StsStats.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

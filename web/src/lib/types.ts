@@ -13,6 +13,8 @@ export interface SessionMeta {
   outcome: 'victory' | 'death' | 'abandoned' | null;
   final_floor: number | null;
   finished_at: string | null;
+  /** live: mod がゲーム中に記録した。history: セーブデータの履歴から取り込んだ (戦闘の記録が無い) */
+  source: 'live' | 'history';
 }
 
 export interface PlayerMeta {

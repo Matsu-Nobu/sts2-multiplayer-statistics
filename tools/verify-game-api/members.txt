@@ -43,3 +43,7 @@ enum   MegaCrit.Sts2.Core.Entities.Cards.CardUpgradePreviewType Deck
 
 # PowerNameResolver (パワーの表示名)
 prop   MegaCrit.Sts2.Core.Models.PowerModel Title pub
+
+# HistoryReader: セーブデータの履歴の読み込み (private)
+field  MegaCrit.Sts2.Core.Saves.SaveManager _migrationManager
+field  MegaCrit.Sts2.Core.Saves.SaveManager _saveStore

@@ -41,8 +41,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.NewString()
 	token := uuid.NewString()
-
-	err := s.Store.CreateSession(r.Context(), store.CreateSessionInput{
+	input := store.CreateSessionInput{
 		ID:          id,
 		WriteToken:  token,
 		HostName:    in.HostName,
@@ -51,8 +50,9 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		Ascension:   in.Ascension,
 		Seed:        in.Seed,
 		GameVersion: in.GameVersion,
-	})
-	if err != nil {
+	}
+
+	if err := s.Store.CreateSession(r.Context(), input); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create session")
 		return
 	}

@@ -63,13 +63,24 @@ internal static class FloorRecorder
                 monster_ids = r.MonsterIds.Select(m => m.Entry).ToList(),
                 turns_taken = r.TurnsTaken,
             }).ToList(),
-            players = entry.PlayerStats.Select(e => BuildPlayer(e, runState.Players.FirstOrDefault(p => p.NetId == e.PlayerId))).ToList(),
+            players = entry.PlayerStats.Select(e =>
+            {
+                var player = runState.Players.FirstOrDefault(p => p.NetId == e.PlayerId);
+                return BuildPlayer(e, Identity.OfNetId(e.PlayerId),
+                    player?.Deck.Cards.Select(ModelInfo.Card).ToList(),
+                    player?.Relics.Select(r => ModelInfo.Relic(r.Id)).ToList(),
+                    player?.Potions.Select(po => ModelInfo.Potion(po.Id)).ToList());
+            }).ToList(),
         });
     }
 
-    private static object BuildPlayer(PlayerMapPointHistoryEntry e, Player? player) => new
+    /// <summary>
+    /// 1 プレイヤーの階の記録を floor_snapshot の players[] の要素にする。ゲーム中の送信とセーブデータの履歴の取り込みで共通。
+    /// deck / relics / potions はその時点の持ち物 (無ければ null)。
+    /// </summary>
+    internal static object BuildPlayer(PlayerMapPointHistoryEntry e, string playerId, object? deck, object? relics, object? potions) => new
     {
-        player_id = Identity.OfNetId(e.PlayerId),
+        player_id = playerId,
         hp = new
         {
             current      = e.CurrentHp,
@@ -115,9 +126,9 @@ internal static class FloorRecorder
         },
         completed_quests = e.CompletedQuests.Select(ModelInfo.Generic).ToList(),
         // その時点のデッキ・レリック・ポーション (ラン全体の画面用。spec run-overview.md「プレイヤーの最終状態 (ラン全体の画面)」)
-        deck    = player?.Deck.Cards.Select(ModelInfo.Card).ToList(),
-        relics  = player?.Relics.Select(r => ModelInfo.Relic(r.Id)).ToList(),
-        potions = player?.Potions.Select(po => ModelInfo.Potion(po.Id)).ToList(),
+        deck,
+        relics,
+        potions,
     };
 
     // === ショップの値段 ===========================================================

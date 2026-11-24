@@ -59,8 +59,12 @@
 </script>
 
 <div class="space-y-6">
-  <!-- 1. 貢献度スコア -->
-  <ContribRanking />
+  <!-- 1. 貢献度スコア。セーブデータの履歴から取り込んだゲームには戦闘の記録が無い (spec ui.md「ラン全体」) -->
+  {#if s.doc.session.source === 'history'}
+    <p class="bg-bg-1 border border-bg-3 rounded-lg px-4 py-3 text-sm text-slate-300">このゲームはゲームの履歴から取り込んだため、戦闘の記録がありません。</p>
+  {:else}
+    <ContribRanking />
+  {/if}
 
   <!-- 2. HP 推移 -->
   <Panel title={metric === 'hp' ? 'HP の推移' : 'ゴールドの推移'} scope="全員" help="各階を出た時点の値です。点にマウスを乗せるとその階の情報が出て、押すとその階の詳細に移ります。">

@@ -18,7 +18,16 @@ internal interface IApiClient
     Task<bool> PostEventsAsync(string sessionId, string writeToken, IReadOnlyList<EventRecord> events);
 }
 
-internal sealed class ApiClient : IApiClient
+/// <summary>セーブデータの履歴の取り込みに使う呼び出し (docs/spec/api.md「POST /imports/check」)。</summary>
+internal interface IImportApi
+{
+    /// <summary>サーバにまだ無いランの番号。失敗したら null。</summary>
+    Task<int[]?> CheckImportsAsync(IReadOnlyList<ImportCheckRun> runs);
+    /// <summary>1 ランのセッションと記録をまとめて送る (docs/spec/api.md「POST /imports/run」)。</summary>
+    Task<ImportRunStatus> ImportRunAsync(ImportSession session, IReadOnlyList<EventRecord> events);
+}
+
+internal sealed class ApiClient : IApiClient, IImportApi
 {
     private readonly HttpClient _http;
     private readonly string _baseUrl;
@@ -47,6 +56,49 @@ internal sealed class ApiClient : IApiClient
         {
             MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] CreateSession error: {ex.Message}");
             return null;
+        }
+    }
+
+    public async Task<int[]?> CheckImportsAsync(IReadOnlyList<ImportCheckRun> runs)
+    {
+        try
+        {
+            using var content = JsonContent(new { runs });
+            using var res = await _http.PostAsync(_baseUrl + "/imports/check", content);
+            if (!res.IsSuccessStatusCode)
+            {
+                MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] CheckImports failed: {res.StatusCode}");
+                return null;
+            }
+            string body = await res.Content.ReadAsStringAsync();
+            return JsonSerializer.Deserialize<ImportCheckResult>(body, PayloadJson.Options)?.Missing;
+        }
+        catch (System.Exception ex)
+        {
+            MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] CheckImports error: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<ImportRunStatus> ImportRunAsync(ImportSession session, IReadOnlyList<EventRecord> events)
+    {
+        try
+        {
+            using var content = JsonContent(new { session, events = events.Select(PayloadJson.BuildEventBody).ToArray() });
+            using var res = await _http.PostAsync(_baseUrl + "/imports/run", content);
+            switch (res.StatusCode)
+            {
+                case System.Net.HttpStatusCode.Created:         return ImportRunStatus.Created;
+                case System.Net.HttpStatusCode.Conflict:        return ImportRunStatus.AlreadyExists;
+                case System.Net.HttpStatusCode.TooManyRequests: return ImportRunStatus.RateLimited;
+            }
+            MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] ImportRun failed: {res.StatusCode} {await res.Content.ReadAsStringAsync()}");
+            return ImportRunStatus.Failed;
+        }
+        catch (System.Exception ex)
+        {
+            MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] ImportRun error: {ex.Message}");
+            return ImportRunStatus.Failed;
         }
     }
 
@@ -97,6 +149,32 @@ internal record CreateSessionRequest(
     string? Seed        = null,
     string? GameVersion = null
 );
+
+/// <summary>POST /imports/run の session。</summary>
+internal record ImportSession(
+    string? HostName,
+    string  HostSteamId,
+    string? CharacterId,
+    int     Ascension,
+    string  Seed,
+    string  GameVersion,
+    string  StartedAt,
+    IReadOnlyList<string> PlayerIds
+);
+
+internal enum ImportRunStatus { Created, AlreadyExists, RateLimited, Failed }
+
+/// <summary>POST /imports/check の runs の要素。</summary>
+internal record ImportCheckRun(
+    string Seed,
+    string StartedAt,
+    IReadOnlyList<string> PlayerIds,
+    string Outcome,
+    int FinalFloor
+);
+
+internal record ImportCheckResult(int[] Missing);
+
 
 /// <summary>POST /sessions のレスポンス。</summary>
 internal record CreateSessionResult(

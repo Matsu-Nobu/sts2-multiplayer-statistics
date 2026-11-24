@@ -78,6 +78,11 @@
     { key: 'floors', label: '階', page: { name: 'floors' } },
     { key: 'combats', label: '戦闘', page: { name: 'combats' } },
   ];
+  // セーブデータの履歴から取り込んだゲームには戦闘の記録が無いので、戦闘の画面を出さない (spec ui.md「ラン全体」)
+  let imported = $derived(doc.session.source === 'history');
+  let tabs = $derived(imported ? TABS.filter(t => t.key !== 'combats') : TABS);
+  let combatPage = $derived(route.page.name === 'combats' || route.page.name === 'combat');
+  $effect(() => { if (imported && combatPage) navigate({ name: 'run' }, { replace: true }); });
   let activeTab = $derived(route.page.name === 'floor' ? 'floors' : route.page.name === 'combat' ? 'combats' : route.page.name);
 
   function selectPlayer(pid: string) { navigate(route.page, { replace: true, player: pid }); }
@@ -125,7 +130,7 @@
 
     <div class="mt-3 flex items-end justify-between gap-3">
       <nav aria-label="画面" class="flex gap-1 overflow-x-auto -mb-px">
-        {#each TABS as t (t.key)}
+        {#each tabs as t (t.key)}
           <a href={href(t.page)} use:link={t.page}
              aria-current={activeTab === t.key ? 'page' : undefined}
              class="px-3 py-2 text-sm whitespace-nowrap border-b-2 focus-ring rounded-t {activeTab === t.key ? 'border-accent text-slate-100 font-medium' : 'border-transparent text-slate-400 hover:text-slate-200'}">{t.label}</a>
@@ -165,6 +170,8 @@
     <FloorPage floor={null} />
   {:else if route.page.name === 'floor'}
     <FloorPage floor={route.page.floor} />
+  {:else if imported && combatPage}
+    <!-- 上の $effect がラン全体へ移す -->
   {:else if route.page.name === 'combats'}
     <CombatsPage />
   {:else if route.page.name === 'combat'}
