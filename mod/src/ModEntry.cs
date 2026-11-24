@@ -50,6 +50,7 @@ public static class ModEntry
         P(typeof(RunManager), "OnEnded",            typeof(Lifecycle), null, "OnEndedPostfix");
         P(typeof(RunManager), "WinRun",             typeof(Lifecycle), "BeforeRunTerminatedPrefix", null);
         P(typeof(RunManager), "Abandon",            typeof(Lifecycle), "BeforeRunTerminatedPrefix", null);
+        P(typeof(RunHistoryUtilities), "CreateRunHistoryEntry", typeof(MenuAbandon), null, "CreateRunHistoryEntryPostfix");
 
         // ラン全体 (階ごとの記録)
         P(typeof(RunManager), "UpdatePlayerStatsInMapPointHistory", typeof(FloorRecorder), null, "UpdatePlayerStatsPostfix");

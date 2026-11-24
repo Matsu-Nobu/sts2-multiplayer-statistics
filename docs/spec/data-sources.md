@@ -21,6 +21,7 @@ web 側で重複除去が必要になったら、それはソースの選び方�
 | ショップの値段 | `MerchantCardEntry / MerchantPotionEntry / MerchantRelicEntry / MerchantCardRemovalEntry` の `OnTryPurchaseInternal(MerchantInventory, bool)` の Postfix (v0.113.0 で確認。それより前の名前は `OnTryPurchase`)。v0.113.0 では **購入処理が全員の PC で実行される** (`MerchantSynchronizer.PurchaseLocalEntry` が購入を全員に送信し、受け取った PC も `MerchantEntry.OnTryPurchaseUnsynchronized` を実行する) ので、全プレイヤーの購入が取れる | `item_purchased` |
 | ゲームのバージョン | ゲームの実行ファイルと同じフォルダの `release_info.json` の `version` (例 `v0.113.1`)。セッションを作るときに 1 回読む | `POST /sessions` の `game_version` |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` の Postfix (最初の 1 回だけ)。放棄は `RunManager.IsAbandoned` | `run_end` |
+| メニューからの放棄 | `RunHistoryUtilities.CreateRunHistoryEntry(run, victory, isAbandoned, platformType)` の Postfix。`isAbandoned` が true で、ランを読み込んでいない (`RunManager.IsInProgress` が false) ときだけ。手元に保存したセッション (自分の Steam ID とシードで引く) があれば、そのセッションに送る。`final_floor` はセーブの階の数、`final_hp` はセーブの各プレイヤーの `CurrentHp`、`badges` は全員空 | `run_end` (`abandoned`) |
 | ラン終了直前の HP | `RunManager.WinRun()` / `RunManager.Abandon()` の Prefix (この後ゲームが全員を倒すため) | `run_end.final_hp` |
 | デッキ・レリック・ポーション | 階の確定・途中経過の送信時に `Player.Deck.Cards` / `Player.Relics` / `Player.Potions` | `floor_snapshot.players[].deck` / `relics` / `potions` |
 | バッジ | `RunManager.OnEnded` の Postfix で、戻り値 `PostRunProgressUpdateResult` の `run` (`SerializableRun`。v0.113.0 で確認) に対して `ScoreUtility.GetBadges(run, playerId, isVictory)`。名前は翻訳 `badges` の `{ID}.{bronze\|silver\|gold}Title` (無ければ `{ID}.title`) | `run_end.badges` |
@@ -179,6 +180,7 @@ mod は `NetId == 1` かつ (シングルプレイ または ホスト) のと�
 | 戦闘開始 | `Hook.BeforeCombatStart` の Prefix | `CombatManager.StartCombatInternal`。この Hook は非同期で、Postfix は効果が最初に待つ所まで進んだ後に呼ばれる |
 | 戦闘勝利 | `Hook.AfterCombatEnd` | 勝ったときしか呼ばれない (`EndCombatInternal`)。敗北は `LoseCombat` の別経路 |
 | ラン終了 | `RunManager.OnEnded(bool isVictory)` | 勝利・全滅・放棄の全てが通る。勝利後に全員を倒す処理で 2 回目が来る (ゲームは `_runHistoryWasUploaded` で無視する)。放棄かどうかは `RunManager.IsAbandoned` |
+| メニューからの放棄 | `RunHistoryUtilities.CreateRunHistoryEntry` | メインメニューの放棄 (`NMainMenu.AbandonRun`) とマルチプレイのメニューの放棄 (`NMultiplayerSubmenu.TryAbandonMultiplayerRun`) は、ランを読み込まずに、セーブデータからこのメソッドを直接呼ぶ。`RunManager.OnEnded` は通らない。ラン中の放棄でも `OnEnded` からこのメソッドが呼ばれる。ゲームは放棄したランにバッジを付けない (`GetBadgesForPlayer`) |
 | ラン終了時の HP | `RunManager.WinRun` / `Abandon` の Prefix | 勝利・放棄では、ゲームが全員を倒してから最後の階を確定させるので、最後の階の記録の HP は 0 になる |
 | ダブルボス | 2 体目は別の階 (`SecondBossMapPoint`) | 勝利は 2 体目の撃破後 |
 | ターン終了 | `Hook.AfterSideTurnEnd(side=Player)` | |
