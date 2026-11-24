@@ -26,11 +26,11 @@ internal static class MenuAbandon
             var sender = ModEntry.HttpSender;
             if (store == null || sender == null) return;
 
-            int totalFloor = run.MapPointHistory.Sum(act => act.Count);
+            int saveFloor = run.MapPointHistory.Sum(act => act.Count);
             var finalHp = run.Players.ToDictionary(p => Identity.OfNetId(p.NetId), p => p.CurrentHp);
             bool sent = AbandonedRunReporter.Report(
-                store, sender, Identity.LocalSteamId, run.SerializableRng?.Seed ?? "", totalFloor, finalHp);
-            Log.Info($"[StsStats] Run abandoned from menu (floor {totalFloor}): run_end {(sent ? "sent" : "skipped, no stored session")}");
+                store, sender, Identity.LocalSteamId, run.SerializableRng?.Seed ?? "", saveFloor, finalHp);
+            Log.Info($"[StsStats] Run abandoned from menu (save floor {saveFloor}): run_end {(sent ? "sent" : "skipped, no stored session for this run")}");
         }
         catch (Exception ex) { Log.Error($"[StsStats] menu abandon postfix error: {ex.Message}"); }
     }

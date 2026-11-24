@@ -51,11 +51,14 @@ public class AbandonedRunReporterTests : IDisposable
     }
 
     [Fact]
-    public async Task SameFloorAsStored_Sends()
+    public async Task SaveOneFloorBehindStored_SendsStoredFloor()
     {
-        Assert.True(Report("SEED1", 10));
+        Assert.True(Report("SEED1", 9));
         await _sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
-        Assert.Single(_api.Sent);
+
+        var ev = Assert.Single(_api.Sent).Event;
+        Assert.Equal(10, ev.Floor);
+        Assert.Equal(10, JsonSerializer.SerializeToElement(ev.Payload).GetProperty("final_floor").GetInt32());
     }
 
     [Fact]
@@ -69,7 +72,7 @@ public class AbandonedRunReporterTests : IDisposable
     [Fact]
     public async Task FloorBeforeStored_IsAnotherRun_SendsNothing()
     {
-        Assert.False(Report("SEED1", 9));
+        Assert.False(Report("SEED1", 8));
         await _sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
         Assert.Empty(_api.Sent);
     }
@@ -78,7 +81,7 @@ public class AbandonedRunReporterTests : IDisposable
     public async Task EmptySeed_UsesNoSeedKey()
     {
         _store.Save(Stored(seed: "no-seed", lastSeenFloor: 3));
-        Assert.True(Report("", 3));
+        Assert.True(Report("", 2));
         await _sender.WaitForIdleAsync(TimeSpan.FromSeconds(2));
         Assert.Equal("sess-no-seed", Assert.Single(_api.Sent).SessionId);
     }
