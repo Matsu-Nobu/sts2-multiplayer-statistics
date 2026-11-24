@@ -3,7 +3,7 @@
   "name": "StS2 Multiplayer Statistics",
   "author": "nobu",
   "description": "Tracks per-player combat statistics and sends them to a shared server for browser-based viewing.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "has_pck": false,
   "has_dll": true,
   "dependencies": [],
