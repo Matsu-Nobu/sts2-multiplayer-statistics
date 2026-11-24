@@ -79,7 +79,7 @@
 | 何 | canonical |
 |---|---|
 | ラン全体の各階の内容 (入手・除去・強化・エンチャント・変化・選択・HP・ゴールド) | ゲームの階ごとの記録 `MapPointHistoryEntry`。確定点 `RunManager.UpdatePlayerStatsInMapPointHistory` → `floor_snapshot` |
-| ラン終了 (勝利・死亡・放棄) | `RunManager.OnEnded` + `IsAbandoned` |
+| ラン終了 (勝利・死亡・放棄) | `RunManager.OnEnded` + `IsAbandoned`。メニューからの放棄は `RunHistoryUtilities.CreateRunHistoryEntry` |
 | 戦闘勝利 | `Hook.AfterCombatEnd` (勝利時しか呼ばれない) |
 | 与ダメ・被ダメ | `Hook.AfterDamageGiven` 1 か所 |
 | プレイヤー ID | `Identity.Normalize` (シングルプレイの `NetId=1` → Steam ID) |
