@@ -24,7 +24,7 @@ public class HistoryUploaderTests
         });
 
     private Task<ImportResult> Upload(params ImportCandidate[] runs) =>
-        HistoryUploader.RunAsync(_api, runs, (d, t) => _progress.Add((d, t)), TimeSpan.Zero);
+        HistoryUploader.RunAsync(_api, runs, (d, t) => _progress.Add((d, t)), TimeSpan.Zero, TimeSpan.Zero);
 
     [Fact]
     public async Task SendsOnlyMissingVictoryOrDeathRuns()
@@ -105,6 +105,29 @@ public class HistoryUploaderTests
     }
 
     [Fact]
+    public async Task RateLimited_RetriesTheSameRun()
+    {
+        _api.Missing = new[] { 0 };
+        _api.RateLimitedTimes = 2;
+
+        var result = await Upload(Run("A", "death"));
+
+        Assert.Equal(new ImportResult(ImportStatus.Sent, 1), result);
+        Assert.Equal(new[] { "A", "A", "A" }, _api.Created);
+    }
+
+    [Fact]
+    public async Task RateLimitedTooManyTimes_IsFailed()
+    {
+        _api.Missing = new[] { 0 };
+        _api.RateLimitedTimes = HistoryUploader.RateLimitRetries + 1;
+
+        var result = await Upload(Run("A", "death"));
+
+        Assert.Equal(new ImportResult(ImportStatus.Failed, 0), result);
+    }
+
+    [Fact]
     public async Task PostFails_IsFailed()
     {
         _api.Missing = new[] { 0 };
@@ -131,6 +154,7 @@ public class HistoryUploaderTests
         public readonly HashSet<string> Conflict = new();
         public readonly HashSet<string> FailCreate = new();
         public bool FailPost;
+        public int RateLimitedTimes;
         public readonly List<ImportCheckRun> Checked = new();
         public readonly List<string> Created = new();
         public readonly List<IReadOnlyList<EventRecord>> Batches = new();
@@ -145,6 +169,11 @@ public class HistoryUploaderTests
         {
             string seed = req.Seed!;
             Created.Add(seed);
+            if (RateLimitedTimes > 0)
+            {
+                RateLimitedTimes--;
+                return Task.FromResult(new HistorySessionResult(null, false, RateLimited: true));
+            }
             if (Conflict.Contains(seed)) return Task.FromResult(new HistorySessionResult(null, true));
             if (FailCreate.Contains(seed)) return Task.FromResult(new HistorySessionResult(null, false));
             return Task.FromResult(new HistorySessionResult(new CreateSessionResult("s-" + seed, "t", "u"), false));

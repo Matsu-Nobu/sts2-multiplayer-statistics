@@ -19,9 +19,10 @@ internal static class BaseLibBridge
     private static bool _done;
 
     /// <summary>
-    /// LocManager.Initialize の前。ゲームは全部の mod を読み込んでから翻訳を読み込むので、ここなら BaseLib の有無が分かる。
+    /// LocManager.Initialize の後。ゲームは全部の mod を読み込んでから翻訳を読み込むので、ここなら BaseLib の有無が分かる。
+    /// 設定画面の文言を翻訳の表に足すので、翻訳を読み込んだ後に呼ぶ。
     /// </summary>
-    public static void LocManagerInitializePrefix()
+    public static void LocManagerInitializePostfix()
     {
         if (_done) return;
         _done = true;

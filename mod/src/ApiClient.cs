@@ -88,6 +88,7 @@ internal sealed class ApiClient : IApiClient, IImportApi
             using var content = JsonContent(req);
             using var res = await _http.PostAsync(_baseUrl + "/sessions", content);
             if (res.StatusCode == System.Net.HttpStatusCode.Conflict) return new HistorySessionResult(null, AlreadyExists: true);
+            if (res.StatusCode == System.Net.HttpStatusCode.TooManyRequests) return new HistorySessionResult(null, AlreadyExists: false, RateLimited: true);
             if (!res.IsSuccessStatusCode)
             {
                 MegaCrit.Sts2.Core.Logging.Log.Error($"[StsStats] CreateHistorySession failed: {res.StatusCode}");
@@ -166,8 +167,8 @@ internal record ImportCheckRun(
 
 internal record ImportCheckResult(int[] Missing);
 
-/// <summary>取り込み用のセッション作成の結果。Created も AlreadyExists も無ければ失敗。</summary>
-internal record HistorySessionResult(CreateSessionResult? Created, bool AlreadyExists);
+/// <summary>取り込み用のセッション作成の結果。Created も AlreadyExists も RateLimited も無ければ失敗。</summary>
+internal record HistorySessionResult(CreateSessionResult? Created, bool AlreadyExists, bool RateLimited = false);
 
 /// <summary>POST /sessions のレスポンス。</summary>
 internal record CreateSessionResult(

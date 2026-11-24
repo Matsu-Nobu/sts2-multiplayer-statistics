@@ -12,7 +12,14 @@ namespace StsStatsBaseLib;
 /// <summary>StsStats.dll の BaseLibBridge が、BaseLib が読み込まれているときだけ呼ぶ。</summary>
 public static class Entry
 {
-    public static void Register() => ModConfigRegistry.Register("StsStats", new StatsModConfig());
+    /// <summary>翻訳を読み込んだ後に呼ぶ。</summary>
+    public static void Register()
+    {
+        var config = new StatsModConfig();
+        ModConfigRegistry.Register("StsStats", config);
+        config.AddTexts();
+        LocManager.Instance.SubscribeToLocaleChange(config.AddTexts);
+    }
 }
 
 /// <summary>
@@ -30,11 +37,29 @@ internal sealed class StatsModConfig : SimpleModConfig
     private const string ConfirmYes = "送る";
     private const string ConfirmNo = "やめる";
 
-    // NGenericPopup は翻訳の表のキーで文言を受け取るので、表 settings_ui にこの mod の文言を足してから開く
+    // NGenericPopup は翻訳の表のキーで文言を受け取るので、表 settings_ui にこの mod の文言を足しておく (AddTexts)
     private const string LocTable = "settings_ui";
     private const string KeyPrefix = "STSSTATS-SEND_SAVE_DATA.";
 
+    private const string ModTitle = "StS2 Multiplayer Statistics";
+
     private MegaRichTextLabel? _status;
+
+    /// <summary>
+    /// この mod の文言を翻訳の表 settings_ui に足す。言語を切り替えると表が読み込み直されるので、そのたびに足す。
+    /// BaseLib は mod 一覧と見出しの名前を「{ModPrefix から末尾の - を除いたもの}.mod_title」で引き、無ければ名前空間の名前を出す。
+    /// </summary>
+    public void AddTexts()
+    {
+        LocManager.Instance.GetTable(LocTable).MergeWith(new Dictionary<string, string>
+        {
+            [ModPrefix.TrimEnd('-') + ".mod_title"] = ModTitle,
+            [KeyPrefix + "header"] = ButtonLabel,
+            [KeyPrefix + "body"] = ConfirmBody,
+            [KeyPrefix + "yes"] = ConfirmYes,
+            [KeyPrefix + "no"] = ConfirmNo,
+        });
+    }
 
     // 設定の項目を持たない設定クラスは、BaseLib の mod 一覧に出ない (ModConfig.VisibleInModList)
     public override bool VisibleInModList() => true;
@@ -67,13 +92,6 @@ internal sealed class StatsModConfig : SimpleModConfig
         {
             var popup = NGenericPopup.Create();
             if (popup == null || NModalContainer.Instance == null) return;
-            LocManager.Instance.GetTable(LocTable).MergeWith(new Dictionary<string, string>
-            {
-                [KeyPrefix + "header"] = ButtonLabel,
-                [KeyPrefix + "body"] = ConfirmBody,
-                [KeyPrefix + "yes"] = ConfirmYes,
-                [KeyPrefix + "no"] = ConfirmNo,
-            });
             NModalContainer.Instance.Add(popup, true);
             bool yes = await popup.WaitForConfirmation(
                 new LocString(LocTable, KeyPrefix + "body"), new LocString(LocTable, KeyPrefix + "header"),

@@ -22,12 +22,15 @@ internal static class HistoryUploader
 {
     public const int MaxCheckRuns = 1000;
     public const int EventsPerPost = 50;
+    /// <summary>サーバの回数の上限で断られたときに、同じランを送り直す回数。</summary>
+    public const int RateLimitRetries = 6;
 
     public static async Task<ImportResult> RunAsync(
         IImportApi api,
         IReadOnlyList<ImportCandidate> candidates,
         Action<int, int> progress,
-        TimeSpan gapBetweenRuns)
+        TimeSpan gapBetweenRuns,
+        TimeSpan rateLimitWait)
     {
         var missing = new List<ImportCandidate>();
         for (int start = 0; start < candidates.Count; start += MaxCheckRuns)
@@ -48,6 +51,11 @@ internal static class HistoryUploader
 
             var payload = toSend[i].Build();
             var created = await api.CreateHistorySessionAsync(payload.Session);
+            for (int retry = 0; created.RateLimited && retry < RateLimitRetries; retry++)
+            {
+                await Task.Delay(rateLimitWait);
+                created = await api.CreateHistorySessionAsync(payload.Session);
+            }
             if (created.AlreadyExists) continue;
             if (created.Created == null) return new ImportResult(ImportStatus.Failed, sent);
 

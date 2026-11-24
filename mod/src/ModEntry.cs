@@ -52,7 +52,7 @@ public static class ModEntry
         P(typeof(RunManager), "WinRun",             typeof(Lifecycle), "BeforeRunTerminatedPrefix", null);
         P(typeof(RunManager), "Abandon",            typeof(Lifecycle), "BeforeRunTerminatedPrefix", null);
         P(typeof(RunHistoryUtilities), "CreateRunHistoryEntry", typeof(MenuAbandon), null, "CreateRunHistoryEntryPostfix");
-        P(typeof(LocManager), "Initialize",          typeof(BaseLibBridge), "LocManagerInitializePrefix", null);
+        P(typeof(LocManager), "Initialize",          typeof(BaseLibBridge), null, "LocManagerInitializePostfix");
 
         // ラン全体 (階ごとの記録)
         P(typeof(RunManager), "UpdatePlayerStatsInMapPointHistory", typeof(FloorRecorder), null, "UpdatePlayerStatsPostfix");

@@ -13,8 +13,10 @@ public static class HistoryImport
     /// <summary>送れたら 0 以上の件数、送るランが無ければ 0、失敗したら -1。</summary>
     public const int Failed = -1;
 
-    /// <summary>セーブの取り込みは 1 回に 1 つだけ。サーバの POST /sessions の回数の上限 (1 分 30 件) に収まる間隔で送る。</summary>
-    private static readonly TimeSpan GapBetweenRuns = TimeSpan.FromSeconds(2);
+    /// <summary>サーバの POST /sessions の回数の上限 (1 分 30 件) に収まる間隔で送る。</summary>
+    private static readonly TimeSpan GapBetweenRuns = TimeSpan.FromSeconds(2.5);
+    /// <summary>それでも上限で断られたら、この時間待って送り直す。上限は直近 1 分の件数なので、10 秒待てば数件分空く。</summary>
+    private static readonly TimeSpan RateLimitWait = TimeSpan.FromSeconds(10);
     private static int _running;
 
     public static bool IsRunning => Volatile.Read(ref _running) == 1;
@@ -31,7 +33,7 @@ public static class HistoryImport
             if (ModEntry.ApiClient is not IImportApi api) return Failed;
             var candidates = HistoryReader.ReadAll();
             Log.Info($"[StsStats] history import: {candidates.Count} runs in save data");
-            var result = await Task.Run(() => HistoryUploader.RunAsync(api, candidates, progress, GapBetweenRuns));
+            var result = await Task.Run(() => HistoryUploader.RunAsync(api, candidates, progress, GapBetweenRuns, RateLimitWait));
             Log.Info($"[StsStats] history import: {result.Status}, sent {result.Sent}");
             return result.Status == ImportStatus.Failed ? Failed : result.Sent;
         }
