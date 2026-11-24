@@ -148,14 +148,13 @@ internal static class HistoryReader
         }));
 
         var me = h.Players.FirstOrDefault(p => PlayerId(p.Id) == Identity.LocalSteamId.ToString()) ?? h.Players.FirstOrDefault();
-        var session = new CreateSessionRequest(
+        var session = new ImportSession(
             HostName:    me != null && PlayerName(me) is { Length: > 0 } name ? name : null,
             HostSteamId: Identity.LocalSteamId.ToString(),
             CharacterId: me?.Character.Entry,
             Ascension:   h.Ascension,
             Seed:        h.Seed,
             GameVersion: h.BuildId,
-            Source:      "history",
             StartedAt:   Check(h).StartedAt,
             PlayerIds:   h.Players.Select(p => PlayerId(p.Id)).ToList());
         return new ImportPayload(session, events);

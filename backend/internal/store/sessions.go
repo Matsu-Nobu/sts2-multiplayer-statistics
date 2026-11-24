@@ -34,7 +34,7 @@ type CreateSessionInput struct {
 	Ascension   *int
 	Seed        *string
 	GameVersion *string
-	// CreatedAt は CreateHistorySession だけが使う。ランを始めた日時。
+	// CreatedAt は ImportRun だけが使う。ランを始めた日時。
 	CreatedAt time.Time
 }
 
@@ -49,8 +49,6 @@ func (s *Store) CreateSession(ctx context.Context, in CreateSessionInput) error 
 
 // SameRun は、seed が同じで、playerIDs の誰かが参加していて、startedAt の 1 時間前より後に作られたセッションのうち、
 // 最も早く作られたものを返す (docs/spec/api.md「同じランの見分け方」)。無ければ nil。
-// 取り込みの途中で止まったセッション (source が history で結果が空) は数えない。
-// 取り込んだランは必ず勝利か死亡の run_end を送るので、結果が空なら最後まで届いていない。
 func (s *Store) SameRun(ctx context.Context, seed string, startedAt time.Time, playerIDs []string) (*Session, error) {
 	if seed == "" || len(playerIDs) == 0 {
 		return nil, nil
@@ -63,7 +61,6 @@ func (s *Store) SameRun(ctx context.Context, seed string, startedAt time.Time, p
 	err = s.db.QueryRowContext(ctx,
 		`SELECT s.id FROM sessions s
 		 WHERE s.seed = ? AND s.created_at > ?
-		   AND NOT (s.source = 'history' AND s.outcome IS NULL)
 		   AND EXISTS (SELECT 1 FROM session_players sp
 		               WHERE sp.session_id = s.id AND sp.steam_id IN (SELECT value FROM json_each(?)))
 		 ORDER BY s.created_at, s.id LIMIT 1`,
@@ -118,14 +115,33 @@ func (s *Store) UpdateRunOutcome(ctx context.Context, sessionID, outcome string,
 	return err
 }
 
-// CreateHistorySession は、セーブデータの履歴から取り込むランのセッションを作り、playerIDs を参加者に入れる。
-// 同じランのセッションが既にあれば作らずにそれを返す。
-// 同じランの取り込みが途中で止まって残ったセッションは消してから作る。
-func (s *Store) CreateHistorySession(ctx context.Context, in CreateSessionInput, playerIDs []string) (*Session, error) {
+// ImportRunInput は、セーブデータの履歴から取り込む 1 ランの中身 (docs/spec/api.md「POST /imports/run」)。
+type ImportRunInput struct {
+	Session    CreateSessionInput // CreatedAt にランを始めた日時を入れる
+	PlayerIDs  []string
+	Players    []ImportPlayer
+	Events     []EventInput // SessionID は空でよい。ImportRun が入れる
+	Outcome    string
+	FinalFloor *int
+	FinishedAt string
+}
+
+// ImportPlayer は run_start から取った、参加者 1 人の情報。Name が空なら players の名前を書き換えない。
+type ImportPlayer struct {
+	SteamID       string
+	Name          string
+	CharacterID   *string
+	CharacterName *string
+	GameMode      *string
+}
+
+// ImportRun は、取り込むランのセッション・参加者・記録・結果を 1 つのトランザクションで書き込む。
+// 同じランのセッションが既にあれば何も書かずにそれを返す。
+func (s *Store) ImportRun(ctx context.Context, in ImportRunInput) (*Session, error) {
 	s.historyMu.Lock()
 	defer s.historyMu.Unlock()
 
-	same, err := s.SameRun(ctx, derefString(in.Seed), in.CreatedAt, playerIDs)
+	same, err := s.SameRun(ctx, derefString(in.Session.Seed), in.Session.CreatedAt, in.PlayerIDs)
 	if err != nil || same != nil {
 		return same, err
 	}
@@ -134,21 +150,44 @@ func (s *Store) CreateHistorySession(ctx context.Context, in CreateSessionInput,
 		return nil, err
 	}
 	defer tx.Rollback()
-	created := in.CreatedAt.UTC().Format(time.RFC3339)
+
+	ss := in.Session
+	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM sessions WHERE source = 'history' AND outcome IS NULL AND seed = ? AND created_at = ?`,
-		in.Seed, created); err != nil {
+		`INSERT INTO sessions (id, created_at, host_name, host_steam_id, character_id, ascension, seed, game_version, source,
+		                       outcome, final_floor, finished_at, write_token)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'history', ?, ?, ?, ?)`,
+		ss.ID, ss.CreatedAt.UTC().Format(time.RFC3339), ss.HostName, ss.HostSteamID, ss.CharacterID, ss.Ascension, ss.Seed, ss.GameVersion,
+		in.Outcome, in.FinalFloor, in.FinishedAt, ss.WriteToken); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO sessions (id, created_at, host_name, host_steam_id, character_id, ascension, seed, game_version, source, write_token)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'history', ?)`,
-		in.ID, created, in.HostName, in.HostSteamID, in.CharacterID, in.Ascension, in.Seed, in.GameVersion, in.WriteToken); err != nil {
-		return nil, err
+	for _, id := range in.PlayerIDs {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO session_players (session_id, steam_id) VALUES (?, ?)`, ss.ID, id); err != nil {
+			return nil, err
+		}
 	}
-	for _, id := range playerIDs {
+	for _, p := range in.Players {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT OR IGNORE INTO session_players (session_id, steam_id) VALUES (?, ?)`, in.ID, id); err != nil {
+			`UPDATE session_players SET character_id = ?, character_name = ?, game_mode = ? WHERE session_id = ? AND steam_id = ?`,
+			p.CharacterID, p.CharacterName, p.GameMode, ss.ID, p.SteamID); err != nil {
+			return nil, err
+		}
+		if p.Name == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO players (steam_id, display_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?)
+			ON CONFLICT(steam_id) DO UPDATE SET display_name = excluded.display_name, last_seen_at = excluded.last_seen_at`,
+			p.SteamID, p.Name, now, now); err != nil {
+			return nil, err
+		}
+	}
+	for _, ev := range in.Events {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT OR IGNORE INTO events
+				(event_uuid, session_id, player_id, event_type, occurred_at, received_at, floor, payload_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			ev.EventUUID, ss.ID, ev.PlayerID, ev.EventType, ev.OccurredAt, now, ev.Floor, string(ev.Payload)); err != nil {
 			return nil, err
 		}
 	}

@@ -20,7 +20,7 @@ public class HistoryUploaderTests
             var list = Enumerable.Range(0, events)
                 .Select(i => new EventRecord(Guid.NewGuid(), i == events - 1 ? "run_end" : "floor_snapshot", DateTime.UtcNow, null, i, null, null, null, new { }))
                 .ToList();
-            return new ImportPayload(new CreateSessionRequest(Seed: seed, Source: "history"), list);
+            return new ImportPayload(new ImportSession(null, "p1", null, 0, seed, "v0.113.1", "2026-06-03T12:14:00Z", new[] { "p1" }), list);
         });
 
     private Task<ImportResult> Upload(params ImportCandidate[] runs) =>
@@ -49,14 +49,13 @@ public class HistoryUploaderTests
     }
 
     [Fact]
-    public async Task PostsEventsInBatchesWithRunEndLast()
+    public async Task SendsAllEventsOfARunInOneRequest()
     {
         _api.Missing = new[] { 0 };
 
         await Upload(Run("A", "death", events: 120));
 
-        Assert.Equal(new[] { 50, 50, 20 }, _api.Batches.Select(b => b.Count));
-        Assert.Equal("run_end", _api.Batches.Last().Last().EventType);
+        Assert.Equal(120, Assert.Single(_api.Sent).Count);
     }
 
     [Fact]
@@ -68,7 +67,6 @@ public class HistoryUploaderTests
         var result = await Upload(Run("A", "death"));
 
         Assert.Equal(new ImportResult(ImportStatus.NothingToSend, 0), result);
-        Assert.Empty(_api.Batches);
     }
 
     [Fact]
@@ -128,17 +126,6 @@ public class HistoryUploaderTests
     }
 
     [Fact]
-    public async Task PostFails_IsFailed()
-    {
-        _api.Missing = new[] { 0 };
-        _api.FailPost = true;
-
-        var result = await Upload(Run("A", "death"));
-
-        Assert.Equal(new ImportResult(ImportStatus.Failed, 0), result);
-    }
-
-    [Fact]
     public async Task ReportsProgress()
     {
         _api.Missing = new[] { 0, 1 };
@@ -153,11 +140,10 @@ public class HistoryUploaderTests
         public int[]? Missing = Array.Empty<int>();
         public readonly HashSet<string> Conflict = new();
         public readonly HashSet<string> FailCreate = new();
-        public bool FailPost;
         public int RateLimitedTimes;
         public readonly List<ImportCheckRun> Checked = new();
         public readonly List<string> Created = new();
-        public readonly List<IReadOnlyList<EventRecord>> Batches = new();
+        public readonly List<IReadOnlyList<EventRecord>> Sent = new();
 
         public Task<int[]?> CheckImportsAsync(IReadOnlyList<ImportCheckRun> runs)
         {
@@ -165,24 +151,18 @@ public class HistoryUploaderTests
             return Task.FromResult(Missing);
         }
 
-        public Task<HistorySessionResult> CreateHistorySessionAsync(CreateSessionRequest req)
+        public Task<ImportRunStatus> ImportRunAsync(ImportSession session, IReadOnlyList<EventRecord> events)
         {
-            string seed = req.Seed!;
-            Created.Add(seed);
+            Created.Add(session.Seed);
             if (RateLimitedTimes > 0)
             {
                 RateLimitedTimes--;
-                return Task.FromResult(new HistorySessionResult(null, false, RateLimited: true));
+                return Task.FromResult(ImportRunStatus.RateLimited);
             }
-            if (Conflict.Contains(seed)) return Task.FromResult(new HistorySessionResult(null, true));
-            if (FailCreate.Contains(seed)) return Task.FromResult(new HistorySessionResult(null, false));
-            return Task.FromResult(new HistorySessionResult(new CreateSessionResult("s-" + seed, "t", "u"), false));
-        }
-
-        public Task<bool> PostEventsAsync(string sessionId, string writeToken, IReadOnlyList<EventRecord> events)
-        {
-            Batches.Add(events);
-            return Task.FromResult(!FailPost);
+            if (Conflict.Contains(session.Seed)) return Task.FromResult(ImportRunStatus.AlreadyExists);
+            if (FailCreate.Contains(session.Seed)) return Task.FromResult(ImportRunStatus.Failed);
+            Sent.Add(events);
+            return Task.FromResult(ImportRunStatus.Created);
         }
     }
 }

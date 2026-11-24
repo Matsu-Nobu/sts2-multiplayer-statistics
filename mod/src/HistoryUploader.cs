@@ -8,8 +8,8 @@ namespace StsStats;
 /// <summary>セーブデータの履歴にある 1 ランの、送る前の情報。Build は送ると決めたランにだけ呼ぶ。</summary>
 internal record ImportCandidate(ImportCheckRun Check, Func<ImportPayload> Build);
 
-/// <summary>1 ランを送るときのセッション作成の内容と、送るイベント。</summary>
-internal record ImportPayload(CreateSessionRequest Session, IReadOnlyList<EventRecord> Events);
+/// <summary>1 ランを送るときのセッションの内容と、送るイベント。</summary>
+internal record ImportPayload(ImportSession Session, IReadOnlyList<EventRecord> Events);
 
 internal enum ImportStatus { Sent, NothingToSend, Failed }
 
@@ -21,7 +21,6 @@ internal record ImportResult(ImportStatus Status, int Sent);
 internal static class HistoryUploader
 {
     public const int MaxCheckRuns = 1000;
-    public const int EventsPerPost = 50;
     /// <summary>サーバの回数の上限で断られたときに、同じランを送り直す回数。</summary>
     public const int RateLimitRetries = 6;
 
@@ -50,21 +49,14 @@ internal static class HistoryUploader
             if (i > 0) await Task.Delay(gapBetweenRuns);
 
             var payload = toSend[i].Build();
-            var created = await api.CreateHistorySessionAsync(payload.Session);
-            for (int retry = 0; created.RateLimited && retry < RateLimitRetries; retry++)
+            var status = await api.ImportRunAsync(payload.Session, payload.Events);
+            for (int retry = 0; status == ImportRunStatus.RateLimited && retry < RateLimitRetries; retry++)
             {
                 await Task.Delay(rateLimitWait);
-                created = await api.CreateHistorySessionAsync(payload.Session);
+                status = await api.ImportRunAsync(payload.Session, payload.Events);
             }
-            if (created.AlreadyExists) continue;
-            if (created.Created == null) return new ImportResult(ImportStatus.Failed, sent);
-
-            for (int e = 0; e < payload.Events.Count; e += EventsPerPost)
-            {
-                var batch = payload.Events.Skip(e).Take(EventsPerPost).ToList();
-                if (!await api.PostEventsAsync(created.Created.SessionId, created.Created.WriteToken, batch))
-                    return new ImportResult(ImportStatus.Failed, sent);
-            }
+            if (status == ImportRunStatus.AlreadyExists) continue;
+            if (status != ImportRunStatus.Created) return new ImportResult(ImportStatus.Failed, sent);
             sent++;
         }
         progress(toSend.Count, toSend.Count);

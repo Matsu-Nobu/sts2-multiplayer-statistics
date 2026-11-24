@@ -79,9 +79,7 @@ func (s *Store) ListUserRuns(ctx context.Context, steamID string, onlyListed boo
 		       s.visibility, sp.hidden, COALESCE(s.host_steam_id, '') = sp.steam_id
 		FROM session_players sp
 		JOIN sessions s ON s.id = sp.session_id
-		WHERE sp.steam_id = ?
-		  AND NOT (s.source = 'history' AND s.outcome IS NULL)`
-	// 取り込みの途中で止まったゲーム (source が history で結果が空) は、次に取り込むときに消すので一覧に出さない
+		WHERE sp.steam_id = ?`
 	if onlyListed {
 		q += ` AND s.visibility = 'public' AND sp.hidden = 0`
 	}

@@ -3,6 +3,8 @@ package api
 import (
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,64 +27,108 @@ func liveRun(t *testing.T, srv *Server, seed string) string {
 	return out.SessionID
 }
 
-func historyBody(seed string, started time.Time) map[string]any {
+// importBody は、importPlayer が 1 人で遊んだ、2 階で死んだランの /imports/run の本文を作る。
+func importBody(seed string, started time.Time) map[string]any {
+	at := started.UTC().Format(time.RFC3339)
 	return map[string]any{
-		"host_steam_id": importPlayer, "seed": seed, "source": "history",
-		"started_at": started.UTC().Format(time.RFC3339), "player_ids": []string{importPlayer},
-		"game_version": "v0.105.1",
+		"session": map[string]any{
+			"host_steam_id": importPlayer, "seed": seed, "started_at": at,
+			"player_ids": []string{importPlayer}, "game_version": "v0.105.1",
+		},
+		"events": []map[string]any{
+			{"event_uuid": seed + "-rs", "event_type": "run_start", "occurred_at": at, "player_id": importPlayer,
+				"payload": map[string]any{"character_id": "SILENT", "character_name": "サイレント", "player_name": "nobu", "game_mode": "Standard"}},
+			{"event_uuid": seed + "-f1", "event_type": "floor_snapshot", "occurred_at": at, "floor": 1, "payload": map[string]any{"floor": 1}},
+			{"event_uuid": seed + "-f2", "event_type": "floor_snapshot", "occurred_at": at, "floor": 2, "payload": map[string]any{"floor": 2}},
+			{"event_uuid": seed + "-end", "event_type": "run_end", "occurred_at": at, "floor": 2,
+				"payload": map[string]any{"outcome": "death", "final_floor": 2}},
+		},
 	}
 }
 
-func postHistory(t *testing.T, srv *Server, body map[string]any) (*http.Response, createSessionRes) {
+func importRun(t *testing.T, srv *Server, body map[string]any) (*http.Response, map[string]string) {
 	t.Helper()
-	res := do(t, srv, http.MethodPost, "/sessions", "", body)
-	var out createSessionRes
-	if res.StatusCode == http.StatusCreated {
+	res := do(t, srv, http.MethodPost, "/imports/run", "", body)
+	out := map[string]string{}
+	if res.StatusCode == http.StatusCreated || res.StatusCode == http.StatusConflict {
 		decodeJSON(t, res, &out)
 	}
 	return res, out
 }
 
-func TestCreateSession_History(t *testing.T) {
+func events(body map[string]any) []map[string]any { return body["events"].([]map[string]any) }
+
+func TestImportRun(t *testing.T) {
 	started := time.Date(2026, 6, 3, 12, 14, 0, 0, time.UTC)
 
-	t.Run("始めた日時と出どころを記録し、プレイヤーを参加者にする", func(t *testing.T) {
+	t.Run("セッション・参加者・記録・結果を書き込む", func(t *testing.T) {
 		srv, st := newTestServer(t)
-		res, out := postHistory(t, srv, historyBody("SEED1", started))
+		res, out := importRun(t, srv, importBody("SEED1", started))
 		if res.StatusCode != http.StatusCreated {
 			t.Fatalf("status=%d", res.StatusCode)
 		}
-		sess, err := st.GetSession(t.Context(), out.SessionID)
+		sess, err := st.GetSession(t.Context(), out["session_id"])
 		if err != nil {
 			t.Fatal(err)
 		}
-		if sess.CreatedAt != "2026-06-03T12:14:00Z" || sess.Source != "history" {
-			t.Errorf("created_at=%s source=%s", sess.CreatedAt, sess.Source)
+		if sess.CreatedAt != "2026-06-03T12:14:00Z" || sess.Source != "history" || *sess.Outcome != "death" || *sess.FinalFloor != 2 {
+			t.Errorf("created_at=%s source=%s outcome=%v final_floor=%v", sess.CreatedAt, sess.Source, sess.Outcome, sess.FinalFloor)
 		}
-		same, err := st.SameRun(t.Context(), "SEED1", started, []string{importPlayer})
-		if err != nil || same != nil {
-			t.Errorf("結果の無い取り込みは同じランとみなさない: same=%v err=%v", same, err)
+		evs, _ := st.ListEvents(t.Context(), sess.ID)
+		if len(evs) != 4 {
+			t.Errorf("events=%d want 4", len(evs))
+		}
+		runs, _ := st.ListUserRuns(t.Context(), importPlayer, false)
+		if len(runs) != 1 || runs[0].CharacterID == nil || *runs[0].CharacterID != "SILENT" {
+			t.Errorf("runs=%+v", runs)
+		}
+		players, _ := st.ListPlayersForSession(t.Context(), sess.ID)
+		if len(players) != 1 || players[0].DisplayName != "nobu" {
+			t.Errorf("players=%+v", players)
+		}
+	})
+
+	t.Run("名前が空ならプレイヤー名を書き換えない", func(t *testing.T) {
+		srv, st := newTestServer(t)
+		liveRun(t, srv, "OTHER")
+		body := importBody("SEED2", started)
+		events(body)[0]["payload"].(map[string]any)["player_name"] = ""
+		res, out := importRun(t, srv, body)
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("status=%d", res.StatusCode)
+		}
+		players, _ := st.ListPlayersForSession(t.Context(), out["session_id"])
+		if len(players) != 1 || players[0].DisplayName != "nobu" {
+			t.Errorf("players=%+v", players)
 		}
 	})
 
 	t.Run("同じランのライブのセッションがあれば 409 でその ID を返す", func(t *testing.T) {
 		srv, _ := newTestServer(t)
-		live := liveRun(t, srv, "SEED2")
-		res := do(t, srv, http.MethodPost, "/sessions", "", historyBody("SEED2", time.Now().Add(-10*time.Minute)))
-		if res.StatusCode != http.StatusConflict {
-			t.Fatalf("status=%d", res.StatusCode)
+		live := liveRun(t, srv, "SEED3")
+		res, out := importRun(t, srv, importBody("SEED3", time.Now().Add(-10*time.Minute)))
+		if res.StatusCode != http.StatusConflict || out["session_id"] != live {
+			t.Fatalf("status=%d session_id=%s want %s", res.StatusCode, out["session_id"], live)
 		}
-		var got map[string]string
-		decodeJSON(t, res, &got)
-		if got["session_id"] != live {
-			t.Errorf("session_id=%s want %s", got["session_id"], live)
+	})
+
+	t.Run("同じランを 2 回送ると 2 回目は 409", func(t *testing.T) {
+		srv, _ := newTestServer(t)
+		_, first := importRun(t, srv, importBody("SEED4", started))
+		body := importBody("SEED4", started)
+		for _, ev := range events(body) {
+			ev["event_uuid"] = ev["event_uuid"].(string) + "-again"
+		}
+		res, out := importRun(t, srv, body)
+		if res.StatusCode != http.StatusConflict || out["session_id"] != first["session_id"] {
+			t.Fatalf("status=%d", res.StatusCode)
 		}
 	})
 
 	t.Run("始めた日時の 1 時間より前に作られた同じシードのセッションは別のラン", func(t *testing.T) {
 		srv, _ := newTestServer(t)
-		liveRun(t, srv, "SEED3")
-		res, _ := postHistory(t, srv, historyBody("SEED3", time.Now().Add(2*time.Hour)))
+		liveRun(t, srv, "SEED5")
+		res, _ := importRun(t, srv, importBody("SEED5", time.Now().Add(2*time.Hour)))
 		if res.StatusCode != http.StatusCreated {
 			t.Fatalf("status=%d", res.StatusCode)
 		}
@@ -90,58 +136,80 @@ func TestCreateSession_History(t *testing.T) {
 
 	t.Run("参加者が重ならない同じシードのセッションは別のラン", func(t *testing.T) {
 		srv, _ := newTestServer(t)
-		liveRun(t, srv, "SEED4")
-		body := historyBody("SEED4", time.Now().Add(-10*time.Minute))
-		body["player_ids"] = []string{"76561199000000999"}
-		res, _ := postHistory(t, srv, body)
+		liveRun(t, srv, "SEED6")
+		body := importBody("SEED6", time.Now().Add(-10*time.Minute))
+		other := "76561199000000999"
+		body["session"].(map[string]any)["player_ids"] = []string{other}
+		events(body)[0]["player_id"] = other
+		res, _ := importRun(t, srv, body)
 		if res.StatusCode != http.StatusCreated {
 			t.Fatalf("status=%d", res.StatusCode)
 		}
 	})
 
-	t.Run("途中で止まった取り込みは消して作り直す", func(t *testing.T) {
-		srv, st := newTestServer(t)
-		_, first := postHistory(t, srv, historyBody("SEED5", started))
-		res, second := postHistory(t, srv, historyBody("SEED5", started))
-		if res.StatusCode != http.StatusCreated {
-			t.Fatalf("status=%d", res.StatusCode)
-		}
-		if _, err := st.GetSession(t.Context(), first.SessionID); err == nil {
-			t.Errorf("途中で止まったセッション %s が残っている", first.SessionID)
-		}
-		if _, err := st.GetSession(t.Context(), second.SessionID); err != nil {
-			t.Errorf("作り直したセッションが無い: %v", err)
-		}
-	})
-
-	t.Run("最後まで届いた取り込みは同じランとして 409", func(t *testing.T) {
-		srv, _ := newTestServer(t)
-		_, first := postHistory(t, srv, historyBody("SEED6", started))
-		end := []map[string]any{{
-			"event_uuid": "end-1", "event_type": "run_end", "occurred_at": "2026-06-03T13:00:00Z",
-			"payload": map[string]any{"outcome": "death", "final_floor": 33},
-		}}
-		if r := do(t, srv, http.MethodPost, "/sessions/"+first.SessionID+"/events", first.WriteToken, end); r.StatusCode != http.StatusNoContent {
-			t.Fatalf("post run_end: %d", r.StatusCode)
-		}
-		res, _ := postHistory(t, srv, historyBody("SEED6", started))
-		if res.StatusCode != http.StatusConflict {
-			t.Fatalf("status=%d", res.StatusCode)
-		}
-	})
-
-	for name, drop := range map[string]string{"シードが無い": "seed", "始めた日時が無い": "started_at", "プレイヤーが無い": "player_ids"} {
-		t.Run(name+"と 400", func(t *testing.T) {
-			srv, _ := newTestServer(t)
-			body := historyBody("SEED7", started)
-			delete(body, drop)
-			res := do(t, srv, http.MethodPost, "/sessions", "", body)
+	bad := map[string]func(body map[string]any){
+		"シードが無い":   func(b map[string]any) { delete(b["session"].(map[string]any), "seed") },
+		"始めた日時が無い": func(b map[string]any) { delete(b["session"].(map[string]any), "started_at") },
+		"プレイヤーが無い": func(b map[string]any) { delete(b["session"].(map[string]any), "player_ids") },
+		"プレイヤーが 5 人": func(b map[string]any) {
+			b["session"].(map[string]any)["player_ids"] = []string{"1", "2", "3", "4", "5"}
+		},
+		"参加者でない人の開始の記録": func(b map[string]any) { events(b)[0]["player_id"] = "76561199000000999" },
+		"戦闘の記録":         func(b map[string]any) { events(b)[1]["event_type"] = "damage_dealt" },
+		"終わりの記録が無い":     func(b map[string]any) { b["events"] = events(b)[:3] },
+		"終わりの記録が最後でない":  func(b map[string]any) { e := events(b); b["events"] = []map[string]any{e[0], e[3], e[1], e[2]} },
+		"放棄したラン": func(b map[string]any) {
+			events(b)[3]["payload"] = map[string]any{"outcome": "abandoned", "final_floor": 2}
+		},
+		"階が 101": func(b map[string]any) {
+			e := events(b)
+			list := []map[string]any{e[0]}
+			for i := 1; i <= 101; i++ {
+				list = append(list, map[string]any{"event_uuid": "f" + strconv.Itoa(i), "event_type": "floor_snapshot", "occurred_at": e[0]["occurred_at"], "payload": map[string]any{"floor": i}})
+			}
+			b["events"] = append(list, e[3])
+		},
+	}
+	for name, change := range bad {
+		t.Run(name+"と 400 で何も書かない", func(t *testing.T) {
+			srv, st := newTestServer(t)
+			body := importBody("BAD", started)
+			change(body)
+			res := do(t, srv, http.MethodPost, "/imports/run", "", body)
 			if res.StatusCode != http.StatusBadRequest {
 				b, _ := io.ReadAll(res.Body)
 				t.Fatalf("status=%d body=%s", res.StatusCode, b)
 			}
+			if runs, _ := st.ListUserRuns(t.Context(), importPlayer, false); len(runs) != 0 {
+				t.Errorf("runs=%d", len(runs))
+			}
 		})
 	}
+
+	t.Run("階が 100 なら受け付ける", func(t *testing.T) {
+		srv, _ := newTestServer(t)
+		body := importBody("MAX", started)
+		e := events(body)
+		list := []map[string]any{e[0]}
+		for i := 1; i <= 100; i++ {
+			list = append(list, map[string]any{"event_uuid": "f" + strconv.Itoa(i), "event_type": "floor_snapshot", "occurred_at": e[0]["occurred_at"], "payload": map[string]any{"floor": i}})
+		}
+		body["events"] = append(list, e[3])
+		res := do(t, srv, http.MethodPost, "/imports/run", "", body)
+		if res.StatusCode != http.StatusCreated {
+			t.Fatalf("status=%d", res.StatusCode)
+		}
+	})
+
+	t.Run("本文が 512KB を超えると 400", func(t *testing.T) {
+		srv, _ := newTestServer(t)
+		body := importBody("BIG", started)
+		events(body)[1]["payload"] = map[string]any{"pad": strings.Repeat("x", 600*1024)}
+		res := do(t, srv, http.MethodPost, "/imports/run", "", body)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status=%d", res.StatusCode)
+		}
+	})
 }
 
 func TestCheckImports(t *testing.T) {

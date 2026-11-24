@@ -13,8 +13,8 @@ public static class HistoryImport
     /// <summary>送れたら 0 以上の件数、送るランが無ければ 0、失敗したら -1。</summary>
     public const int Failed = -1;
 
-    /// <summary>サーバの POST /sessions の回数の上限 (1 分 30 件) に収まる間隔で送る。</summary>
-    private static readonly TimeSpan GapBetweenRuns = TimeSpan.FromSeconds(2.5);
+    /// <summary>サーバの POST /imports/run の回数の上限 (1 分 120 件) に収まる間隔で送る。</summary>
+    private static readonly TimeSpan GapBetweenRuns = TimeSpan.FromSeconds(0.5);
     /// <summary>それでも上限で断られたら、この時間待って送り直す。上限は直近 1 分の件数なので、10 秒待てば数件分空く。</summary>
     private static readonly TimeSpan RateLimitWait = TimeSpan.FromSeconds(10);
     private static int _running;

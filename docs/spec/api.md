@@ -11,6 +11,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | 操作 | 認可 |
 |------|------|
 | セッション作成 (`POST /sessions`) | 不要 |
+| セーブデータの履歴の取り込み (`POST /imports/check`・`POST /imports/run`) | 不要 (回数と中身の上限で守る) |
 | 書き込み（events 投稿） | `Authorization: Bearer <write_token>` 必須 |
 | 読み取り（GET 系） | 不要（共有URLを知っている人は閲覧可） |
 
@@ -43,6 +44,7 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
 | `POST` | `/sessions` | — | セッション作成 |
 | `POST` | `/sessions/{id}/events` | Bearer | イベント bulk 投稿（戦闘内・外いずれも） |
 | `POST` | `/imports/check` | — | セーブデータの履歴にあるランのうち、サーバにまだ無いランを返す |
+| `POST` | `/imports/run` | — | セーブデータの履歴にある 1 ランを、セッションと記録をまとめて取り込む |
 | `GET`  | `/api/sessions/{id}` | — (非公開のランは記録した人のログインが要る) | セッション全データ取得（WebUI用） |
 | `GET`  | `/auth/steam/login?return={path}` | — | Steam のログイン画面へ移る |
 | `GET`  | `/auth/steam/callback` | — | Steam から戻る。ログインの cookie を付けて `return` へ移る |
@@ -75,14 +77,9 @@ mod ⇄ バックエンド ⇄ WebUI の HTTP API 仕様。**現在実装され�
   "character_id":  "IRONCLAD",          // optional（後で run_start イベントで送ってもよい）
   "ascension":     5,                    // optional
   "seed":          "1234567890",         // optional
-  "game_version":  "v0.113.1",           // optional（ゲームのフォルダの release_info.json の version）
-  "source":        "history",            // optional。セーブデータの履歴から取り込むときだけ "history"
-  "started_at":    "2026-06-03T12:14:00Z", // source が "history" のとき必須。ランを始めた日時 (履歴の start_time)
-  "player_ids":    ["76561199204788207"]   // source が "history" のとき必須。ランの全プレイヤーの Steam ID
+  "game_version":  "v0.113.1"            // optional（ゲームのフォルダの release_info.json の version）
 }
 ```
-
-`source` が `"history"` のとき、`seed`・`started_at`・`player_ids` が無ければ、サーバは `400` を返す。サーバはセッションの `created_at` に `started_at` を入れる。そのランと同じランのセッション (「同じランの見分け方」) が既にあれば、サーバはセッションを作らず、`409` と `{"session_id": "<既にあるセッション>"}` を返す。
 
 **Response 201**
 ```json
@@ -124,6 +121,34 @@ mod がセーブデータの履歴を送る前に呼ぶ。送る候補のラン�
 
 - `missing` は、同じランのセッション (「同じランの見分け方」) が無いランの、`runs` の中の番号 (0 始まり)。
 - 同じランのセッションがあり、そのセッションの結果 (`outcome`) が空なら、サーバはそのセッションの結果と到達階を、送られてきた `outcome` と `final_floor` で埋め、ゲームの集計を作り直す。メニューから放棄して進行中のまま残ったセッションは、これで放棄になる。
+
+---
+
+## `POST /imports/run`
+
+セーブデータの履歴にある 1 ランを取り込む。サーバは、セッション・参加者・記録・結果を 1 つのトランザクションで書き込むので、途中で通信が切れても中途半端なランは残らない。
+
+**Request** (本文は 512KB まで)
+```json
+{
+  "session": {
+    "host_name": "kyomu_wo_hakai", "host_steam_id": "76561199204788207", "character_id": "SILENT",
+    "ascension": 10, "seed": "80BWT97ATAT2", "game_version": "v0.105.1",
+    "started_at": "2026-06-03T12:14:00Z",
+    "player_ids": ["76561199204788207"]
+  },
+  "events": [ /* POST /sessions/{id}/events の各要素と同じ形 */ ]
+}
+```
+
+- `started_at` はランを始めた日時 (履歴の `start_time`)。サーバはセッションの `created_at` にこの日時を入れ、`source` を `history` にする。
+- 同じランのセッション (「同じランの見分け方」) が既にあれば、サーバは何も書かず、`409` と `{"session_id": "<既にあるセッション>"}` を返す。書き込んだら `201` と `{"session_id": "<作ったセッション>"}` を返す。
+- 偽のランでディスクを埋められないよう、サーバは次のどれかに当てはまる本文を `400` で断り、何も書かない。
+  - `seed`・`started_at` が無い。`player_ids` が 0 人か 5 人以上。
+  - `events` に `run_start`・`floor_snapshot`・`run_end` 以外がある。`run_start` の `player_id` が `player_ids` に無い。
+  - `floor_snapshot` が 101 件以上。
+  - 最後の記録が、結果 (`outcome`) が `victory` か `death` の `run_end` でない。
+- 回数の上限は、IP あたり 1 分 120 件、1 時間 1000 件。
 
 ---
 
@@ -602,7 +627,7 @@ raw 約 300KB / gzip 後 約 40KB。fetch は 1 ラン / 1 ブラウザセッシ
 
 | 時期 | 変更 |
 |------|------|
-| 2026-11 | `POST /imports/check` を追加。`POST /sessions` に `source` と `started_at`、`GET /api/sessions/{id}` の `session` に `source` |
+| 2026-11 | `POST /imports/check` と `POST /imports/run` を追加。`GET /api/sessions/{id}` の `session` に `source` |
 | 2026-11 | `POST /sessions` と、セッション・ユーザーページ・統計の各ゲームに `game_version`。統計の `card_offers` をカードと Act の組ごとに分け、`act_index` を足す |
 | 2026-11 | ログインとユーザーページ (`/auth/steam/*`、`/api/me`、`/api/users/{steam_id}`、ランの公開・非公開・削除)。`GET /api/sessions/{id}` の `session` に `visibility`。`POST /sessions/{id}/events` の body の上限を 2MB に上げる (ほかは 256KB) |
 | 2026-11 | `POST /sessions/{id}/turns` (410 を返すだけだった) を削除。`combat_start` を受けたときに同じ階の別の戦闘の記録を消す処理を削除 (戦闘の番号は階の番号と同じなので働いていなかった。やり直した戦闘は web が最後の `combat_start` より後だけを使う)。power snapshot の `applier`、`modifications` の v1 形式を削除 |

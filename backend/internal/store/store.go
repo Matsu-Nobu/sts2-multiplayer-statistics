@@ -20,7 +20,7 @@ var migrationsFS embed.FS
 // Store wraps the SQLite handle and exposes typed accessors.
 type Store struct {
 	db *sql.DB
-	// historyMu は、同じランの取り込みが同時に 2 つ届いたときに、両方がセッションを作らないようにする。
+	// historyMu は、同じランの取り込みが同時に 2 つ届いたときに、両方が書き込まないようにする。
 	historyMu sync.Mutex
 }
 
