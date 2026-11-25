@@ -24,7 +24,6 @@ prop   MegaCrit.Sts2.Core.Models.CardModel DynamicVars pub
 prop   MegaCrit.Sts2.Core.Models.CardModel Description
 prop   MegaCrit.Sts2.Core.Models.CardModel UpgradePreviewType pub
 method MegaCrit.Sts2.Core.Models.CardModel MutableClone pub
-method MegaCrit.Sts2.Core.Models.CardModel UpgradeInternal pub
 method MegaCrit.Sts2.Core.Models.CardModel AddExtraArgsToDescription
 prop   MegaCrit.Sts2.Core.Models.RelicModel Title pub
 prop   MegaCrit.Sts2.Core.Models.RelicModel Rarity pub

@@ -213,7 +213,7 @@ make dump-catalog LANG=ja
 - 環境変数 `STS_STATS_DUMP_CATALOG=1` のときだけ動作 (一般プレイヤー無影響)
 - `ModelDb.AllCards / AllRelics / AllPotions / _contentById` を reflection で iterate
 - 各 model の Title / Description を `LocString.GetFormattedText()` で localize 済テキスト取得
-- カード description は `MutableClone() → UpgradeInternal()` でアップグレード版も生成し、
+- カード description は `MutableClone() → UpgradeInternal(false)` でアップグレード版も生成し、
   `description_base` / `description_upgraded` 両方を出力
 - `AddExtraArgsToDescription` (private) を reflection で呼んでカード固有 DynamicVar を bind
 
