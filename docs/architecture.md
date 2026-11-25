@@ -88,7 +88,7 @@ mod は、ゲーム自身の記録 (階ごとの記録・ダメージの結果) 
 
 ### ETag
 
-`SHA256(session_id | max(received_at) | events 件数 | outcome | finished_at)` の先頭 16 バイトを hex で返す。クライアントは `If-None-Match` で 304 を引き出せる。
+`SHA256(session_id | max(received_at) | events 件数 | max(events.id) | outcome | finished_at | visibility)` の先頭 16 バイトを hex で返す。クライアントは `If-None-Match` で 304 を引き出せる。
 
 ### 技術スタック
 
