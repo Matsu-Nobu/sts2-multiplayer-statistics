@@ -20,7 +20,8 @@ fi
 
 # ゲームの起動中は入れ替えない。起動中に StsStats.dll を上書きすると、まだ読み込まれていない処理が
 # 壊れた中身で読み込まれ (BadImageFormatException: Bad IL range)、ゲームが止まる (2026-10-03、クリア時にフリーズ)。
-if pgrep -f "SlayTheSpire2.app/Contents/MacOS" >/dev/null 2>&1; then
+if pgrep -f "SlayTheSpire2.app/Contents/MacOS" >/dev/null 2>&1 \
+    || { command -v tasklist.exe >/dev/null 2>&1 && tasklist.exe 2>/dev/null | grep -qi "^SlayTheSpire2.exe"; }; then
     echo "[install] ERROR: Slay the Spire 2 が起動中です。ゲームを閉じてから install してください (build は済んでいます)。"
     exit 1
 fi

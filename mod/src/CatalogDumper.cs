@@ -142,7 +142,7 @@ internal static class CatalogDumper
 
             // canonical CardModel は IsUpgraded=false 固定で DynamicVars も base 値しか返さない。
             // - description_base:    手動で LocString 構築 + DynamicVars + IfUpgradedVar(Normal)
-            // - description_upgraded: ゲーム本体と同じパターンで MutableClone → UpgradeInternal()
+            // - description_upgraded: ゲーム本体と同じパターンで MutableClone → UpgradeInternal(false)
             //   して実際にアップグレードしたインスタンスから description を取る。
             //   (GetDescriptionForUpgradePreview は IfUpgraded 分岐は解いてくれるが
             //    {Damage} 等の数値は base 値のまま → アップグレード値にならない)
@@ -280,6 +280,18 @@ internal static class CatalogDumper
                 ?.Invoke(description, new object[] { "OnTable", false });
             description.GetType().GetMethod("Add", new[] { typeof(string), typeof(bool) })
                 ?.Invoke(description, new object[] { "InCombat", false });
+            // ゲームの CardModel.GetDescriptionForPile が渡す変数。渡さないと、その変数を使う説明文の整形が失敗する。
+            if (card is CardModel cm)
+            {
+                description.GetType().GetMethod("Add", new[] { typeof(string), typeof(bool) })
+                    ?.Invoke(description, new object[] { "IsTargeting", false });
+                description.GetType().GetMethod("Add", new[] { typeof(string), typeof(string) })
+                    ?.Invoke(description, new object[] { "TargetType", cm.TargetType.ToString() });
+                description.GetType().GetMethod("Add", new[] { typeof(string), typeof(bool) })
+                    ?.Invoke(description, new object[] { "GainsBlock", cm.GainsBlock });
+                description.GetType().GetMethod("Add", new[] { typeof(string), typeof(bool) })
+                    ?.Invoke(description, new object[] { "IsOstyAlive", false });
+            }
 
             string text = description.GetType().GetMethod("GetFormattedText", Type.EmptyTypes)
                 ?.Invoke(description, null) as string ?? "";
@@ -319,7 +331,7 @@ internal static class CatalogDumper
     /// ゲーム本体のアップグレードプレビュー実装と同じパターン:
     ///   var mutable = (CardModel)canonical.MutableClone();
     ///   mutable.UpgradePreviewType = CardUpgradePreviewType.Deck;
-    ///   mutable.UpgradeInternal();
+    ///   mutable.UpgradeInternal(false);
     /// → mutable.DynamicVars / Title / Description が upgraded 値を返す。
     /// </summary>
     private static string ResolveCardDescriptionUpgraded(object canonical)
@@ -350,8 +362,9 @@ internal static class CatalogDumper
             }
             catch { /* fallback: skip preview type */ }
 
-            // 4. UpgradeInternal() を呼ぶ (CurrentUpgradeLevel が +1 になり、Damage 等の dynamic var が更新)
-            clone.GetType().GetMethod("UpgradeInternal", Type.EmptyTypes)?.Invoke(clone, null);
+            // 4. UpgradeInternal(silent) を呼ぶ (CurrentUpgradeLevel が +1 になり、Damage 等の dynamic var が更新)。
+            // silent は Upgraded イベントを発火するかどうかだけを切り替える。カードライブラリと同じく false を渡す。
+            ((CardModel)clone).UpgradeInternal(false);
 
             // 5. clone から description を取る (UpgradeDisplay.Upgraded で IfUpgraded 分岐を upgraded ブランチに)
             return ResolveCardDescriptionBase(clone, "Upgraded");
