@@ -17,6 +17,8 @@ using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Rewards;
+using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 
 namespace StsStats;
 
@@ -59,6 +61,8 @@ public static class ModEntry
         P(typeof(Hook),       "AfterRewardTaken",   typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteHeal",  typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteSmith", typeof(FloorRecorder), null, "AfterRunActionPostfix");
+        P(typeof(RewardsSet), "Offer", typeof(CardRewardRecorder), "RewardsSetOfferPrefix", null);
+        P(typeof(CardRewardAlternative), "Generate", typeof(CardRewardRecorder), null, "GeneratePostfix");
         P(typeof(MerchantCardEntry),        "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
         P(typeof(MerchantPotionEntry),      "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
         P(typeof(MerchantRelicEntry),       "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantRelicPurchasePostfix");
