@@ -255,6 +255,7 @@ Content-Type: application/json
 
 ゲーム自身の階ごとの記録 (`MapPointHistoryEntry`) の写し。同じ `floor` の snapshot は何度でも届く。
 **web は階ごとに最後に受け取ったものだけを使う。** そのため `GET /api/sessions/{id}` は、同じ `floor` の snapshot のうち、`occurred_at`・`sequence`・保存した順の順で最後のものだけを返す。
+サーバーも、同じセッションの同じ `floor` の snapshot は、この順で最後のもの 1 件だけを保存する。新しい snapshot を保存したとき、それより前になる snapshot を消す。届いた snapshot が既に保存されているものより前になるときは、届いた方を消す。
 
 ```json
 {
@@ -381,7 +382,7 @@ web はカード別の表でだけ使う (combat-stats.md「カード別 (CardTa
 
 ### 冪等性
 
-`event_uuid` UNIQUE。重複 POST は無視（既存レコードは変更しない）。
+`event_uuid` UNIQUE。重複 POST は無視（既存レコードは変更しない）。ただし、`floor_snapshot` は同じ階の最後の 1 件だけを残すので（「floor_snapshot」の節）、消した snapshot がもう一度届いたときは、保存してから同じ規則で消す。
 
 ### Response
 - `204 No Content` — 成功
@@ -409,7 +410,7 @@ GET /api/sessions/abc, If-None-Match: "v-7f3a..."
 → 304 Not Modified
 ```
 
-ETag は `(session_id, events の最新 received_at, events 件数, session.outcome, session.finished_at)` から計算される。
+ETag は `(session_id, events の最新 received_at, events 件数, events の id の最大値, session.outcome, session.finished_at, session.visibility)` から計算される。`floor_snapshot` を置き換えると件数が変わらず、同じ秒に届くと最新 received_at も変わらないので、新しい行ごとに増える id の最大値を含める。
 
 ### Response 200
 

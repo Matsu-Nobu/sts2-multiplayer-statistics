@@ -25,9 +25,16 @@ type EventInput struct {
 
 // InsertEvent inserts an event. Duplicates by event_uuid are silently ignored.
 // Returns whether a new row was actually inserted.
+// floor_snapshot は、同じセッションの同じ階で最後のもの 1 件だけを残す (docs/spec/api.md「floor_snapshot」)。
 func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, err error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	res, err := s.db.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO events
 			(event_uuid, session_id, player_id, event_type, occurred_at, received_at,
 			 floor, combat_index, turn_number, sequence, payload_json)
@@ -44,7 +51,23 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 	if err != nil {
 		return false, err
 	}
-	return n > 0, nil
+	if n > 0 && in.EventType == "floor_snapshot" {
+		// 並べる順は ListEvents が同じ階から 1 件を選ぶ順と同じにする。
+		// 届いた記録の方が前になるときは、届いた記録が消える。
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM events WHERE id IN (
+				SELECT id FROM (
+					SELECT id, ROW_NUMBER() OVER (ORDER BY occurred_at DESC, sequence DESC, id DESC) AS snapshot_rank
+					FROM events
+					WHERE session_id = ? AND event_type = 'floor_snapshot'
+					  AND json_extract(payload_json, '$.floor') IS json_extract(?, '$.floor')
+				) WHERE snapshot_rank > 1
+			)
+		`, in.SessionID, string(in.Payload)); err != nil {
+			return false, err
+		}
+	}
+	return n > 0, tx.Commit()
 }
 
 // ListEvents returns all events for a session ordered by combat context first
