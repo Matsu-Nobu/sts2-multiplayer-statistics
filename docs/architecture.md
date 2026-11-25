@@ -203,7 +203,8 @@ make dump-catalog LANG=ja
 2. **環境変数 `STS_STATS_DUMP_CATALOG=1` を立てて STS2 を起動**するよう指示
 3. 新規ランを Neow まで進めると mod の `CatalogDumper` が
    `~/Library/.../mods/StsStats/catalog-dump.json` に dump する
-4. STS2 終了後 Enter を押すとファイルを `web/public/catalog.{LANG}.json` にコピー
+4. STS2 終了後 Enter を押すと、`tools/merge-catalog.mjs` が dump に今の `web/public/catalog.{LANG}.json` を合わせて、
+   `web/public/catalog.{LANG}.json` に書き出す。dump に無い項目 (ゲームの更新で無くなったもの) は今のカタログから引き継ぐ
 5. `git diff` で内容確認 → commit → deploy
 
 ### mod 側 dumper
