@@ -565,6 +565,8 @@ WebUI が tooltip 表示用に 1 度だけ fetch する。
 - 内容は `web/public/catalog.{lang}.json` に commit 済の静的ファイル
 - backend は embed FS で同梱配信（`/assets/*` と同じ embed ソース）
 - 更新は STS2 アップデート時のみ手動: `make dump-catalog LANG=ja`
+- ゲームの更新で無くなったカード・レリック・ポーション・エンチャント・休憩所の行動も、カタログから消さない。
+  過去のランに残っている項目でも tooltip を出すためで、項目の内容は最後にカタログにあったときのままにする
 - 詳細運用フロー / 構造 / mod 側 dumper 実装は [`architecture.md`](../architecture.md) の「カタログ」の節 参照
 - web 側ローダ仕様は [`run-overview.md`](./run-overview.md) の「chip ホバー tooltip (description)」参照
 

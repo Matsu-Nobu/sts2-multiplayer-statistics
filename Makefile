@@ -143,7 +143,7 @@ docker-run: docker-build
 #   2. `make dump-catalog [LANG=ja]` を実行
 #   3. プロンプト指示通り STS2 を起動してランを 1 階だけでも開始
 #   4. STS2 を閉じる
-#   5. このターゲットが mod の dump 出力を web/public/catalog.$LANG.json にコピー
+#   5. このターゲットが mod の dump 出力に今のカタログにだけある項目を足して web/public/catalog.$LANG.json に書き出す
 #   6. `git diff web/public/catalog.$LANG.json` で内容確認 → commit
 
 LANG ?= ja
@@ -165,7 +165,7 @@ dump-catalog:
 	@rm -f "$(STS2_MODS_DIR)/StsStats/dump-catalog"
 	@test -f "$(DUMP_SRC)" || (echo "❌ dump file not found: $(DUMP_SRC)" && echo "   → mod が install されてるか / STS2 を再起動したか / Neow まで進めたか確認" && exit 1)
 	@mkdir -p $(WEB_DIR)/public
-	@cp "$(DUMP_SRC)" "$(DUMP_DST)"
+	@node tools/merge-catalog.mjs "$(DUMP_SRC)" "$(DUMP_DST)" "$(DUMP_DST)"
 	@echo ""
 	@echo "✅ コピー完了: $(DUMP_DST)"
 	@echo ""
