@@ -138,7 +138,10 @@
             <span class="text-sm text-slate-400 self-center">{statusText(e.status)}</span>
           {/if}
         {/snippet}
-        {@render kv(evals.length > 1 ? `カード報酬 ${i + 1}` : 'カード報酬', b)}
+        <div class="py-1.5 space-y-1">
+          <div class="text-xs text-slate-400">{evals.length > 1 ? `カード報酬 ${i + 1}` : 'カード報酬'}</div>
+          <div class="flex flex-wrap gap-1.5">{@render b()}</div>
+        </div>
       {/each}
     </section>
   {/if}
