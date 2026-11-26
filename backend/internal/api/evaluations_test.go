@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync"
@@ -129,6 +130,32 @@ func TestPostEvents_EvaluatesCardRewards(t *testing.T) {
 		postEventsAndWait(t, srv, id, token, offeredEvent("a"))
 		if got := evaluationStatuses(t, st); len(got) != 0 {
 			t.Fatalf("evaluations = %v", got)
+		}
+	})
+}
+
+func TestGetSession_CardRewardEvaluations(t *testing.T) {
+	t.Run("保存した評価を返す", func(t *testing.T) {
+		srv, _ := newTestServer(t)
+		srv.Evaluator = &fakeEvaluator{}
+		id, token := createSession(t, srv)
+		postEventsAndWait(t, srv, id, token, offeredEvent("a"))
+		var doc sessionDoc
+		decodeJSON(t, do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil), &doc)
+		if len(doc.CardRewardEvaluations) != 1 || doc.CardRewardEvaluations[0].Status != "ok:"+testGameVersion ||
+			*doc.CardRewardEvaluations[0].Floor != 2 {
+			t.Fatalf("card_reward_evaluations = %+v", doc.CardRewardEvaluations)
+		}
+	})
+
+	t.Run("評価が無いセッションは空の配列を返す", func(t *testing.T) {
+		srv, _ := newTestServer(t)
+		id, _ := createSession(t, srv)
+		res := do(t, srv, http.MethodGet, "/api/sessions/"+id, "", nil)
+		var raw map[string]json.RawMessage
+		decodeJSON(t, res, &raw)
+		if string(raw["card_reward_evaluations"]) != "[]" {
+			t.Fatalf("card_reward_evaluations = %s", raw["card_reward_evaluations"])
 		}
 	})
 }

@@ -235,9 +235,10 @@ func (s *Server) applyRunEnd(r *http.Request, sessionID string, ev eventReq) boo
 // --- GET /api/sessions/{id} ---
 
 type sessionDoc struct {
-	Session *store.Session    `json:"session"`
-	Players []store.Player    `json:"players"`
-	Events  []json.RawMessage `json:"events"`
+	Session               *store.Session                   `json:"session"`
+	Players               []store.Player                   `json:"players"`
+	Events                []json.RawMessage                `json:"events"`
+	CardRewardEvaluations []store.CardRewardEvaluationView `json:"card_reward_evaluations"`
 }
 
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
@@ -284,10 +285,16 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 	if players == nil {
 		players = []store.Player{}
 	}
+	evals, err := s.Store.ListCardRewardEvaluations(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load card reward evaluations")
+		return
+	}
 	writeJSON(w, http.StatusOK, sessionDoc{
-		Session: sess,
-		Players: players,
-		Events:  events,
+		Session:               sess,
+		Players:               players,
+		Events:                events,
+		CardRewardEvaluations: evals,
 	})
 }
 

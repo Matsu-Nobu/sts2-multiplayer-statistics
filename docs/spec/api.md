@@ -320,7 +320,7 @@ mod はゲームが持っている値を読んで送るだけで、計算はし�
   "relics": [reward_relic],
   "rooms_this_act": [{ "room_type": "Monster", "model_id": "SLIMES_WEAK" }],
   "offered": [reward_card],
-  "alternatives": ["SKIP"],
+  "alternatives": ["Skip"],
   "rewards": [{ "type": "GoldReward", "taken": false, "linked": false, "is_this": false, "amount": 15 },
               { "type": "CardReward", "taken": false, "linked": false, "is_this": true, "cards": [reward_card] }]
 }
@@ -335,7 +335,7 @@ mod はゲームが持っている値を読んで送るだけで、計算はし�
 | `card_shop_removals_used` | 商店でカードを削除した回数 |
 | `rooms_this_act` | 今の幕でこれまでに入った部屋 (今の部屋を含む)。`model_id` は遭遇かイベントで、無ければ省く |
 | `offered` | このカード報酬のカード (画面の並び順) |
-| `alternatives` | カードを取らない選択肢 (スキップなど) の ID |
+| `alternatives` | カードを取らない選択肢の ID (`Skip`・`REROLL`・`SACRIFICE`。ゲームの `CardRewardAlternative.OptionId`) |
 | `rewards` | 同じ報酬画面の報酬すべて (画面の並び順)。`taken` は受け取り済みか、`linked` はほかの報酬と組になっていてどれか 1 つしか取れない報酬か、`is_this` はこのカード報酬か。`type` ごとに `amount` (ゴールド)、`potion_id`、`relic` (`reward_relic`)、`cards` (`reward_card` の配列) を持つ |
 
 `reward_card` は次の形。カードの値はイベントやエンチャントで変わるので、デッキの記録の `card` とは別に、今の値をすべて送る。
@@ -474,7 +474,7 @@ GET /api/sessions/abc, If-None-Match: "v-7f3a..."
 → 304 Not Modified
 ```
 
-ETag は `(session_id, events の最新 received_at, events 件数, events の id の最大値, session.outcome, session.finished_at, session.visibility)` から計算される。`floor_snapshot` を置き換えると件数が変わらず、同じ秒に届くと最新 received_at も変わらないので、新しい行ごとに増える id の最大値を含める。
+ETag は `(session_id, events の最新 received_at, events 件数, events の id の最大値, カード報酬の評価の件数, session.outcome, session.finished_at, session.visibility)` から計算される。カード報酬の評価は event を受け取ったあとで保存されるので、その件数も含める。`floor_snapshot` を置き換えると件数が変わらず、同じ秒に届くと最新 received_at も変わらないので、新しい行ごとに増える id の最大値を含める。
 
 ### Response 200
 
@@ -498,11 +498,21 @@ ETag は `(session_id, events の最新 received_at, events 件数, events の i
   "players": [
     { "steam_id": "76561199204788207", "display_name": "Nobuhiro" }
   ],
-  "events": [ /* POST /events の各要素 + received_at */ ]
+  "events": [ /* POST /events の各要素 + received_at */ ],
+  "card_reward_evaluations": [
+    { "event_id": 123, "player_id": "76561199204788207", "floor": 2,
+      "offered": [{ "card_id": "CHO_BARBS", "upgrade_level": 0, "enchanted": false }],
+      "alternatives": ["Skip"],
+      "status": "ok", "card_probs": [0.9996], "alternative_probs": { "Skip": 0.0 } }
+  ]
 }
 ```
 
 `source` は、mod がゲーム中に記録したセッションなら `"live"`、セーブデータの履歴から取り込んだセッションなら `"history"`。
+
+`card_reward_evaluations` は、カード報酬の AI の評価 ([`card-evaluation.md`](./card-evaluation.md))。評価を保存した `card_reward_offered` 1 件につき 1 要素を、event の id の順に返す。
+`offered` と `alternatives` は `card_reward_offered` の payload から取る。`offered` の各カードは、ID・強化の回数・エンチャントが付いているかだけを持つ。
+`status` が `ok` でなければ、`card_probs` と `alternative_probs` は無い。評価が無いセッションでは空の配列。
 
 `events` は `(combat_index, turn_number, sequence, occurred_at, id)` 順（NULL の combat_index は最後）。WebUI はクライアント側で集計・rDPS 算出・タイムライン構築を行う。
 

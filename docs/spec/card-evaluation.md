@@ -7,6 +7,7 @@ AI は、提示されたカードとスキップなどの選択肢のそれぞ�
 
 評価は評価サーバー (`evaluator/`、Python) が行い、backend (Go) はその結果を保存する。
 mod は評価に要る値を `card_reward_offered` (`api.md「card_reward_offered」`) で送るだけで、評価には関わらない。
+画面の表示は `run-overview.md「AI の評価」` にある。
 
 ## 評価の流れ
 
@@ -102,4 +103,3 @@ backend は `card_reward_evaluations` に、`card_reward_offered` の event 1 �
 ## 既知の制約
 
 - AlphaDefect の重みは v0.114.0 で学習されていない。v0.114.0 で作り直されたフールのカードは、AI が古い効果のつもりで評価する。
-- 評価の結果は、まだ web に表示していない。

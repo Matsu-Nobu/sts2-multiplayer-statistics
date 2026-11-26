@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 )
 
 func openTestStore(t *testing.T, sessionIDs ...string) *Store {
@@ -137,19 +138,7 @@ func TestInsertEvent(t *testing.T) {
 
 func TestComputeSessionETag(t *testing.T) {
 	ctx := context.Background()
-	st := openTestStore(t, "s1")
-	// 置き換えでは件数が変わらず、同じ秒に届けば received_at の最大値も変わらない。
-	// received_at をそろえて、件数と received_at では区別できない 2 つの状態を作る。
-	insertAtSameSecond := func(ev EventInput) {
-		t.Helper()
-		if _, err := st.InsertEvent(ctx, ev); err != nil {
-			t.Fatalf("insert: %v", err)
-		}
-		if _, err := st.DB().Exec(`UPDATE events SET received_at = '2026-11-26T00:00:00Z'`); err != nil {
-			t.Fatalf("update: %v", err)
-		}
-	}
-	etag := func() string {
+	etag := func(t *testing.T, st *Store) string {
 		t.Helper()
 		e, err := st.ComputeSessionETag(ctx, "s1")
 		if err != nil {
@@ -158,14 +147,39 @@ func TestComputeSessionETag(t *testing.T) {
 		return e
 	}
 
-	insertAtSameSecond(snapshotInput("s1", "old", "2026-11-26T00:00:01Z", 1))
-	before := etag()
-	insertAtSameSecond(snapshotInput("s1", "new", "2026-11-26T00:00:02Z", 1))
-	after := etag()
+	t.Run("floor_snapshot を置き換えたら変わる", func(t *testing.T) {
+		st := openTestStore(t, "s1")
+		// 置き換えでは件数が変わらず、同じ秒に届けば received_at の最大値も変わらない。
+		// received_at をそろえて、件数と received_at では区別できない 2 つの状態を作る。
+		insertAtSameSecond := func(ev EventInput) {
+			t.Helper()
+			if _, err := st.InsertEvent(ctx, ev); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+			if _, err := st.DB().Exec(`UPDATE events SET received_at = '2026-11-26T00:00:00Z'`); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+		}
+		insertAtSameSecond(snapshotInput("s1", "old", "2026-11-26T00:00:01Z", 1))
+		before := etag(t, st)
+		insertAtSameSecond(snapshotInput("s1", "new", "2026-11-26T00:00:02Z", 1))
+		if after := etag(t, st); before == after {
+			t.Errorf("ETag did not change after the snapshot was replaced: %s", after)
+		}
+	})
 
-	if before == after {
-		t.Errorf("ETag did not change after the snapshot was replaced: %s", after)
-	}
+	t.Run("カード報酬の評価を保存したら変わる", func(t *testing.T) {
+		st := openTestStore(t, "s1")
+		mustInsert(t, st, offerInput("s1", "a", 2, `{}`))
+		_, offers, _ := st.CardRewardOffers(ctx, "s1")
+		before := etag(t, st)
+		if err := st.InsertCardRewardEvaluations(ctx, []CardRewardEvaluation{{EventID: offers[0].ID, Status: "ok"}}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if after := etag(t, st); before == after {
+			t.Errorf("ETag did not change after an evaluation was stored: %s", after)
+		}
+	})
 }
 
 func TestMigrationDedupFloorSnapshots(t *testing.T) {

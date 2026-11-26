@@ -95,3 +95,81 @@ func nullableJSON(v json.RawMessage) any {
 	}
 	return string(v)
 }
+
+// OfferedCard は、評価の表示に使うカードの最小限の値 (docs/spec/api.md「GET /api/sessions/{id}」)。
+type OfferedCard struct {
+	CardID       string `json:"card_id"`
+	UpgradeLevel int    `json:"upgrade_level"`
+	Enchanted    bool   `json:"enchanted"`
+}
+
+// CardRewardEvaluationView は、GET /api/sessions/{id} の card_reward_evaluations の 1 要素。
+type CardRewardEvaluationView struct {
+	EventID          int64           `json:"event_id"`
+	PlayerID         *string         `json:"player_id"`
+	Floor            *int            `json:"floor"`
+	Offered          []OfferedCard   `json:"offered"`
+	Alternatives     []string        `json:"alternatives"`
+	Status           string          `json:"status"`
+	CardProbs        json.RawMessage `json:"card_probs,omitempty"`
+	AlternativeProbs json.RawMessage `json:"alternative_probs,omitempty"`
+}
+
+// ListCardRewardEvaluations は、セッションのカード報酬の評価を event の id の順に返す。
+// 提示されたカードと選択肢は card_reward_offered の payload から取る。payload の deck などは返さない (1 件が数 KB あるため)。
+func (s *Store) ListCardRewardEvaluations(ctx context.Context, sessionID string) ([]CardRewardEvaluationView, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT e.id, e.player_id, e.floor,
+		       COALESCE(json_extract(e.payload_json, '$.offered'), '[]'),
+		       COALESCE(json_extract(e.payload_json, '$.alternatives'), '[]'),
+		       v.status, v.card_probs_json, v.alternative_probs_json
+		FROM card_reward_evaluations v JOIN events e ON e.id = v.event_id
+		WHERE e.session_id = ?
+		ORDER BY e.id`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CardRewardEvaluationView{}
+	for rows.Next() {
+		var v CardRewardEvaluationView
+		var player sql.NullString
+		var floor sql.NullInt64
+		var offered, alternatives string
+		var cardProbs, altProbs sql.NullString
+		if err := rows.Scan(&v.EventID, &player, &floor, &offered, &alternatives, &v.Status, &cardProbs, &altProbs); err != nil {
+			return nil, err
+		}
+		if player.Valid {
+			v.PlayerID = &player.String
+		}
+		if floor.Valid {
+			f := int(floor.Int64)
+			v.Floor = &f
+		}
+		var cards []struct {
+			CardID       string          `json:"card_id"`
+			UpgradeLevel int             `json:"upgrade_level"`
+			Enchantment  json.RawMessage `json:"enchantment"`
+		}
+		// payload は mod が送った値で、mod のバージョンによって形が違うことがある。読めないときは空にして、評価の status だけを返す
+		if json.Unmarshal([]byte(offered), &cards) != nil {
+			cards = nil
+		}
+		v.Offered = make([]OfferedCard, len(cards))
+		for i, c := range cards {
+			v.Offered[i] = OfferedCard{CardID: c.CardID, UpgradeLevel: c.UpgradeLevel, Enchanted: len(c.Enchantment) > 0 && string(c.Enchantment) != "null"}
+		}
+		if json.Unmarshal([]byte(alternatives), &v.Alternatives) != nil || v.Alternatives == nil {
+			v.Alternatives = []string{}
+		}
+		if cardProbs.Valid {
+			v.CardProbs = json.RawMessage(cardProbs.String)
+		}
+		if altProbs.Valid {
+			v.AlternativeProbs = json.RawMessage(altProbs.String)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
