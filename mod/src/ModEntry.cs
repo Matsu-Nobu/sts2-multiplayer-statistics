@@ -62,6 +62,7 @@ public static class ModEntry
         P(typeof(Hook),       "AfterRestSiteHeal",  typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(Hook),       "AfterRestSiteSmith", typeof(FloorRecorder), null, "AfterRunActionPostfix");
         P(typeof(RewardsSet), "Offer", typeof(CardRewardRecorder), "RewardsSetOfferPrefix", null);
+        P(typeof(CardReward), "OnSelect", typeof(CardRewardRecorder), "CardRewardOnSelectPrefix", null);
         P(typeof(CardRewardAlternative), "Generate", typeof(CardRewardRecorder), null, "GeneratePostfix");
         P(typeof(MerchantCardEntry),        "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantCardPurchasePostfix");
         P(typeof(MerchantPotionEntry),      "OnTryPurchaseInternal", typeof(FloorRecorder), null, "MerchantPotionPurchasePostfix");
