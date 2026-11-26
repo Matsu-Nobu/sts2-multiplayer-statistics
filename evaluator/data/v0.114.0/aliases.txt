@@ -1,0 +1,21 @@
+# 词表别名：新键 老键（见 Engine/Vocab.cs 的 LoadAliases）。游戏改了名、意思没变的内容，观测里用老键的 ID，旧检查点学到的嵌入接着用。
+# 新键照旧追加在 vocab.txt 里（只追加不删），只是观测不再输出它们的 ID。每条写清依据（新旧反编译源码）。
+#
+# v0.111.0 → v0.113.0（2026-11-12）
+# 火箭（凯撒蟹 Boss 的一半，Monsters/Rocket.cs）：三个招式只改了名字，伤害、意图、状态转移不变；PRECISE_SMASH_MOVE_2 是同一招的第二个状态
+MOVE:ROCKET.CALCULATING_MOVE        MOVE:ROCKET.TARGETING_RETICLE_MOVE
+MOVE:ROCKET.PRECISE_SMASH_MOVE      MOVE:ROCKET.PRECISION_BEAM_MOVE
+MOVE:ROCKET.PRECISE_SMASH_MOVE_2    MOVE:ROCKET.PRECISION_BEAM_MOVE
+MOVE:ROCKET.ROCKET_CLAW_MOVE        MOVE:ROCKET.LASER_MOVE
+# 钻地虫（Monsters/Tunneler.cs）：BELOW_MOVE 改名 FROM_BELOW_MOVE，同一招（进阶 10 伤害 26 → 28，伤害在观测里实时读）
+MOVE:TUNNELER.FROM_BELOW_MOVE       MOVE:TUNNELER.BELOW_MOVE
+# 感染棱柱（Monsters/InfestedPrism.cs）：RADIATE_MOVE 删掉，换成 JAB_MOVE 的第二个状态 JAB_MOVE_2（同一个 JabMove）
+MOVE:INFESTED_PRISM.JAB_MOVE_2      MOVE:INFESTED_PRISM.JAB_MOVE
+# 龙涎香（药水，Potions/Ambergris.cs）：原来施加专门的 AmbergrisPower，v0.113.0 删掉、改施加通用的 ExtraTurnPower（额外回合，逻辑相同；塔罗“倒吊人”也施加它，只在 Fool 局）
+POWER.EXTRA_TURN_POWER              POWER.AMBERGRIS_POWER
+#
+# v0.113.1 → v0.114.0（2026-11-25）
+# 迅捷射击 → 双重射击（Cards/RapidShot.cs 删掉，换成 Cards/TwinShot.cs；补丁说明“Reworked Rapid Shot into Twin Shot”）：两个类的 OnPlay 逐行相同
+# （射一支箭、DamageCmd.Attack(Damage).WithHitCount(HitCount)、标签 Shoot、没箭标红），只改了数值与稀有度：罕见 3 伤 × 3(4) 段 → 普通 7(10) 伤 × 2 段，
+# 升级从 +1 段改为 +3 伤。伤害、段数、稀有度在观测里实时读，只有牌的 ID 沿用老键（同“生长”“怒放”等重做的牌一样保留 ID）。
+CARD.TWIN_SHOT                      CARD.RAPID_SHOT

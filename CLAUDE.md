@@ -20,6 +20,7 @@
 - `docs/spec/player-stats.md` — ユーザーページの統計のタブに出す値と集計方法
 - `docs/spec/data-sources.md` — UI ↔ event_type ↔ mod hook の正規経路マップ
 - `docs/spec/api.md` — HTTP / event_type 契約
+- `docs/spec/card-evaluation.md` — カード報酬の AI の評価 (評価サーバー `evaluator/`)
 - `docs/architecture.md` — アーキテクチャ全体像
 
 ---

@@ -15,6 +15,7 @@
 | [`spec/player-stats.md`](./spec/player-stats.md) | ユーザーページの統計のタブに出す値と集計方法 |
 | [`spec/data-sources.md`](./spec/data-sources.md) | mod がゲームのどこから何を取るか、誰の行為として送るか、その根拠にしたゲームの挙動 |
 | [`spec/api.md`](./spec/api.md) | mod ⇄ backend ⇄ web の HTTP API と event の形 |
+| [`spec/card-evaluation.md`](./spec/card-evaluation.md) | カード報酬の AI の評価の流れ、評価サーバーの API、保存する表 |
 | [`architecture.md`](./architecture.md) | 3 層の構成、データの流れ、デプロイ、カタログの作り方 |
 | [`operations.md`](./operations.md) | サーバの運用と配布の方針、ゲーム更新時の手順 |
 | [`archive/`](./archive/) | 過去の計画・設計判断・調査記録。更新しない |

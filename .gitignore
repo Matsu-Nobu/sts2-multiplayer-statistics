@@ -38,3 +38,8 @@ Makefile.local
 
 # Claude Code の個人用設定
 **/.claude/settings.local.json
+
+# 評価サーバーのモデル (evaluator/README.md「モデルの作り方」で作る)
+evaluator/models/*.onnx
+evaluator/.venv/
+__pycache__/

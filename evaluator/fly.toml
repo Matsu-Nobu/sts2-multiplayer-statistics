@@ -1,0 +1,23 @@
+# 評価サーバー。sts2stats (backend) から Fly の内部ネットワーク (Flycast) で呼ぶ。インターネットには公開しない
+app = 'sts2stats-eval'
+primary_region = 'nrt'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[http_service]
+  internal_port = 8080
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'get'
+    path = '/healthz'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
