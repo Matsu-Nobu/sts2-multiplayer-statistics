@@ -14,6 +14,7 @@ import (
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/api"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/evaluator"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/steam"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 )
@@ -55,6 +56,12 @@ func main() {
 		Signer:         auth.Signer{Key: cookieKey},
 		Verify:         auth.VerifyWithSteam(auth.DefaultHTTPClient),
 		Friends:        &steam.WebAPI{Key: steamKey, Client: auth.DefaultHTTPClient},
+	}
+
+	// カード報酬の評価サーバー (docs/spec/card-evaluation.md)。空なら評価しない
+	if u := os.Getenv("EVALUATOR_URL"); u != "" {
+		srv.Evaluator = &evaluator.Client{URL: u, Client: &http.Client{Timeout: 90 * time.Second}}
+		slog.Info("card reward evaluator enabled", "url", u)
 	}
 
 	httpSrv := &http.Server{

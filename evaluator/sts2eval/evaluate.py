@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,9 @@ OK = "ok"
 UNSUPPORTED_VERSION = "unsupported_version"      # 表を持っていないゲームのバージョン
 UNSUPPORTED_CHARACTER = "unsupported_character"  # モデルを持っていないキャラクター
 UNKNOWN_CARD = "unknown_card"                    # 選択肢に、モデルが学習していないカードがある
+INVALID_PAYLOAD = "invalid_payload"              # payload の形が、評価サーバーの知っている形と違う
+
+log = logging.getLogger("sts2eval")
 
 
 @dataclass
@@ -67,9 +71,15 @@ class Evaluator:
                 earlier = opened.setdefault(key, [])
                 if data is None:
                     results.append({"id": e["id"], "status": UNSUPPORTED_VERSION})
-                else:
+                    continue
+                # mod のバージョンによって payload の形が違うことがある。形の合わない event は、その event だけを結果に記録し、
+                # 同じランのほかの event の評価は続ける
+                try:
                     results.append({"id": e["id"], **self._evaluate_one(data, e["floor"], p, list(earlier))})
-                earlier.append(from_mod.offered_ids(p))
+                    earlier.append(from_mod.offered_ids(p))
+                except (KeyError, TypeError, ValueError, IndexError):
+                    log.exception("invalid card_reward_offered payload: event %s", e["id"])
+                    results.append({"id": e["id"], "status": INVALID_PAYLOAD})
             return results
 
     def _evaluate_one(self, data: VersionData, floor: int, p: dict, opened: list[list[str]]) -> dict:
@@ -82,7 +92,7 @@ class Evaluator:
             return {"status": UNKNOWN_CARD, "model": model.name}
         obs = data.encoder.encode(from_mod.facts(p, floor, data.no_downside, opened))
         if int(obs.header[0]) != model.obs_format:
-            raise ValueError(f"{p['character_id']}: 観測の形式 {int(obs.header[0])} がモデルの形式 {model.obs_format} と違う")
+            raise RuntimeError(f"{p['character_id']}: 観測の形式 {int(obs.header[0])} がモデルの形式 {model.obs_format} と違う")
         ragged = Ragged.from_obs([obs], np.array([1]))
         ragged.tok_priv[:] = 0
         batch = collate_ragged(ragged)

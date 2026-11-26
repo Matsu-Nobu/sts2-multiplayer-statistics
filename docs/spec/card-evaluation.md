@@ -14,6 +14,10 @@ backend は、`POST /sessions/{id}/events` で `card_reward_offered` を 1 件�
 backend はそのセッションの `card_reward_offered` をすべて、保存した順に評価サーバーの `POST /evaluate` に送る。
 返ってきた結果のうち、まだ保存していない event の結果だけを `card_reward_evaluations` に保存する。
 
+`card_reward_offered` を送らない mod (このイベントを足す前のバージョン) のランと、履歴から取り込んだラン (`POST /imports/run`) には、`card_reward_offered` が無い。
+backend はこれらのランでは評価サーバーを呼ばず、`card_reward_evaluations` に行を作らない。
+マルチプレイでは、ホストの mod が全員分の `card_reward_offered` を送るので、ほかのプレイヤーが mod を入れていなくても評価できる。
+
 評価サーバーへの送信が失敗したら、backend はログに書き、そのセッションの次の `card_reward_offered` を受け取ったときに送り直す。
 評価の失敗は、mod からの event の保存には影響しない。
 環境変数 `EVALUATOR_URL` が空なら、backend は評価をしない。
@@ -62,6 +66,7 @@ AlphaDefect は、開いて取らずに閉じたカード報酬を、同じ報�
 | `unsupported_version` | 評価サーバーが、そのゲームのバージョンの表を持っていない。セッションの `game_version` が無いときも含む |
 | `unsupported_character` | 評価サーバーが、そのキャラクターのモデルを持っていない |
 | `unknown_card` | 提示されたカードに、モデルが学習していないカードがある |
+| `invalid_payload` | payload の形が、評価サーバーの知っている形と違う。mod のバージョンが評価サーバーより新しいか古いときに起きる。同じセッションのほかの event は評価する |
 
 ### `GET /healthz`
 

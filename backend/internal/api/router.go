@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/auth"
+	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/evaluator"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/steam"
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
 	"github.com/go-chi/chi/v5"
@@ -22,8 +23,11 @@ type Server struct {
 	Verify         auth.Verifier       // Steam から戻ってきたログインの検証 (テストでは差し替える)
 	Friends        steam.FriendChecker // Steam のフレンドかどうか (テストでは差し替える)
 	Now            func() time.Time    // nil なら time.Now
+	Evaluator      evaluator.Evaluator // カード報酬の評価サーバー。nil なら評価しない (docs/spec/card-evaluation.md)
 
-	warming sync.WaitGroup // ゲームが終わったときに集計を作るゴルーチン (テストで終わりを待つ)
+	warming sync.WaitGroup // ゲームが終わったときに集計を作るゴルーチンと、カード報酬を評価するゴルーチン (テストで終わりを待つ)
+	// セッションごとの *sync.Mutex。同じセッションの評価を同時に走らせず、同じ event を二重に評価サーバーへ送らない
+	evaluating sync.Map
 }
 
 // 防御パラメータ

@@ -6,7 +6,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from sts2eval.evaluate import OK, UNKNOWN_CARD, UNSUPPORTED_CHARACTER, UNSUPPORTED_VERSION, Evaluator
+from sts2eval.evaluate import INVALID_PAYLOAD, OK, UNKNOWN_CARD, UNSUPPORTED_CHARACTER, UNSUPPORTED_VERSION, Evaluator
 from sts2eval.server import DualStackServer, make_handler
 
 HERE = Path(__file__).parent
@@ -120,8 +120,15 @@ class ServerTest(unittest.TestCase):
     def test_missing_events(self):
         self.assertEqual(self.request("POST", "/evaluate", json.dumps({"game_version": VERSION}).encode())[0], 400)
 
-    def test_broken_payload(self):
-        body = json.dumps({"game_version": VERSION, "events": [event({"character_id": "FOOL"})]}).encode()
+    def test_payload_of_another_mod_version(self):
+        # 形の合わない event だけが invalid_payload になり、同じランのほかの event は評価する
+        events = [event({"character_id": "FOOL"}, 1), event(GAME_EVENT["payload"], 2)]
+        status, data = self.request("POST", "/evaluate", json.dumps({"game_version": VERSION, "events": events}).encode())
+        self.assertEqual(status, 200)
+        self.assertEqual([(r["id"], r["status"]) for r in json.loads(data)["results"]], [(1, INVALID_PAYLOAD), (2, OK)])
+
+    def test_event_without_id(self):
+        body = json.dumps({"game_version": VERSION, "events": [{"payload": GAME_EVENT["payload"]}]}).encode()
         self.assertEqual(self.request("POST", "/evaluate", body)[0], 422)
 
 
