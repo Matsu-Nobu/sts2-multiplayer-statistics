@@ -241,6 +241,7 @@ Content-Type: application/json
 |-----------|---------|-----------|---------|
 | `run_start` | `character_id`, `character_name` (表示名), `ascension`, `seed`, `game_mode`, `player_name` (空ならサーバはプレイヤー名を書き換えない), `hp`, `max_hp`, `gold` (ラン開始時点) | 各プレイヤー (人数分送る) | floor のみ |
 | `floor_snapshot` | 「floor_snapshot」 | 空 | floor のみ |
+| `card_reward_offered` | 「card_reward_offered」 | 報酬を選ぶプレイヤー | floor のみ |
 | `item_purchased` | `item_kind`, `card_id?`, `card_name?`, `card_rarity?`, `is_upgraded?`, `relic_id?`, `relic_name?`, `potion_id?`, `potion_name?`, `gold_spent` | 購入者 | floor のみ |
 | `run_end` | `outcome` (`victory`/`death`/`abandoned`), `final_floor`, `final_hp` (`{ player_id: hp }`), `badges` (`{ player_id: [{ id, name, description, rarity }] }`) | 空 | floor のみ |
 | `combat_start` | `combat_index`, `encounter_id`, `encounter_name`, `room_type` (`Monster`/`Elite`/`Boss`) | 空 | floor + combat_index |
@@ -293,6 +294,69 @@ Content-Type: application/json
 - `relic_choices` / `potion_choices` の `was_picked: true` が入手、`false` が報酬のスキップ。
 - `card_choices` は階ごとに 1 本のリスト (報酬ごとの区切りは無い)。ショップの階では買わなかった商品カードが入る。
 - `is_final`: その階を出て確定したもの (`true`) か、ライブ表示用に途中で送ったもの (`false`) か。
+
+#### card_reward_offered
+
+カード報酬の画面を開いた時点の、そのプレイヤーの状態の写し。評価サーバーは、この記録から AI の評価の入力を作る (`card-evaluation.md`)。
+mod はゲームが持っている値を読んで送るだけで、計算はしない。値の無い項目は省く (配列の中の `null` は残す)。評価に要る値の意味は、AlphaDefect の観測の符号化 (`Observation.cs`) に合わせてある。
+
+カード報酬の画面を開くたびに 1 件送る。同じカード報酬を開き直したときも、もう 1 件送る。画面の中でカードを引き直したときも、引き直したカードで 1 件送る。
+`player_id` は報酬を選ぶプレイヤー、`floor` は今の階。マルチプレイでは、ホストの PC が全員分を送る。
+
+`GET /api/sessions/{id}` は、この event を返さない。web は使わず、1 件が数 KB あるためである。
+
+```json
+{
+  "character_id": "DEFECT", "ascension": 5,
+  "act_index": 0, "act_id": "OVERGROWTH", "boss_ids": ["CEREMONIAL_BEAST_BOSS", null],
+  "room_type": "Monster",
+  "hp": 61, "max_hp": 77, "gold": 99,
+  "unknown_room_odds": { "monster": 0.1, "treasure": 0.02, "shop": 0.03 },
+  "potion_reward_odds": 0.4,
+  "potion_slots": 3,
+  "potions": [{ "potion_id": "FIRE_POTION", "slot": 0 }],
+  "card_shop_removals_used": 0,
+  "deck":   [reward_card],
+  "relics": [reward_relic],
+  "rooms_this_act": [{ "room_type": "Monster", "model_id": "SLIMES_WEAK" }],
+  "offered": [reward_card],
+  "alternatives": ["Skip"],
+  "rewards": [{ "type": "GoldReward", "taken": false, "linked": false, "is_this": false, "amount": 15 },
+              { "type": "CardReward", "taken": false, "linked": false, "is_this": true, "cards": [reward_card] }]
+}
+```
+
+| フィールド | 中身 |
+|---|---|
+| `act_id` / `boss_ids` | 今の幕と、その幕のボスの遭遇 (2 体目がいなければ `null`) |
+| `room_type` | 今の部屋の種類 (`Monster` / `Elite` / `Boss` / `Event` など) |
+| `unknown_room_odds` | ハテナの部屋が、普通戦・宝箱・商店になる今の確率 |
+| `potion_reward_odds` | 戦闘の報酬にポーションが出る今の確率 |
+| `card_shop_removals_used` | 商店でカードを削除した回数 |
+| `rooms_this_act` | 今の幕でこれまでに入った部屋 (今の部屋を含む)。`model_id` は遭遇かイベントで、無ければ省く |
+| `offered` | このカード報酬のカード (画面の並び順) |
+| `alternatives` | カードを取らない選択肢の ID (`Skip`・`REROLL`・`SACRIFICE`。ゲームの `CardRewardAlternative.OptionId`) |
+| `rewards` | 同じ報酬画面の報酬すべて (画面の並び順)。`taken` は受け取り済みか、`linked` はほかの報酬と組になっていてどれか 1 つしか取れない報酬か、`is_this` はこのカード報酬か。`type` ごとに `amount` (ゴールド)、`potion_id`、`relic` (`reward_relic`)、`cards` (`reward_card` の配列) を持つ |
+
+`reward_card` は次の形。カードの値はイベントやエンチャントで変わるので、デッキの記録の `card` とは別に、今の値をすべて送る。
+
+```json
+{ "card_id": "DOWSING", "upgrade_level": 0, "cost": 1, "star_cost": -1,
+  "keywords": ["Unplayable"], "vars": { "Rooms": 2 },
+  "enchantment": { "id": "GLAM", "amount": 1, "status": "Normal" } }
+```
+
+| フィールド | 中身 |
+|---|---|
+| `cost` | エネルギーのコスト。X コストなら省く |
+| `star_cost` | 星のコスト。無ければ -1 |
+| `keywords` | カードに付いているキーワード (`Exhaust` / `Ethereal` / `Innate` / `Unplayable` / `Retain` / `Sly` / `Eternal`) |
+| `vars` | カードの数値の名前と値 (ダメージ・ブロック・入った部屋の数など) |
+| `enchantment` / `affliction` | エンチャントと苦痛 (`{ "id", "amount" }`)。無ければ省く。エンチャントの `status` は `Normal` か `Disabled` |
+| `tinker` | マッドサイエンスの型と追加効果 (`{ "type": "Attack", "rider": "Violence" }`)。ほかのカードでは省く |
+
+`reward_relic` は `{ "relic_id", "counter", "show_counter", "used_up", "wax", "melted", "status", "max_hp" }`。
+`counter` は画面のカウンターの値、`status` は `Normal` / `Active` / `Disabled`、`max_hp` はワッピーの最大 HP (ほかのレリックでは省く)。
 
 #### 戦闘内（turn-scoped）
 
@@ -410,7 +474,7 @@ GET /api/sessions/abc, If-None-Match: "v-7f3a..."
 → 304 Not Modified
 ```
 
-ETag は `(session_id, events の最新 received_at, events 件数, events の id の最大値, session.outcome, session.finished_at, session.visibility)` から計算される。`floor_snapshot` を置き換えると件数が変わらず、同じ秒に届くと最新 received_at も変わらないので、新しい行ごとに増える id の最大値を含める。
+ETag は `(session_id, events の最新 received_at, events 件数, events の id の最大値, カード報酬の評価の件数, session.outcome, session.finished_at, session.visibility)` から計算される。カード報酬の評価は event を受け取ったあとで保存されるので、その件数も含める。`floor_snapshot` を置き換えると件数が変わらず、同じ秒に届くと最新 received_at も変わらないので、新しい行ごとに増える id の最大値を含める。
 
 ### Response 200
 
@@ -434,11 +498,21 @@ ETag は `(session_id, events の最新 received_at, events 件数, events の i
   "players": [
     { "steam_id": "76561199204788207", "display_name": "Nobuhiro" }
   ],
-  "events": [ /* POST /events の各要素 + received_at */ ]
+  "events": [ /* POST /events の各要素 + received_at */ ],
+  "card_reward_evaluations": [
+    { "event_id": 123, "player_id": "76561199204788207", "floor": 2,
+      "offered": [{ "card_id": "CHO_BARBS", "upgrade_level": 0, "enchanted": false }],
+      "alternatives": ["Skip"],
+      "status": "ok", "card_probs": [0.9996], "alternative_probs": { "Skip": 0.0 } }
+  ]
 }
 ```
 
 `source` は、mod がゲーム中に記録したセッションなら `"live"`、セーブデータの履歴から取り込んだセッションなら `"history"`。
+
+`card_reward_evaluations` は、カード報酬の AI の評価 ([`card-evaluation.md`](./card-evaluation.md))。評価を保存した `card_reward_offered` 1 件につき 1 要素を、event の id の順に返す。
+`offered` と `alternatives` は `card_reward_offered` の payload から取る。`offered` の各カードは、ID・強化の回数・エンチャントが付いているかだけを持つ。
+`status` が `ok` でなければ、`card_probs` と `alternative_probs` は無い。評価が無いセッションでは空の配列。
 
 `events` は `(combat_index, turn_number, sequence, occurred_at, id)` 順（NULL の combat_index は最後）。WebUI はクライアント側で集計・rDPS 算出・タイムライン構築を行う。
 

@@ -310,6 +310,8 @@ func TestGetSession_FloorSnapshotLatestPerFloor(t *testing.T) {
 		snapshotEvent("f3-only", "2026-05-05T00:00:04Z", 3),
 		eventFixture("played-1", "card_played", 1, 1, 0),
 		eventFixture("played-2", "card_played", 1, 1, 1),
+		{"event_uuid": "reward-1", "event_type": "card_reward_offered", "occurred_at": "2026-05-05T00:00:05Z", "floor": 3,
+			"payload": map[string]any{"offered": []any{}}},
 	})
 	if res.StatusCode != http.StatusNoContent {
 		t.Fatalf("post status=%d", res.StatusCode)
@@ -327,7 +329,7 @@ func TestGetSession_FloorSnapshotLatestPerFloor(t *testing.T) {
 		}
 		got = append(got, ev.UUID)
 	}
-	// 同じ階の記録は、occurred_at が遅いものを残し、occurred_at が同じなら後に届いたものを残す
+	// 同じ階の記録は、occurred_at が遅いものを残し、occurred_at が同じなら後に届いたものを残す。card_reward_offered は返さない
 	want := []string{"played-1", "played-2", "f1-new", "f2-second", "f3-only"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("events = %v, want %v", got, want)

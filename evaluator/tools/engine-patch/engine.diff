@@ -1,0 +1,71 @@
+diff --git a/game-v0.114.0/engine/Sts2Headless/Server.cs b/game-v0.114.0/engine/Sts2Headless/Server.cs
+index bf2e7f1..f93eb48 100644
+--- a/game-v0.114.0/engine/Sts2Headless/Server.cs
++++ b/game-v0.114.0/engine/Sts2Headless/Server.cs
+@@ -284,6 +284,53 @@ public static class Server
+                         tape.Add(new Dictionary<string, uint> { ["branch"] = req.GetProperty("salt").GetUInt32() });
+                         Time("branch", sw);
+                     }
++                    else if (op == "set_player")
++                    {
++                        // 確認用（STS2 Stats の試作）：{"op":"set_player","snapshot":"<Snapshot.Player の JSON>"}。第 1 幕は act_start で始められないので、
++                        // 通常の開局の直後に玩家の状態だけを置き換える。持っている遺物は ActStart.Start と同じく遺物袋から外す。
++                        if (run == null) throw new InvalidOperationException("尚未 reset");
++                        var st = RunSession.State;
++                        var me = st.Players[0];
++                        Snapshot.Restore(me, req.GetProperty("snapshot").GetString()!);
++                        foreach (var r in me.Relics) { me.RelicGrabBag.Remove(r); st.SharedRelicGrabBag.Remove(r); }
++                        Time("set_player", sw);
++                    }
++                    else if (op == "offer_cards")
++                    {
++                        // 確認用（STS2 Stats の試作）：{"op":"offer_cards","cards":[{"id":"STAMPEDE","upgrades":1},…]}。
++                        // 指定したカードのカード報酬を、ゲームのチュートリアル用のコンストラクタで作って開く。返すのはそのカード報酬の判断の観測。
++                        if (run == null) throw new InvalidOperationException("尚未 reset");
++                        var st = RunSession.State;
++                        var me = st.Players[0];
++                        var cards = new List<MegaCrit.Sts2.Core.Models.CardModel>();
++                        foreach (var x in req.GetProperty("cards").EnumerateArray())
++                        {
++                            var card = st.CreateCard(MegaCrit.Sts2.Core.Models.ModelDb.GetById<MegaCrit.Sts2.Core.Models.CardModel>(
++                                new MegaCrit.Sts2.Core.Models.ModelId("CARD", Snapshot.RenamedCard(x.GetProperty("id").GetString()!))), me);
++                            int up = x.TryGetProperty("upgrades", out var u) ? u.GetInt32() : 0;
++                            for (int i = 0; i < Math.Min(up, card.MaxUpgradeLevel); i++) { card.UpgradeInternal(); card.FinalizeUpgradeInternal(); }
++                            cards.Add(card);
++                        }
++                        var opts = new MegaCrit.Sts2.Core.Runs.CardCreationOptions(Array.Empty<MegaCrit.Sts2.Core.Models.CardPoolModel>(),
++                            MegaCrit.Sts2.Core.Runs.CardCreationSource.Encounter, MegaCrit.Sts2.Core.Runs.CardRarityOddsType.RegularEncounter);
++                        var reward = new MegaCrit.Sts2.Core.Rewards.CardReward(cards, MegaCrit.Sts2.Core.Runs.CardCreationSource.Encounter, me, opts);
++                        reward.Populate();
++                        Pump.Instance.Start(() => reward.SelectUnsynchronized());
++                        Pump.Instance.RunUntilIdle();
++                        Time("offer_cards", sw);
++                    }
++                    else if (op == "stats_tables")
++                    {
++                        // 確認用（STS2 Stats の試作）：サーバー側の変換が使う表を書き出す
++                        if (run == null) throw new InvalidOperationException("尚未 reset");
++                        Observation.DumpStatsTables(req.GetProperty("path").GetString()!);
++                    }
++                    else if (op == "stats_facts")
++                    {
++                        // 確認用（STS2 Stats の試作）：今の判断の局面の事実を書き出す
++                        if (run == null || decision == null) throw new InvalidOperationException("尚未 reset");
++                        Observation.AppendStatsFacts(req.GetProperty("path").GetString()!, decision);
++                    }
+                     else throw new ArgumentException("未知操作 " + op);
+                     decision = run!.GetDecision();
+                     // 只有一个候选的决策由引擎自己走过（局面复制方案 C2，请求带 "auto_single":true 时）：不编码、不回 Python，
+diff --git a/game-v0.114.0/engine/Sts2Headless/Sts2Headless.csproj b/game-v0.114.0/engine/Sts2Headless/Sts2Headless.csproj
+index 1021135..c5a6720 100644
+--- a/game-v0.114.0/engine/Sts2Headless/Sts2Headless.csproj
++++ b/game-v0.114.0/engine/Sts2Headless/Sts2Headless.csproj
+@@ -27,4 +27,8 @@
+     <RuntimeHostConfigurationOption Include="Sts2NoDownsideRelics" Value="$(MSBuildProjectDirectory)/../catalog/no_downside_relics.txt" />
+   </ItemGroup>
+ 
++  <!-- STS2 Stats の表の書き出しで使う。ビルドのとき -p:StsStatsModSrc=<sts2-multiplayer-statistics/mod/src> を渡す：mod と同じコードで card_reward_offered の payload を作る -->
++  <ItemGroup>
++    <Compile Include="$(StsStatsModSrc)/CardRewardPayload.cs" Link="Engine/CardRewardPayload.cs" />
++  </ItemGroup>
+ </Project>

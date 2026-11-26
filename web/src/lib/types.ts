@@ -286,4 +286,17 @@ export interface SessionDoc {
   session: SessionMeta;
   players: PlayerMeta[];
   events: EventRecord[];
+  card_reward_evaluations: CardRewardEvaluation[];
+}
+
+/** カード報酬の AI の評価 (spec api.md「GET /api/sessions/{id}」、card-evaluation.md)。 */
+export interface CardRewardEvaluation {
+  event_id: number;
+  player_id: string | null;
+  floor: number | null;
+  offered: { card_id: string; upgrade_level: number; enchanted: boolean }[];
+  alternatives: string[];
+  status: 'ok' | 'unknown_card' | 'unsupported_version' | 'unsupported_character' | 'invalid_payload';
+  card_probs?: number[];
+  alternative_probs?: Record<string, number>;
 }

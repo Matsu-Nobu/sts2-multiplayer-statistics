@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Matsu-Nobu/sts2-multiplayer-statistics/backend/internal/store"
@@ -96,7 +97,7 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json body (expected array)")
 		return
 	}
-	ended := false
+	ended, offered := false, false
 	for _, ev := range in {
 		if ev.EventUUID == "" || ev.EventType == "" || ev.OccurredAt == "" {
 			writeError(w, http.StatusBadRequest, "events[].event_uuid, event_type, occurred_at are required")
@@ -106,7 +107,7 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		if len(payload) == 0 {
 			payload = json.RawMessage("{}")
 		}
-		_, err := s.Store.InsertEvent(r.Context(), store.EventInput{
+		inserted, err := s.Store.InsertEvent(r.Context(), store.EventInput{
 			EventUUID:   ev.EventUUID,
 			SessionID:   id,
 			PlayerID:    ev.PlayerID,
@@ -121,6 +122,10 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to store event")
 			return
+		}
+
+		if inserted && ev.EventType == "card_reward_offered" {
+			offered = true
 		}
 
 		// Side effect: run_end → update session outcome / final_floor / finished_at.
@@ -155,6 +160,9 @@ func (s *Server) postEvents(w http.ResponseWriter, r *http.Request) {
 	if ended {
 		s.warmSummaries(id)
 	}
+	if offered {
+		s.evaluateCardRewards(id)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -177,6 +185,40 @@ func (s *Server) warmSummaries(sessionID string) {
 	}()
 }
 
+// evaluateCardRewards は、セッションのまだ評価していない card_reward_offered を評価サーバーで評価して保存する
+// (docs/spec/card-evaluation.md「評価の流れ」)。mod への応答を遅らせないよう、リクエストとは別のゴルーチンで評価する。
+func (s *Server) evaluateCardRewards(sessionID string) {
+	if s.Evaluator == nil {
+		return
+	}
+	s.warming.Add(1)
+	go func() {
+		defer s.warming.Done()
+		mu, _ := s.evaluating.LoadOrStore(sessionID, &sync.Mutex{})
+		mu.(*sync.Mutex).Lock()
+		defer mu.(*sync.Mutex).Unlock()
+		// 評価サーバーは止まっていると起動から始めるので、モデルの読み込みを含めて待つ
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		gameVersion, offers, err := s.Store.CardRewardOffers(ctx, sessionID)
+		if err != nil {
+			slog.Error("list card rewards to evaluate", "session", sessionID, "err", err)
+			return
+		}
+		if len(offers) == 0 {
+			return
+		}
+		evals, err := s.Evaluator.Evaluate(ctx, gameVersion, offers)
+		if err != nil {
+			slog.Error("evaluate card rewards", "session", sessionID, "events", len(offers), "err", err)
+			return
+		}
+		if err := s.Store.InsertCardRewardEvaluations(ctx, evals, s.now()); err != nil {
+			slog.Error("store card reward evaluations", "session", sessionID, "err", err)
+		}
+	}()
+}
+
 // applyRunEnd はセッションに結果を記録し、記録できたら true を返す。
 func (s *Server) applyRunEnd(r *http.Request, sessionID string, ev eventReq) bool {
 	var p runEndPayload
@@ -193,9 +235,10 @@ func (s *Server) applyRunEnd(r *http.Request, sessionID string, ev eventReq) boo
 // --- GET /api/sessions/{id} ---
 
 type sessionDoc struct {
-	Session *store.Session    `json:"session"`
-	Players []store.Player    `json:"players"`
-	Events  []json.RawMessage `json:"events"`
+	Session               *store.Session                   `json:"session"`
+	Players               []store.Player                   `json:"players"`
+	Events                []json.RawMessage                `json:"events"`
+	CardRewardEvaluations []store.CardRewardEvaluationView `json:"card_reward_evaluations"`
 }
 
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
@@ -242,10 +285,16 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 	if players == nil {
 		players = []store.Player{}
 	}
+	evals, err := s.Store.ListCardRewardEvaluations(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load card reward evaluations")
+		return
+	}
 	writeJSON(w, http.StatusOK, sessionDoc{
-		Session: sess,
-		Players: players,
-		Events:  events,
+		Session:               sess,
+		Players:               players,
+		Events:                events,
+		CardRewardEvaluations: evals,
 	})
 }
 

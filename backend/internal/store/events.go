@@ -76,6 +76,7 @@ func (s *Store) InsertEvent(ctx context.Context, in EventInput) (inserted bool, 
 // received_at and the optional combat context fields.
 // floor_snapshot は、payload の floor ごとに最後に届いた 1 件だけを返す (docs/spec/api.md「floor_snapshot」)。
 // 最後とは occurred_at・sequence・id の順で最大のもので、web が同じ階の記録から選ぶものと同じである。
+// card_reward_offered は web が使わず 1 件が数 KB あるので返さない (docs/spec/api.md「card_reward_offered」)。
 func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMessage, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		WITH ranked AS (
@@ -83,7 +84,7 @@ func (s *Store) ListEvents(ctx context.Context, sessionID string) ([]json.RawMes
 				PARTITION BY event_type, json_extract(payload_json, '$.floor')
 				ORDER BY occurred_at DESC, sequence DESC, id DESC) END AS snapshot_rank
 			FROM events
-			WHERE session_id = ?
+			WHERE session_id = ? AND event_type != 'card_reward_offered'
 		)
 		SELECT event_uuid, event_type, occurred_at, received_at, player_id,
 		       floor, combat_index, turn_number, sequence, payload_json

@@ -6,6 +6,8 @@
   import CardChip from './ui/CardChip.svelte';
   import Chip from './ui/Chip.svelte';
   import EmptyState from './ui/EmptyState.svelte';
+  import InfoTip from './ui/InfoTip.svelte';
+  import { floorCardEvaluations, formatProb, alternativeLabel, statusText, EVALUATION_HELP } from '../lib/cardEvaluations';
 
   interface Props { f: FloorSummary }
   let { f }: Props = $props();
@@ -16,6 +18,8 @@
   let hasDeckMod = $derived(f.cards_upgraded.length + f.cards_enchanted.length + f.cards_transformed.length + f.cards_removed.length > 0);
   let hasShop    = $derived(f.shop_purchases.length > 0);
   let hasChoice  = $derived(f.rest_options.length + f.event_choices.length + f.card_choices.length > 0);
+  let evals      = $derived(floorCardEvaluations(s.doc.card_reward_evaluations, s.player, f.floor));
+  const cardLabel = (id: string, upgraded: boolean) => s.catalog?.card(id, upgraded)?.name ?? (s.cardNames[id] ?? id) + (upgraded ? '+' : '');
 </script>
 
 {#snippet group(title: string, body: import('svelte').Snippet)}
@@ -115,7 +119,34 @@
     {@render group('選択', choice)}
   {/if}
 
-  {#if !hasAcq && !hasDeckMod && !hasShop && !hasChoice}
+  {#if evals.length > 0}
+    <section class="bg-bg-1 border border-bg-3 rounded-lg p-4">
+      <h2 class="text-base font-semibold text-slate-100 mb-3 flex items-center gap-2">AI の評価<InfoTip text={EVALUATION_HELP} label="AI の評価の説明" align="left" /></h2>
+      {#each evals as e, i (e.event_id)}
+        {@const probs = e.status === 'ok' ? [...(e.card_probs ?? []), ...e.alternatives.map(a => e.alternative_probs?.[a] ?? 0)] : []}
+        {@const top = probs.length > 0 ? Math.max(...probs) : -1}
+        {@const sub = (p: number | undefined) => (p == null ? '' : formatProb(p))}
+        {@const cls = (p: number | undefined) => (p != null && p === top ? 'text-slate-100 font-semibold' : 'text-slate-400')}
+        {#snippet b()}
+          {#each e.offered as c, j}
+            <CardChip label={cardLabel(c.card_id, c.upgrade_level > 0)} rarity={s.catalog?.card(c.card_id)?.rarity} upgraded={c.upgrade_level > 0} enchanted={c.enchanted}
+                      sub={sub(e.card_probs?.[j])} subClass={cls(e.card_probs?.[j])} tip={cardTip(s.catalog, c.card_id, c.upgrade_level > 0)} />
+          {/each}
+          {#if e.status === 'ok'}
+            {#each e.alternatives as a}<Chip label={alternativeLabel(a)} sub={sub(e.alternative_probs?.[a])} subClass="{cls(e.alternative_probs?.[a])} text-xs tabular" />{/each}
+          {:else}
+            <span class="text-sm text-slate-400 self-center">{statusText(e.status)}</span>
+          {/if}
+        {/snippet}
+        <div class="py-1.5 space-y-1">
+          <div class="text-xs text-slate-400">{evals.length > 1 ? `カード報酬 ${i + 1}` : 'カード報酬'}</div>
+          <div class="flex flex-wrap gap-1.5">{@render b()}</div>
+        </div>
+      {/each}
+    </section>
+  {/if}
+
+  {#if !hasAcq && !hasDeckMod && !hasShop && !hasChoice && evals.length === 0}
     <div class="bg-bg-1 border border-bg-3 rounded-lg"><EmptyState title="変化なし" hint="この階に記録された入手・改造・選択はありません。" /></div>
   {/if}
 </div>

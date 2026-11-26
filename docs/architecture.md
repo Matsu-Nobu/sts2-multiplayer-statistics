@@ -16,7 +16,7 @@ Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を
         │ HTTP POST /sessions          （run 開始時）
         │ HTTP POST /sessions/{id}/events  （ターン終了 / combat 終了 / run 終了ごとに bulk）
         ▼
-[backend (Go + SQLite, embed.FS で web を同梱)]
+[backend (Go + SQLite, embed.FS で web を同梱)] ──POST /evaluate──▶ [評価サーバー (Python + ONNX Runtime)]
         ▲
         │ HTTP GET /api/sessions/{id}（ETag による If-None-Match ポーリング）
         │
@@ -29,6 +29,7 @@ Slay the Spire 2 のマルチプレイ／シングルプレイのラン統計を
 - **イベント列モデル**: ターン集計済み payload ではなく、生イベント列（`damage_dealt` / `block_gained` / `power_changed` …）を bulk POST する。集計は WebUI 側でクライアント計算。これにより rDPS / rMit のような attribution 計算を後追いで実装できる。
 - **WebSocket 不採用**: WebUI は 10 秒間隔の HTTP ポーリングで十分。サーバは ETag を返すので変化が無ければ 304 で返る。
 - **mod 側 UI なし**: クリップボードに URL をコピーするのみ。Godot リソース（PCK）も不要。
+- **カード報酬の評価は別のサーバー**: mod はカード報酬の画面の状態を送るだけで、AI の評価は Python の評価サーバー (`evaluator/`) が行う。評価の流れは [`spec/card-evaluation.md`](./spec/card-evaluation.md) にある。
 
 ---
 

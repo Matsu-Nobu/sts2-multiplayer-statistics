@@ -1,0 +1,8 @@
+{
+  "DEFECT": {"file": "DEFECT.onnx", "name": "student_e_v165018", "vocab_n": 2286, "obs_format": 19},
+  "REGENT": {"file": "REGENT.onnx", "name": "regent_student_e8", "vocab_n": 2286, "obs_format": 20},
+  "SILENT": {"file": "SILENT.onnx", "name": "silent_ema_v26428", "vocab_n": 2286, "obs_format": 23},
+  "FOOL": {"file": "FOOL.onnx", "name": "fool_ema_v24181", "vocab_n": 2557, "obs_format": 27},
+  "IRONCLAD": {"file": "IRONCLAD.onnx", "name": "ironclad_ema_v24782", "vocab_n": 2557, "obs_format": 28},
+  "NECROBINDER": {"file": "NECROBINDER.onnx", "name": "necrobinder_raw_v25875", "vocab_n": 2557, "obs_format": 28}
+}

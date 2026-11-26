@@ -79,6 +79,9 @@ Phase 2 段階ではローカルサーバ前提で進めて良いが、**以下�
 
 前の版に戻すときは、`flyctl releases -a sts2stats` で版を調べ、その版のイメージで `flyctl deploy --image <イメージ>` を実行する。
 
+カード報酬の評価サーバーは、別の Fly.io のアプリ `sts2stats-eval` で動いている。デプロイの手順は [`evaluator/README.md`](../evaluator/README.md)「デプロイ」にある。
+`sts2stats` は環境変数 `EVALUATOR_URL` (Fly.io の secrets) に入れた URL で評価サーバーを呼ぶ。
+
 ## ゲーム更新時の手順
 
 Slay the Spire 2 が更新されたら、mod が依存する内部実装が変わっていないかを **実装に触る前に** 確認する。
@@ -94,6 +97,8 @@ Slay the Spire 2 が更新されたら、mod が依存する内部実装が変�
    - `[StsStats] Patch table: N ok, 0 failed`
    - `[StsStats] SourceContext: ... patched N ..., failed 0`
 4. カタログを作り直す (`make dump-catalog`)。新しいカード・レリック等が増えている。
+5. AlphaDefect が新しいバージョンに対応したら、評価サーバーの表を作り直す ([`evaluator/README.md`](../evaluator/README.md)「表の作り方」)。
+   対応するまでは、新しいバージョンのランの評価は `unsupported_version` になる (`spec/card-evaluation.md`)。
 
 ## 関連ドキュメント
 
